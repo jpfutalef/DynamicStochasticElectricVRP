@@ -35,6 +35,9 @@ class NetworkNode:
     def isChargeStation(self):  # TODO add doc
         return False
 
+    def getTypeAbbreviation(self):  # TODO add doc
+        return 'NN'
+
 
 class ChargeStationNode(NetworkNode):
     # TODO add documentation
@@ -51,6 +54,8 @@ class ChargeStationNode(NetworkNode):
     def calculateTimeSpent(self, initSOC, endSOC):  # FIXME actually, verify it is working properly
         # TODO verify complexity
         # TODO add documentation
+        if self.timePoints is None:
+            return 6.0
         doInit = True
         doEnd = False
         initIndex = 0
@@ -82,10 +87,16 @@ class ChargeStationNode(NetworkNode):
     def isChargeStation(self):
         return True
 
+    def getTypeAbbreviation(self):  # TODO add doc
+        return 'CS'
+
 
 class DepotNode(NetworkNode):  # TODO add documentation
     def __init__(self, nodeId):
         super().__init__(nodeId)
+
+    def getTypeAbbreviation(self):  # TODO add doc
+        return 'DEPOT'
 
 
 class CustomerNode(NetworkNode):  # TODO add documentation
@@ -98,6 +109,9 @@ class CustomerNode(NetworkNode):  # TODO add documentation
     def spentTime(self, p, q):
         return self.serviceTime
 
+    def getTypeAbbreviation(self):  # FIXME maybe as an instance parameter?
+        return 'C'
+
 
 class ElectricVehicle:  # TODO add documentation
     networkInfo: list
@@ -105,9 +119,9 @@ class ElectricVehicle:  # TODO add documentation
     id: int
     timeMatrix: list
 
-    def __init__(self, evId, customersToVisitId, networkInfo, maxPayload=2.0, batteryCapacity=40.0,
-                 maxTourDuration=300.0, x1=0.0, x2=40.0, x3=2.0, alphaDown=40.0, alphaUp=80.0,
-                 betaDown=45.0, betaUp=55.0, seq=None, timeMatrix=None, energyMatrix=None):
+    def __init__(self, evId, customersToVisitId, networkInfo, nodeSequence=None, chargingSequence=None,
+                 maxPayload=2.0, batteryCapacity=40.0, maxTourDuration=300.0, alphaDown=40.0, alphaUp=80.0,
+                 betaDown=45.0, betaUp=55.0, x1=0.0, x2=40.0, x3=2.0, timeMatrix=None, energyMatrix=None):
         """
         EV model
 
@@ -117,12 +131,14 @@ class ElectricVehicle:  # TODO add documentation
         :param maxPayload: maximum allowed payload to be transported by the EV in tons
         :param batteryCapacity: battery capacity in Ah
         :param maxTourDuration: maximum tour time duration in minutes
-        :param seq: a list with the sequence order to visit
+        :param nodeSequence: a list with ordered node IDs representing the nodeSequence to follow the the EV
+        :param chargingSequence: a list with ordered charging amounts representing the SOC increase at each node
         """
 
         self.id = evId
         self.customersId = customersToVisitId
         self.networkInfo = networkInfo
+
         self.maxPayload = maxPayload
         self.batteryCapacity = batteryCapacity
         self.maxTourDuration = maxTourDuration
@@ -133,26 +149,34 @@ class ElectricVehicle:  # TODO add documentation
         self.timeMatrix = timeMatrix
         self.energyMatrix = energyMatrix
 
-        self.sequence = seq
+        self.nodeSequence = nodeSequence
+        self.chargingSequence = chargingSequence
         try:
-            self.si = len(seq)
-
+            self.si = len(nodeSequence)
         except TypeError:
             self.si = 0
 
-        self.x1 = x1
-        self.x2 = x2
-        self.x3 = x3
-        self.state = np.array([x1, x2, x3])
-
+        # Save initial conditions
         self.x1_0 = x1
         self.x2_0 = x2
         self.x3_0 = x3
         self.state_0 = np.array([x1, x2, x3])
 
+        # Internal state
+        self.x1 = x1
+        self.x2 = x2
+        self.x3 = x3
+        self.x1_leaving = x1
+        self.state = np.array([x1, x2, x3])
+
+        # Internal costs
+        self.travelTimeCost = 0.0
+        self.chargingTimeCost = 0.0
+        self.chargingCost = 0.0
+
     def F1(self, idK0: int, idK1: int, Lk, eta):
-        return self.x1 + self.networkInfo[idK0].spentTime(self.x3, self.x3 + Lk) \
-               + self.timeMatrix[idK0, idK1]  # TODO incorporate time travel function
+        return self.x1 + self.networkInfo[idK0].spentTime(self.x2, Lk) + self.timeMatrix[
+            idK0, idK1]  # TODO incorporate time travel function
 
     def F2(self, idK0, idK1, Lk, eta):
         return self.x2 + Lk - self.energyMatrix[idK0, idK1]  # TODO incorporate energy consumption
@@ -168,17 +192,52 @@ class ElectricVehicle:  # TODO add documentation
         self.x2 = self.F2(idK0, idK1, Lk, eta)
         self.x3 = self.F3(idK0, idK1, Lk, eta)
         self.state = np.array([self.x1, self.x2, self.x3])
+        self.x1_leaving = self.x1 + self.networkInfo[idK1].spentTime(self.x2,
+                                                                     Lk)  # TODO incorporate time travel function
 
-    def createStateSequenceStatic(self, sequenceNodes, sequenceRecharge, sequenceEta):  # TODO docu
-        # FIXME sequence nodes and sequence recharge should be pass to instantiation
+    def returnToInitialCondition(self):
+        self.x1 = self.x1_0
+        self.x2 = self.x2_0
+        self.x3 = self.x3_0
+        self.x1_leaving = self.x1_0
+        self.state = np.array([self.x1, self.x2, self.x3])
+
+    def createStateSequenceStatic(self, sequenceEta):  # TODO docu
+        # FIXME nodeSequence nodes and nodeSequence recharge should be pass to instantiation
         # TODO notice thar this function starts from the initial state
-        X = np.zeros((3, len(self.sequence)))
-        for k, nodeId in enumerate(self.sequence):
+        X = np.zeros((3, len(self.nodeSequence)))
+        for k, nodeId in enumerate(self.nodeSequence):
             X[:, k] = self.state
-            if k == len(self.sequence)-1:
+            if k == len(self.nodeSequence) - 1:
                 pass
             else:
-                self.stateUpdate(self.sequence[k], self.sequence[k+1], sequenceRecharge[k], sequenceEta[k])
+                # TODO incorporate the following to functions
+                self.travelTimeCost += self.timeMatrix[self.nodeSequence[k], self.nodeSequence[k + 1]]
+                if self.networkInfo[self.nodeSequence[k]].isChargeStation():
+                    self.chargingTimeCost += self.networkInfo[self.nodeSequence[k]].spentTime(self.x3,
+                                                                                              self.chargingSequence[k])
+                self.stateUpdate(self.nodeSequence[k], self.nodeSequence[k + 1], self.chargingSequence[k],
+                                 sequenceEta[k])
+        self.returnToInitialCondition()
+        return X
+
+    def createReachingLeavingTimes(self, sequenceEta):  # TODO docu
+        # FIXME nodeSequence nodes and nodeSequence recharge should be pass to instantiation
+        # TODO notice thar this function starts from the initial state
+        X = np.zeros((2, len(self.nodeSequence)))
+        for k, nodeId in enumerate(self.nodeSequence):
+            X[:, k] = np.asarray([self.x1, self.x1_leaving])
+            if k == len(self.nodeSequence) - 1:
+                pass
+            else:
+                # TODO incorporate the following to functions
+                if self.networkInfo[self.nodeSequence[k]].isChargeStation():
+                    self.chargingTimeCost += self.networkInfo[self.nodeSequence[k]].spentTime(self.x2,
+                                                                                              self.chargingSequence[k])
+                # FIXME why the charging sequence is k+1 in the following?
+                self.stateUpdate(self.nodeSequence[k], self.nodeSequence[k + 1], self.chargingSequence[k+1],
+                                 sequenceEta[k])
+        self.returnToInitialCondition()
         return X
 
 
@@ -197,7 +256,7 @@ def gamma(tSeries, k0, nNodes):  # TODO add option to reuse a previous gamma
     :param nNodes: amount of nodes in the network, including depot and CSs
     :return: tuple in the form (gammaVector, delta)
     """
-    g = np.zeros((nNodes, 1))
+    g = np.zeros(nNodes)
     occurrenceNode = tSeries[k0][1]
     delta = int(tSeries[k0][2])
     g[occurrenceNode] = delta
@@ -208,7 +267,7 @@ def sumPathLengths(paths):
     """
     Calculates the sum of all given paths minus one. The paths are in the form [Path0, Path1, ..., Pathm]
 
-    :param paths: an iterable containing all paths of the whole sequence
+    :param paths: an iterable containing all paths of the whole nodeSequence
     :return: a number with the sum of all path lengths minus one
     """
     K = 0

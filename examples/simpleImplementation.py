@@ -122,8 +122,15 @@ for _, row in customerDF.iterrows():
                                                            timeWindowDown=row['TIME_WINDOW_LOW'])
     networkDict['CUSTOMER_LIST'].append(networkDict[row['ID']])
 
+constantChargingTime = False
+
 for _, row in csDF.iterrows():
-    networkDict[row['ID']] = res.EV_utilities.ChargeStationNode(row['ID'])
+    # Simple CS with linear curve
+    if constantChargingTime:
+        networkDict[row['ID']] = res.EV_utilities.ChargeStationNode(row['ID'])
+    else:
+        networkDict[row['ID']] = res.EV_utilities.ChargeStationNode(row['ID'],
+                                                                    timePoints=[0.0, 240.0], socPoints=[0.0, 100.0])
     networkDict['CS_LIST'].append(networkDict[row['ID']])
 
 # Information
@@ -135,6 +142,10 @@ for _, row in csDF.iterrows():
 t1 = time.time()
 
 nVehicles = 2
+insertChargeStations = True
+randomChargeLow = 5.0
+randomChargeUpp = 20.0
+
 vehiclesDict = {}
 
 customersId = [evID for evID in customerDF['ID']]
@@ -146,6 +157,7 @@ if len(customersId) % nVehicles != 0:
 
 for i, j in enumerate(nCustomersPerCar):
     print('Car', i, 'must visit', j, 'customer/s')
+print('\n')
 
 for carId, nCustomersCar in enumerate(nCustomersPerCar):
     carCustomersId = []
@@ -153,24 +165,45 @@ for carId, nCustomersCar in enumerate(nCustomersPerCar):
         index = random.randint(0, len(customersId) - 1)
         carCustomersId.append(customersId.pop(index))
     customersToVisit = [customerId for customerId in carCustomersId]
-    print('Car ', carId, 'must visit customers with ID:', customersToVisit)
+    print('Car', carId, 'must visit customers with ID:', customersToVisit)
 
-    # IMPORTANT: the proposed sequence
-    sequence = [0] + customersToVisit + [0]
-    print('Car ', carId, 'will visit customers in the following order:', sequence)
-
+    # IMPORTANT: the proposed nodeSequence
+    nodeSequence = [0] + customersToVisit + [0]
+    chargingSequence = [0] * len(nodeSequence)
+    print('Car ', carId, 'will visit customers in the following order:', nodeSequence, '\n')
+    if insertChargeStations and len(nodeSequence) > 3:
+        for j, nodeId in enumerate(nodeSequence[2:-1]):
+            if random.randint(0, 1):
+                csId = random.sample([x.id for x in networkDict['CS_LIST']], 1)[0]
+                nodeSequence.insert(j + 2, csId)
+                chargingSequence.insert(j + 2, np.random.uniform(randomChargeLow, randomChargeUpp))
     # instantiate
     Qi = 100.0
-    sumDi = np.sum([networkDict[i].demand for i in sequence])
-    vehiclesDict[carId] = res.EV_utilities.ElectricVehicle(carId, customersToVisit, networkDict, seq=sequence
-                                                           , timeMatrix=timeMatrix.iat, energyMatrix=energyMatrix.iat,
+    sumDi = np.sum([networkDict[i].demand for i in nodeSequence])
+    vehiclesDict[carId] = res.EV_utilities.ElectricVehicle(carId, customersToVisit, networkDict,
+                                                           nodeSequence=nodeSequence, chargingSequence=chargingSequence,
+                                                           timeMatrix=timeMatrix.iat, energyMatrix=energyMatrix.iat,
                                                            x2=Qi, x3=sumDi)
+
+# Print the final nodeSequence
+if insertChargeStations:
+    print("Charge stations have been inserted...")
+else:
+    print("No charge stations inserted")
+
+for i in vehiclesDict.keys():
+    seq = []
+    for nodeId in vehiclesDict[i].nodeSequence:
+        nodeStr = str(nodeId)
+        seq.append(str(nodeStr + '  (' + networkDict[nodeId].getTypeAbbreviation() + ')'))
+    print('The nodes sequence for vehicle', i, 'is', seq)
+    print('The charging sequence for vehicle', i, 'is', vehiclesDict[i].chargingSequence, '\n')
 
 # %% md
 
 # Amount of rows each constraint will occupy at the A matrix
-sumSi = np.sum([len(vehiclesDict[vehicleId].sequence) for vehicleId in vehiclesDict])
-lenK0 = 2 * np.sum([len(vehiclesDict[vehicleId].sequence) - 1 for vehicleId in vehiclesDict]) + 1
+sumSi = np.sum([len(vehiclesDict[vehicleId].nodeSequence) for vehicleId in vehiclesDict])
+lenK0 = 2 * np.sum([len(vehiclesDict[vehicleId].nodeSequence) - 1 for vehicleId in vehiclesDict]) + 1
 
 constraintRows = 0
 
@@ -219,22 +252,6 @@ for i, j in enumerate(vehiclesDict):
     rowToChange += 1
     # print('16:', rowToChange)
 
-# 17 & 18
-for i, j in enumerate(vehiclesDict):
-    for cId in vehiclesDict[j].customersId:
-        k = vehiclesDict[j].sequence.index(cId)
-        i1 = 2 * sumSi + k
-
-        A[rowToChange, i1] = -1.0
-        b[rowToChange] = -networkDict[cId].timeWindowDown
-        rowToChange += 1
-        # print('17:', rowToChange)
-
-        A[rowToChange, i1] = 1.0
-        b[rowToChange] = networkDict[cId].timeWindowUp
-        rowToChange += 1
-        # print('18:', rowToChange)
-
 # 24
 for k0 in range(lenK0):
     for cs in networkDict['CS_LIST']:
@@ -273,12 +290,108 @@ for i, j in enumerate(vehiclesDict):
     rowToChange += 1
     # print('26.2:', rowToChange)
 
+# %% md
+
+# Linear inequalities with conditioned sets
+
+# 17 & 18
+for i, j in enumerate(vehiclesDict):
+    for cId in vehiclesDict[j].customersId:
+        k = vehiclesDict[j].nodeSequence.index(cId)
+        i1 = 2 * sumSi + k
+
+        A[rowToChange, i1] = -1.0
+        b[rowToChange] = -networkDict[cId].timeWindowDown
+        rowToChange += 1
+        # print('17:', rowToChange)
+
+        A[rowToChange, i1] = 1.0
+        b[rowToChange] = networkDict[cId].timeWindowUp
+        rowToChange += 1
+        # print('18:', rowToChange)
+
+# %% md
+
+# Equality constraints for state
+
+stateSequences = {}
+
+for vehicleId in vehiclesDict.keys():
+    seqEta = np.zeros(vehiclesDict[vehicleId].si)
+    stateSequences[vehicleId] = vehiclesDict[vehicleId].createStateSequenceStatic(seqEta)
+
+# %% md
+
+# Counting vector dynamics
+
+leavingReachingSequences = {}
+
+for vehicleId in vehiclesDict.keys():
+    seqEta = np.zeros(vehiclesDict[vehicleId].si)
+    leavingReachingSequences[vehicleId] = vehiclesDict[vehicleId].createReachingLeavingTimes(seqEta)
+
+theta = np.zeros(networkSize)
+theta[0] = nVehicles
+
+aX = []
+for vehicleId in leavingReachingSequences.keys():
+    x = []
+    for k, nodeId in enumerate(vehiclesDict[vehicleId].nodeSequence):
+        # agregar ts, nodo, tipo, vehiculo
+        if k == 0:
+            x.append([leavingReachingSequences[vehicleId][1][k], nodeId, -1, vehicleId])
+        elif k == len(vehiclesDict[vehicleId].nodeSequence) - 1:
+            x.append([leavingReachingSequences[vehicleId][1][k], nodeId, 1, vehicleId])
+        else:
+            x.append([leavingReachingSequences[vehicleId][0][k], nodeId, 1, vehicleId])
+            x.append([leavingReachingSequences[vehicleId][1][k], nodeId, -1, vehicleId])
+    aX.append(x)
+
+# Ordenar
+oX = []
+for i in range(0, lenK0 - 1):  # FIXME por qué -1?
+    c = float("inf")
+    v = 0
+    for j in range(0, nVehicles):
+        if not aX[j]:
+            pass
+        elif aX[j][0][0] < c:
+            c = aX[j][0][0]
+            v = j
+    popEvent = aX[v].pop(0)  # notice that aX will be empty after this. rerun to obtain new results
+    oX.append(popEvent)
+
+# print(oX)
+
+thetaMatrix = np.zeros((networkSize, lenK0))
+thetaMatrix[:, 0] = theta
+
+# FIXME arreglar todo esto
+for i in range(0, len(oX)):
+    g, typ = res.EV_utilities.gamma(oX, i, networkSize)
+    # print('theta(',i,')\n', thetaMatrix[:, i])
+    # print('gamma(',i,')\n', g)
+    thetaMatrix[:, i+1] = thetaMatrix[:, i] + g
+
+# %% md
+
+# Cost function of sequences
+
+travelTimeCost = np.sum([vehiclesDict[x].travelTimeCost for x in vehiclesDict.keys()])
+chargingTimeCost = np.sum([vehiclesDict[x].chargingTimeCost for x in vehiclesDict.keys()])
+
+print('Total travel time:', travelTimeCost, 'min')
+print('Total charging time:', chargingTimeCost, 'min')
+print('Total charging cost:')
+print('Total cost:', travelTimeCost + chargingTimeCost, '\n')
+
+# %% md
+
+# Performance
+
 tEnd = time.time()
 
 print('Initial time:', t0)
 print('Ending time:', tEnd)
 print('Delta time global:', tEnd - t0)
 print('Delta time matrices:', tEnd - t1)
-
-X = vehiclesDict[0].createStateSequenceStatic([1,2,3], [0,0,0], [2,2,2])
-print(X)
