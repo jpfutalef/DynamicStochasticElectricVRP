@@ -317,3 +317,7 @@ def saveInfoMatrix(nodeInfo: dict, name='timeMatrixRandom'):  # TODO add doc
     print('Saving to ', path)
     df.to_csv(path)
     return
+
+def decodeFunction(individual):
+
+    return

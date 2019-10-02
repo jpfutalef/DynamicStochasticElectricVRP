@@ -7,12 +7,12 @@ import numpy as np
 import pandas as pd
 import random
 import time
-
+import matplotlib.pyplot as plt
 import res.EV_utilities
 
 t0 = time.time()
 
-networkSize = 6
+networkSize = 10
 
 # %% md
 # choose if do random matrices
@@ -143,8 +143,9 @@ t1 = time.time()
 
 nVehicles = 2
 insertChargeStations = True
+doRandomInsertion = False
 randomChargeLow = 5.0
-randomChargeUpp = 20.0
+randomChargeUpp = 10.0
 
 vehiclesDict = {}
 
@@ -395,3 +396,24 @@ print('Initial time:', t0)
 print('Ending time:', tEnd)
 print('Delta time global:', tEnd - t0)
 print('Delta time matrices:', tEnd - t1)
+
+# %% md
+plt.subplot(131)
+plt.plot(stateSequences[0][0, :], '-o')
+plt.title('Accumulated time')
+plt.xlabel('k')
+plt.ylabel('X1')
+
+plt.subplot(132)
+plt.plot(stateSequences[0][1, :], '-o')
+plt.title('SOC at each stop')
+plt.xlabel('k')
+plt.ylabel('X2')
+
+plt.subplot(133)
+plt.plot(stateSequences[0][2, :], '-o')
+plt.title('Payload')
+plt.xlabel('k')
+plt.ylabel('X3')
+
+plt.show()
