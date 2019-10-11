@@ -1,6 +1,8 @@
 # %% md
 # Simple E-VRP implementation
 
+import importlib
+
 import sys
 
 import numpy as np
@@ -8,7 +10,9 @@ import pandas as pd
 import random
 import time
 import matplotlib.pyplot as plt
+
 import res.EV_utilities
+import res.GA_utilities_1
 
 t0 = time.time()
 
@@ -372,7 +376,7 @@ for i in range(0, len(oX)):
     g, typ = res.EV_utilities.gamma(oX, i, networkSize)
     # print('theta(',i,')\n', thetaMatrix[:, i])
     # print('gamma(',i,')\n', g)
-    thetaMatrix[:, i+1] = thetaMatrix[:, i] + g
+    thetaMatrix[:, i + 1] = thetaMatrix[:, i] + g
 
 # %% md
 
@@ -416,4 +420,17 @@ plt.title('Payload')
 plt.xlabel('k')
 plt.ylabel('X3')
 
-plt.show()
+# plt.show()
+
+# %% Genetic algorithm
+importlib.reload(res.GA_utilities_1)
+
+# allowed charging operations
+numChargeOp = 2
+
+# an example individual
+ind = [4, 2, 6, 2, 8, 10.0, -1, 4, 2, 720.,
+       5, 7, 9, 3, 7, 1, 10.0, -1, 1, 10., 740.]
+
+# its fitness
+S, L, x0 = res.GA_utilities_1.decodeFunction(ind, vehiclesDict, allowed_charging_operations=numChargeOp)

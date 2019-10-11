@@ -42,20 +42,15 @@ class NetworkNode:
 class ChargeStationNode(NetworkNode):
     # TODO add documentation
     # TODO unit test
-    def __init__(self, nodeId, maximumParallelOperations=4, timeCalculationMethod='piecewise', timePoints=None,
-                 socPoints=None):
+    def __init__(self, nodeId, maximumParallelOperations=4, timePoints=(0.0, 120.0), socPoints=(0.0, 100.0)):
         super().__init__(nodeId)
         self.maximumParallelOperations = maximumParallelOperations
-        self.timeCalculationMethod = timeCalculationMethod
-        if timeCalculationMethod == 'piecewise':
-            self.timePoints = timePoints
-            self.socPoints = socPoints
+        self.timePoints = timePoints
+        self.socPoints = socPoints
 
     def calculateTimeSpent(self, initSOC, endSOC):  # FIXME actually, verify it is working properly
         # TODO verify complexity
         # TODO add documentation
-        if self.timePoints is None:
-            return 6.0
         doInit = True
         doEnd = False
         initIndex = 0
@@ -156,6 +151,9 @@ class ElectricVehicle:  # TODO add documentation
         except TypeError:
             self.si = 0
 
+        # the number of customers to visit
+        self.customerCount = len(customersToVisitId)
+
         # Save initial conditions
         self.x1_0 = x1
         self.x2_0 = x2
@@ -235,10 +233,18 @@ class ElectricVehicle:  # TODO add documentation
                     self.chargingTimeCost += self.networkInfo[self.nodeSequence[k]].spentTime(self.x2,
                                                                                               self.chargingSequence[k])
                 # FIXME why the charging sequence is k+1 in the following?
-                self.stateUpdate(self.nodeSequence[k], self.nodeSequence[k + 1], self.chargingSequence[k+1],
+                self.stateUpdate(self.nodeSequence[k], self.nodeSequence[k + 1], self.chargingSequence[k + 1],
                                  sequenceEta[k])
         self.returnToInitialCondition()
         return X
+
+    def updateSequences(self, nodeSequence, chargingSequence):
+        self.nodeSequence = nodeSequence
+        self.chargingSequence = chargingSequence
+        try:
+            self.si = len(nodeSequence)
+        except TypeError:
+            self.si = 0
 
 
 """
@@ -316,8 +322,4 @@ def saveInfoMatrix(nodeInfo: dict, name='timeMatrixRandom'):  # TODO add doc
     path = '../data/simpleImplementation/' + name + '_info' + str(len(nodeInfo)) + '.csv'
     print('Saving to ', path)
     df.to_csv(path)
-    return
-
-def decodeFunction(individual):
-
     return
