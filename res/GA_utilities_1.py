@@ -4,6 +4,9 @@ from random import uniform
 from random import sample
 from deap.tools import initCycle
 
+from res.EV_utilities import feasible
+from res.EV_utilities import distance
+
 
 def decodeFunction(individual, vehiclesDict, allowed_charging_operations=2):
     """
@@ -15,6 +18,7 @@ def decodeFunction(individual, vehiclesDict, allowed_charging_operations=2):
     :param vehiclesDict: a dictionary containing all vehicles instances
     :return: A 3-size tuple (S, L, x0)
     """
+    #print("individual to decode: ", individual)
     S = {}
     L = {}
     x0 = {}
@@ -28,41 +32,37 @@ def decodeFunction(individual, vehiclesDict, allowed_charging_operations=2):
 
         # iterate through every charging operation
         indices = [i1 + 3 * k for k in range(0, allowed_charging_operations)]
-        chargeAfterList = [(individual[i], individual[i + 1], individual[i + 2])
-                           for i in indices if individual[i] != -1]
+        chargeAfterDict = {individual[i]: (individual[i + 1], individual[i + 2]) for i in indices if individual[i] != -1}
 
-        nodeSequence = [0] * (ni + len(chargeAfterList))
-        chargingSequence = [0] * (ni + len(chargeAfterList))
+        nodeSequence = [0] * (ni + len(chargeAfterDict))
+        chargingSequence = [0] * (ni + len(chargeAfterDict))
 
         # case: there are not recharging operations
-        if len(chargeAfterList) == 0:
+        if len(chargeAfterDict) == 0:
             nodeSequence = individual[i0:i1]
 
         # case: there are recharging operations
         else:
+            key = individual[i0]
             j = 0
-            jj = 0
-            cn = chargeAfterList[jj][0]
             insertCS = False
+
             for i, _ in enumerate(nodeSequence):
                 if insertCS:
-                    nodeSequence[i] = chargeAfterList[jj][1]
-                    chargingSequence[i] = chargeAfterList[jj][2]
-                    jj += 1
-                    try:
-                        cn = chargeAfterList[jj][0]
-                    except IndexError:
-                        pass
+                    nodeSequence[i] = chargeAfterDict[key][0]
+                    chargingSequence[i] = chargeAfterDict[key][1]
                     insertCS = False
 
-                elif cn == individual[i0 + j]:
+                elif individual[i0 + j] in chargeAfterDict.keys():
                     nodeSequence[i] = individual[i0 + j]
+                    key = individual[i0 + j]
                     j += 1
                     insertCS = True
 
                 else:
                     nodeSequence[i] = individual[i0 + j]
                     j += 1
+
         x0_vehicle = individual[i1 + 3 * allowed_charging_operations]
 
         # Store in dictionary
@@ -71,9 +71,7 @@ def decodeFunction(individual, vehiclesDict, allowed_charging_operations=2):
         L[k] = [0] + chargingSequence + [0]
         x0[k] = x0_vehicle
 
-        v.nodeSequence = S[k]
-        v.chargingSequence = L[k]
-        v.x1_0 = x0[k]
+        v.updateSequences(S[k], L[k], x0[k])
 
         # print("Vehicle", v.id, "sequences: ")
         # print("node sequence: ", S[k])
@@ -110,7 +108,7 @@ def fitness(individual, vehiclesDict, allowed_charging_operations=2):
         v.travelTimeCost = 0
         v.chargingTimeCost = 0
 
-    return -totalCost
+    return -totalCost,
 
 
 def mutate(individual, vehiclesDict, allowed_charging_operations=2, index=None):
@@ -151,24 +149,39 @@ def mutate(individual, vehiclesDict, allowed_charging_operations=2, index=None):
     elif i1 <= index < i2:
         # print("Case charge station", (i1, i2))
         case = "CS"
+        # FIXME make this more efficient. Might be good to return tuples with the
+        #  values in the function that creates these
+
         # Find corresponding operation index
         j = 0
-        for j in i1List:
+        csBlocks = [i1 + 3 * x for x in range(0, allowed_charging_operations)]
+        for j in csBlocks:
             if j <= index <= j + 2:
                 break
 
         # Choose if making a charging operation
         if randint(0, 1):
+            # print("Charge....")
             # Choose a customer node randomly
-            individual[j] = sample(vehiclesDict[i].customersId, 1)[0]
+            g = 0
+            while g < 5000:
+                customer = sample(vehiclesDict[i].customersId, 1)[0]
+                # print("After customer: ", individual[j])
+                g += 1
+                if customer not in [individual[x] for x in csBlocks]:
+                    break
 
+            individual[j] = customer
             # Choose a random CS
             individual[j + 1] = sample(vehiclesDict[i].networkInfo['CS_LIST'], 1)[0].id
+            # print("At CS: ", individual[j+1])
 
             # Choose amount
             individual[j + 2] = uniform(0, 10)
+            # print("The amount of: ", individual[j+2])
 
         else:
+            # print("Don't charge")
             individual[j] = -1
 
     # Case x0
@@ -191,7 +204,7 @@ def crossover(ind1, ind2, vehiclesDict, allowed_charging_operations=2, index=Non
         index = randint(0, len(ind1))
 
     # Find concerning block
-    i = 0   # vehicle ID
+    i = 0  # vehicle ID
     i0 = 0
     i1 = 0
     i2 = 0
@@ -273,3 +286,15 @@ def createRandomIndividual(vehiclesDict, allowed_charging_operations=2):
         individual += customerSequence + chargingSequence + departingTime
 
     return individual
+
+
+def feasibleIndividual(individual, vehicleDict, allowed_charging_operations=2):
+    nodeSeq, charSeq, x0Seq = decodeFunction(individual, vehicleDict,
+                                             allowed_charging_operations=allowed_charging_operations)
+    return feasible(nodeSeq, charSeq, x0Seq, vehicleDict)
+
+
+def distanceToFeasibleZone(individual, vehicleDict, allowed_charging_operations=2):
+    nodeSeq, charSeq, x0Seq = decodeFunction(individual, vehicleDict,
+                                             allowed_charging_operations=allowed_charging_operations)
+    return distance(nodeSeq, charSeq, x0Seq, vehicleDict)

@@ -109,7 +109,7 @@ for carId, customersToVisit in enumerate(customersID):
     chargingSequence = [0] * len(nodeSequence)
 
     # instantiate
-    Qi = 100.0
+    Qi = 80.0
     sumDi = np.sum([networkDict[i].demand for i in nodeSequence])
     vehiclesDict[carId] = res.EV_utilities.ElectricVehicle(carId, customersToVisit, networkDict,
                                                            nodeSequence=nodeSequence, chargingSequence=chargingSequence,
@@ -181,17 +181,22 @@ toolbox.register("mate", res.GA_utilities_1.crossover, vehiclesDict=vehiclesDict
 toolbox.register("mutate", res.GA_utilities_1.mutate, vehiclesDict=vehiclesDict)
 toolbox.register("select", tools.selTournament, tournsize=3)
 
+# Useful to decode
+toolbox.register("decode", res.GA_utilities_1.decodeFunction, vehiclesDict=vehiclesDict)
+
+# Constraint handling
+toolbox.register("distance", res.GA_utilities_1.distanceToFeasibleZone, vehicleDict=vehiclesDict)
+toolbox.register("feasible", res.GA_utilities_1.feasibleIndividual, vehicleDict=vehiclesDict)
+toolbox.decorate("evaluate", tools.DeltaPenality(toolbox.feasible, -5000.0, toolbox.distance))
+
 # %% the algorithm
 # Population TODO create function
-n = 20
+n = 250
+generations = 100
 
 pop = []
 for i in range(0, n):
     pop.append(creator.Individual(toolbox.individual()))
-
-fitnesses = list(map(toolbox.evaluate, pop))
-for ind, fit in zip(pop, fitnesses):
-    ind.fitness.values = (fit,)
 
 # CXPB  is the probability with which two individuals
 #       are crossed
@@ -202,9 +207,11 @@ CXPB, MUTPB = 0.5, 0.2
 print("Start of evolution")
 
 # Evaluate the entire population
-fitnesses = list(map(toolbox.evaluate, pop))
-for ind, fit in zip(pop, fitnesses):
-    ind.fitness.values = (fit,)
+# fitnesses = list(map(toolbox.evaluate, pop)) FIXME por que esto entrega tuplas algunas veces y otras no?
+
+for ind in pop:
+    fit = toolbox.evaluate(ind)
+    ind.fitness.values = fit
 
 print("  Evaluated %i individuals" % len(pop))
 
@@ -220,7 +227,7 @@ Ystd = []
 X = []
 
 # Begin the evolution
-while g < 1000:
+while g < generations:
     # A new generation
     g = g + 1
     X.append(g)
@@ -252,9 +259,9 @@ while g < 1000:
 
     # Evaluate the individuals with an invalid fitness
     invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-    fitnesses = map(toolbox.evaluate, invalid_ind)
-    for ind, fit in zip(invalid_ind, fitnesses):
-        ind.fitness.values = (fit,)
+    for ind in invalid_ind:
+        fit = toolbox.evaluate(ind)
+        ind.fitness.values = fit
 
     print("  Evaluated %i individuals" % len(invalid_ind))
 
@@ -279,13 +286,23 @@ while g < 1000:
     Yavg.append(mean)
     Ystd.append(std)
 
+    bestInd = tools.selBest(pop, 1)[0]
+    print("Best individual: ", bestInd)
+
+    worstInd = tools.selWorst(pop, 1)[0]
+    print("Worst individual: ", worstInd)
+
 print("-- End of (successful) evolution --")
 
 bestInd = tools.selBest(pop, 1)[0]
 print("Best individual: ", bestInd)
+print("Fitness of best (stored): ", bestInd.fitness.values[0])
+print("Fitness of best (calculated): ", toolbox.evaluate(bestInd))
 
 worstInd = tools.selWorst(pop, 1)[0]
 print("Worst individual: ", worstInd)
+print("Fitness of best (stored): ", worstInd.fitness.values[0])
+print("Fitness of best (calculated): ", toolbox.evaluate(worstInd))
 
 # %%
 fig1, ax1 = plt.subplots(1)
@@ -295,9 +312,9 @@ plt.plot(X[0:n], Ymin[0:n], '*', alpha=.5)
 plt.legend(('Best fitness', 'Worst fitness'))
 plt.xlabel('Generations', fontsize=14)
 plt.ylabel('Fitness', fontsize=14)
-plt.title('Best vs worst fitness per generation (unconstrained problem)', fontsize=14)
-#plt.xlim((-200, 2100))
-#plt.ylim((-130, -60))
+plt.title('Best vs worst fitness per generation (constrained problem)', fontsize=14)
+# plt.xlim((-200, 2100))
+# plt.ylim((-130, -60))
 
 ax1.arrow(2180, -125, 0., 50, width=1., head_width=20, head_length=5, clip_on=False)
 th1 = plt.text(2300, -105, 'better', fontsize=14,
@@ -314,4 +331,80 @@ plt.title('Std per generation', fontsize=14)
 
 plt.show()
 
+# %% sequences visualization of best
+toolbox.evaluate(bestInd)
 
+stateSequences = {}
+
+for vehicleId in vehiclesDict.keys():
+    seqEta = np.zeros(vehiclesDict[vehicleId].si)
+    stateSequences[vehicleId] = vehiclesDict[vehicleId].createStateSequenceStatic(seqEta)
+
+# Vehicle 1
+
+nSeq = vehiclesDict[0].nodeSequence
+kCustomers = []
+tWindowsCenter = []
+tWindowsWidth = []
+for i, node in enumerate(nSeq):
+    if networkDict[node].isCustomer():
+        kCustomers.append(i)
+        tWindowsCenter.append((networkDict[node].timeWindowUp + networkDict[node].timeWindowDown)/2.0)
+        tWindowsWidth.append(networkDict[node].timeWindowUp - networkDict[node].timeWindowDown)
+
+plt.subplot(231)
+plt.plot(stateSequences[0][0, :], '-o', markersize=3, linewidth=1)
+plt.errorbar(kCustomers, tWindowsCenter, yerr=tWindowsWidth, fmt=',', capsize=2)
+plt.title('Reaching/leaving times')
+plt.xlabel('k')
+plt.ylabel('X1')
+
+plt.subplot(232)
+plt.plot(80*np.ones_like(stateSequences[0][1, :]), '--k')
+plt.plot(40*np.ones_like(stateSequences[0][1, :]), '--k')
+plt.plot(stateSequences[0][1, :], '-o', markersize=3, linewidth=1)
+plt.title('SOC at each stop')
+plt.xlabel('k')
+plt.ylabel('X2')
+
+plt.subplot(233)
+plt.plot(stateSequences[0][2, :], '-o', markersize=3, linewidth=1)
+plt.title('Payload')
+plt.xlabel('k')
+plt.ylabel('X3')
+
+# Vehicle 2
+
+nSeq = vehiclesDict[1].nodeSequence
+kCustomers = []
+tWindowsCenter = []
+tWindowsWidth = []
+for i, node in enumerate(nSeq):
+    if networkDict[node].isCustomer():
+        kCustomers.append(i)
+        tWindowsCenter.append((networkDict[node].timeWindowUp + networkDict[node].timeWindowDown)/2.0)
+        tWindowsWidth.append(networkDict[node].timeWindowUp - networkDict[node].timeWindowDown)
+
+plt.subplot(234)
+plt.plot(stateSequences[1][0, :], '-o', markersize=3, linewidth=1)
+plt.errorbar(kCustomers, tWindowsCenter, yerr=tWindowsWidth, fmt=',', capsize=2)
+plt.title('Reaching/leaving times')
+plt.xlabel('k')
+plt.ylabel('X1')
+
+plt.subplot(235)
+plt.plot(80*np.ones_like(stateSequences[1][1, :]), '--k')
+plt.plot(40*np.ones_like(stateSequences[1][1, :]), '--k')
+plt.plot(stateSequences[1][1, :], '-o', markersize=3, linewidth=1)
+plt.title('SOC at each stop')
+plt.xlabel('k')
+plt.ylabel('X2')
+
+plt.subplot(236)
+plt.plot(stateSequences[1][2, :], '-o', markersize=3, linewidth=1)
+plt.title('Payload')
+plt.xlabel('k')
+plt.ylabel('X3')
+
+plt.show()
+plt.close()
