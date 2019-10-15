@@ -10,12 +10,9 @@ import pandas as pd
 import random
 import time
 import matplotlib.pyplot as plt
-from deap.tools import cxOnePoint
 from deap import base
 from deap import creator
 from deap import tools
-
-import matplotlib.pyplot as plt
 
 import res.EV_utilities
 import res.GA_utilities_1
@@ -192,7 +189,7 @@ toolbox.decorate("evaluate", tools.DeltaPenality(toolbox.feasible, -5000.0, tool
 # %% the algorithm
 # Population TODO create function
 n = 250
-generations = 100
+generations = 1500
 
 pop = []
 for i in range(0, n):
@@ -297,16 +294,14 @@ print("-- End of (successful) evolution --")
 bestInd = tools.selBest(pop, 1)[0]
 print("Best individual: ", bestInd)
 print("Fitness of best (stored): ", bestInd.fitness.values[0])
-print("Fitness of best (calculated): ", toolbox.evaluate(bestInd))
 
 worstInd = tools.selWorst(pop, 1)[0]
 print("Worst individual: ", worstInd)
-print("Fitness of best (stored): ", worstInd.fitness.values[0])
-print("Fitness of best (calculated): ", toolbox.evaluate(worstInd))
+print("Fitness of worst (stored): ", worstInd.fitness.values[0])
 
 # %%
 fig1, ax1 = plt.subplots(1)
-n = 2000
+n = generations
 plt.plot(X[0:n], Ymax[0:n], '*', alpha=1)
 plt.plot(X[0:n], Ymin[0:n], '*', alpha=.5)
 plt.legend(('Best fitness', 'Worst fitness'))
@@ -316,9 +311,6 @@ plt.title('Best vs worst fitness per generation (constrained problem)', fontsize
 # plt.xlim((-200, 2100))
 # plt.ylim((-130, -60))
 
-ax1.arrow(2180, -125, 0., 50, width=1., head_width=20, head_length=5, clip_on=False)
-th1 = plt.text(2300, -105, 'better', fontsize=14,
-               rotation=90, rotation_mode='anchor')
 
 plt.show()
 
@@ -326,12 +318,14 @@ fig2, ax2 = plt.subplots(1)
 n = 2000
 plt.plot(X[0:n], Ystd[0:n], '*', alpha=1)
 plt.xlabel('Generations', fontsize=14)
-plt.ylabel('Standar deviation', fontsize=14)
+plt.ylabel('Standard deviation', fontsize=14)
 plt.title('Std per generation', fontsize=14)
 
 plt.show()
 
 # %% sequences visualization of best
+fig, ax = plt.subplots(figsize=(16, 9))
+
 toolbox.evaluate(bestInd)
 
 stateSequences = {}
@@ -352,22 +346,35 @@ for i, node in enumerate(nSeq):
         tWindowsCenter.append((networkDict[node].timeWindowUp + networkDict[node].timeWindowDown)/2.0)
         tWindowsWidth.append(networkDict[node].timeWindowUp - networkDict[node].timeWindowDown)
 
+seqEta = np.zeros(vehiclesDict[0].si)
+xReachingLeaving = vehiclesDict[0].createReachingLeavingStates(seqEta)
+
 plt.subplot(231)
-plt.plot(stateSequences[0][0, :], '-o', markersize=3, linewidth=1)
+for k, node in enumerate(vehiclesDict[0].nodeSequence):
+    plt.annotate(str(node), (k, xReachingLeaving[1, k]))
+
+plt.plot(xReachingLeaving[0, :], '-o', markersize=2, linewidth=1)
+plt.plot(xReachingLeaving[1, :], '-o', markersize=2, linewidth=1)
 plt.errorbar(kCustomers, tWindowsCenter, yerr=tWindowsWidth, fmt=',', capsize=2)
 plt.title('Reaching/leaving times')
 plt.xlabel('k')
 plt.ylabel('X1')
 
 plt.subplot(232)
+for k, node in enumerate(vehiclesDict[0].nodeSequence):
+    plt.annotate(str(node), (k, xReachingLeaving[3, k]))
+
 plt.plot(80*np.ones_like(stateSequences[0][1, :]), '--k')
 plt.plot(40*np.ones_like(stateSequences[0][1, :]), '--k')
-plt.plot(stateSequences[0][1, :], '-o', markersize=3, linewidth=1)
+plt.plot(xReachingLeaving[2, :], '-o', markersize=2, linewidth=1)
+plt.plot(xReachingLeaving[3, :], '-o', markersize=2, linewidth=1)
 plt.title('SOC at each stop')
 plt.xlabel('k')
 plt.ylabel('X2')
 
 plt.subplot(233)
+for k, node in enumerate(vehiclesDict[0].nodeSequence):
+    plt.annotate(str(node), (k, xReachingLeaving[4, k]))
 plt.plot(stateSequences[0][2, :], '-o', markersize=3, linewidth=1)
 plt.title('Payload')
 plt.xlabel('k')
@@ -385,22 +392,36 @@ for i, node in enumerate(nSeq):
         tWindowsCenter.append((networkDict[node].timeWindowUp + networkDict[node].timeWindowDown)/2.0)
         tWindowsWidth.append(networkDict[node].timeWindowUp - networkDict[node].timeWindowDown)
 
+
+# TODO fix functions to obtain these
+seqEta = np.zeros(vehiclesDict[1].si)
+xReachingLeaving = vehiclesDict[1].createReachingLeavingStates(seqEta)
+
 plt.subplot(234)
-plt.plot(stateSequences[1][0, :], '-o', markersize=3, linewidth=1)
+for k, node in enumerate(vehiclesDict[1].nodeSequence):
+    plt.annotate(str(node), (k, xReachingLeaving[1, k]))
+
+plt.plot(xReachingLeaving[0, :], '-o', markersize=2, linewidth=1)
+plt.plot(xReachingLeaving[1, :], '-o', markersize=2, linewidth=1)
 plt.errorbar(kCustomers, tWindowsCenter, yerr=tWindowsWidth, fmt=',', capsize=2)
 plt.title('Reaching/leaving times')
 plt.xlabel('k')
 plt.ylabel('X1')
 
 plt.subplot(235)
+for k, node in enumerate(vehiclesDict[1].nodeSequence):
+    plt.annotate(str(node), (k, xReachingLeaving[3, k]))
 plt.plot(80*np.ones_like(stateSequences[1][1, :]), '--k')
 plt.plot(40*np.ones_like(stateSequences[1][1, :]), '--k')
-plt.plot(stateSequences[1][1, :], '-o', markersize=3, linewidth=1)
+plt.plot(xReachingLeaving[2, :], '-o', markersize=2, linewidth=1)
+plt.plot(xReachingLeaving[3, :], '-o', markersize=2, linewidth=1)
 plt.title('SOC at each stop')
 plt.xlabel('k')
 plt.ylabel('X2')
 
 plt.subplot(236)
+for k, node in enumerate(vehiclesDict[1].nodeSequence):
+    plt.annotate(str(node), (k, xReachingLeaving[4, k]))
 plt.plot(stateSequences[1][2, :], '-o', markersize=3, linewidth=1)
 plt.title('Payload')
 plt.xlabel('k')

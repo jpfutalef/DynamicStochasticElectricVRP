@@ -171,6 +171,8 @@ class ElectricVehicle:  # TODO add documentation
         self.x2 = x2
         self.x3 = x3
         self.x1_leaving = x1
+        self.x2_leaving = x2
+        self.x3_leaving = x3
         self.state = np.array([x1, x2, x3])
 
         # Internal costs
@@ -179,31 +181,40 @@ class ElectricVehicle:  # TODO add documentation
         self.chargingCost = 0.0
 
     def F1(self, idK0: int, idK1: int, Lk, eta):
-        return self.x1 + self.networkInfo[idK0].spentTime(self.x2, Lk) + self.timeMatrix[
-            idK0, idK1]  # TODO incorporate time travel function
+        # TODO incorporate time travel function
+        spentTime = self.networkInfo[idK0].spentTime(self.x2, Lk)
+        travelTime = self.timeMatrix[idK0, idK1]
+        x1LeavingCurrent = self.x1 + spentTime
+        x1ReachingNext = x1LeavingCurrent + travelTime
+        return x1ReachingNext, x1LeavingCurrent
 
     def F2(self, idK0, idK1, Lk, eta):
-        return self.x2 + Lk - self.energyMatrix[idK0, idK1]  # TODO incorporate energy consumption
+        energyConsumption = self.energyMatrix[idK0, idK1]
+        x2ReachingNext = self.x2 + Lk - energyConsumption
+        x2LeavingCurrent = self.x2 + Lk
+        return x2ReachingNext, x2LeavingCurrent  # TODO incorporate energy consumption
 
     def F3(self, idK0, idK1, Lk, eta):
-        return self.x3 - self.networkInfo[idK0].requiredDemand()
+        x3ReachingNext = self.x3 - self.networkInfo[idK0].requiredDemand()
+        x3LeavingCurrent = self.x3 - self.networkInfo[idK0].requiredDemand()
+        return x3ReachingNext, x3LeavingCurrent
 
     def indexInSequence(self, nodeId):
         return
 
     def stateUpdate(self, idK0, idK1, Lk, eta):
-        self.x1 = self.F1(idK0, idK1, Lk, eta)
-        self.x2 = self.F2(idK0, idK1, Lk, eta)
-        self.x3 = self.F3(idK0, idK1, Lk, eta)
+        self.x1, self.x1_leaving = self.F1(idK0, idK1, Lk, eta)
+        self.x2, self.x2_leaving = self.F2(idK0, idK1, Lk, eta)
+        self.x3, self.x3_leaving = self.F3(idK0, idK1, Lk, eta)
         self.state = np.array([self.x1, self.x2, self.x3])
-        self.x1_leaving = self.x1 + self.networkInfo[idK1].spentTime(self.x2,
-                                                                     Lk)  # TODO incorporate time travel function
 
     def returnToInitialCondition(self):
         self.x1 = self.x1_0
         self.x2 = self.x2_0
         self.x3 = self.x3_0
         self.x1_leaving = self.x1_0
+        self.x2_leaving = self.x2_0
+        self.x3_leaving = self.x3_0
         self.state = np.array([self.x1, self.x2, self.x3])
 
     def createStateSequenceStatic(self, sequenceEta):  # TODO docu
@@ -225,22 +236,22 @@ class ElectricVehicle:  # TODO add documentation
         self.returnToInitialCondition()
         return X
 
-    def createReachingLeavingTimes(self, sequenceEta):  # TODO docu
-        # FIXME nodeSequence nodes and nodeSequence recharge should be pass to instantiation
-        # TODO notice thar this function starts from the initial state
-        X = np.zeros((2, len(self.nodeSequence)))
+    def createReachingLeavingStates(self, sequenceEta):  # TODO docu
+        X = np.zeros((6, len(self.nodeSequence)))
         for k, nodeId in enumerate(self.nodeSequence):
-            X[:, k] = np.asarray([self.x1, self.x1_leaving])
+            X[0, k] = self.x1
+            X[2, k] = self.x2
+            X[4, k] = self.x3
             if k == len(self.nodeSequence) - 1:
-                pass
+                X[1, k] = self.x1
+                X[3, k] = self.x2
+                X[5, k] = self.x3
             else:
-                # TODO incorporate the following to functions
-                if self.networkInfo[self.nodeSequence[k]].isChargeStation():
-                    self.chargingTimeCost += self.networkInfo[self.nodeSequence[k]].spentTime(self.x2,
-                                                                                              self.chargingSequence[k])
-                # FIXME why the charging sequence is k+1 in the following?
-                self.stateUpdate(self.nodeSequence[k], self.nodeSequence[k + 1], self.chargingSequence[k + 1],
+                self.stateUpdate(self.nodeSequence[k], self.nodeSequence[k + 1], self.chargingSequence[k],
                                  sequenceEta[k])
+                X[1, k] = self.x1_leaving
+                X[3, k] = self.x2_leaving
+                X[5, k] = self.x3_leaving
         self.returnToInitialCondition()
         return X
 
@@ -613,49 +624,49 @@ def distance(nodeSequences, chargeSequences, x0Sequence, vehiclesDict, allowed_c
     # 16
     for j in vehiclesDict:
         if not boolList[rowToCheck]:
-            #print("Unfeasible maximum service time.")
+            # print("Unfeasible maximum service time.")
             dist += np.power(mult[rowToCheck] - b[rowToCheck], 2)
         rowToCheck += 1
 
     # 17
     for j in range(nCustomers):
         if not boolList[rowToCheck]:
-            #print("Unfeasible TW lower bound.")
+            # print("Unfeasible TW lower bound.")
             dist += np.power(mult[rowToCheck] - b[rowToCheck], 2)[0]
         rowToCheck += 1
 
     # 18
     for j in range(nCustomers):
         if not boolList[rowToCheck]:
-            #print("Unfeasible TW upper bound.")
+            # print("Unfeasible TW upper bound.")
             dist += np.power(mult[rowToCheck] - b[rowToCheck], 2)[0]
         rowToCheck += 1
 
     # 25.1
     for j in range(sumSi):
         if not boolList[rowToCheck]:
-            #print("Unfeasible SOH pol1cy lower")
+            # print("Unfeasible SOH pol1cy lower")
             dist += np.power(mult[rowToCheck] - b[rowToCheck], 2)[0]
         rowToCheck += 1
 
     # 25.2
     for j in range(sumSi):
         if not boolList[rowToCheck]:
-            #print("Unfeasible SOH policy upper")
+            # print("Unfeasible SOH policy upper")
             dist += np.power(mult[rowToCheck] - b[rowToCheck], 2)[0]
         rowToCheck += 1
 
     # 26.1
     for j in vehiclesDict:
         if not boolList[rowToCheck]:
-            #print("Unfeasible SOH policy 2 lower")
+            # print("Unfeasible SOH policy 2 lower")
             dist += np.power(mult[rowToCheck] - b[rowToCheck], 2)[0]
         rowToCheck += 1
 
     # 26.2
     for j in vehiclesDict:
         if not boolList[rowToCheck]:
-            #print("Unfeasible SOH policy 2 upper")
+            # print("Unfeasible SOH policy 2 upper")
             dist += np.power(mult[rowToCheck] - b[rowToCheck], 2)[0]
         rowToCheck += 1
 
