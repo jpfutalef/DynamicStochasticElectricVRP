@@ -44,7 +44,7 @@ print("Energy consumption from 1 to 2: ", e)
 # %% md
 # Import nodes information to differentiate among them
 
-path = '../data/simpleImplementation/timeMatrixRandom_info' + str(networkSize) + '.csv'
+path = '../data/simpleImplementation/timeMatrixRandom_info' + str(networkSize) + '_wide.csv'
 infoMatrix = pd.read_csv(path)
 
 depotDF = infoMatrix[infoMatrix['TYPE'] == 'DEPOT'].dropna(axis=1)
@@ -184,12 +184,12 @@ toolbox.register("decode", res.GA_utilities_1.decodeFunction, vehiclesDict=vehic
 # Constraint handling
 toolbox.register("distance", res.GA_utilities_1.distanceToFeasibleZone, vehicleDict=vehiclesDict)
 toolbox.register("feasible", res.GA_utilities_1.feasibleIndividual, vehicleDict=vehiclesDict)
-toolbox.decorate("evaluate", tools.DeltaPenality(toolbox.feasible, -5000.0, toolbox.distance))
+toolbox.decorate("evaluate", tools.DeltaPenality(toolbox.feasible, -500000.0, toolbox.distance))
 
 # %% the algorithm
 # Population TODO create function
 n = 250
-generations = 1500
+generations = 100
 
 pop = []
 for i in range(0, n):
@@ -199,9 +199,9 @@ for i in range(0, n):
 #       are crossed
 #
 # MUTPB is the probability for mutating an individual
-CXPB, MUTPB = 0.5, 0.2
+CXPB, MUTPB = 0.4, 0.5
 
-print("Start of evolution")
+print("################  Start of evolution  ################")
 
 # Evaluate the entire population
 # fitnesses = list(map(toolbox.evaluate, pop)) FIXME por que esto entrega tuplas algunas veces y otras no?
@@ -289,7 +289,8 @@ while g < generations:
     worstInd = tools.selWorst(pop, 1)[0]
     print("Worst individual: ", worstInd)
 
-print("-- End of (successful) evolution --")
+# %%
+print("################  End of (successful) evolution  ################")
 
 bestInd = tools.selBest(pop, 1)[0]
 print("Best individual: ", bestInd)
@@ -344,7 +345,7 @@ for i, node in enumerate(nSeq):
     if networkDict[node].isCustomer():
         kCustomers.append(i)
         tWindowsCenter.append((networkDict[node].timeWindowUp + networkDict[node].timeWindowDown)/2.0)
-        tWindowsWidth.append(networkDict[node].timeWindowUp - networkDict[node].timeWindowDown)
+        tWindowsWidth.append((networkDict[node].timeWindowUp - networkDict[node].timeWindowDown)/2.0)
 
 seqEta = np.zeros(vehiclesDict[0].si)
 xReachingLeaving = vehiclesDict[0].createReachingLeavingStates(seqEta)
@@ -389,8 +390,8 @@ tWindowsWidth = []
 for i, node in enumerate(nSeq):
     if networkDict[node].isCustomer():
         kCustomers.append(i)
-        tWindowsCenter.append((networkDict[node].timeWindowUp + networkDict[node].timeWindowDown)/2.0)
-        tWindowsWidth.append(networkDict[node].timeWindowUp - networkDict[node].timeWindowDown)
+        tWindowsCenter.append((networkDict[node].timeWindowUp + networkDict[node].timeWindowDown) / 2.0)
+        tWindowsWidth.append((networkDict[node].timeWindowUp - networkDict[node].timeWindowDown) / 2.0)
 
 
 # TODO fix functions to obtain these
@@ -429,3 +430,7 @@ plt.ylabel('X3')
 
 plt.show()
 plt.close()
+
+# %%
+tEnd = time.time()
+print("Total execution time:", (tEnd - t0)*1000.0, "ms")

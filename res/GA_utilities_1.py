@@ -172,23 +172,24 @@ def mutate(individual, vehiclesDict, allowed_charging_operations=2, index=None):
                     break
 
             individual[j] = customer
-            # Choose a random CS
-            individual[j + 1] = sample(vehiclesDict[i].networkInfo['CS_LIST'], 1)[0].id
-            # print("At CS: ", individual[j+1])
-
-            # Choose amount
-            individual[j + 2] = uniform(0, 10)
-            # print("The amount of: ", individual[j+2])
-
         else:
             # print("Don't charge")
             individual[j] = -1
+
+        # Choose a random CS
+        individual[j + 1] = sample(vehiclesDict[i].networkInfo['CS_LIST'], 1)[0].id
+        # print("At CS: ", individual[j+1])
+
+        # Choose amount
+        individual[j + 2] = uniform(0.0, 90.0)
+
+        # print("The amount of: ", individual[j+2])
 
     # Case x0
     else:
         case = "x0"
         # print("Case x0", i2)
-        individual[i2] += uniform(-10, 10)
+        individual[i2] += uniform(-60, 60)
 
     # print("Mutated individual: ", individual)
     # print("Case: ", case)
