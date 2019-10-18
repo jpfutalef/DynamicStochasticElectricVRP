@@ -220,6 +220,7 @@ class ElectricVehicle:  # TODO add documentation
     def createStateSequenceStatic(self, sequenceEta):  # TODO docu
         # FIXME nodeSequence nodes and nodeSequence recharge should be pass to instantiation
         # TODO notice thar this function starts from the initial state
+        self.returnToInitialCondition()
         X = np.zeros((3, len(self.nodeSequence)))
         for k, nodeId in enumerate(self.nodeSequence):
             X[:, k] = self.state
@@ -317,8 +318,9 @@ def createEmptyInequalityMatrix(pathLengthsList):
     return
 
 
-def randomMatrixWithZeroDiagonal(size, lower=5.0, upper=15.0, save=True, name='symmetricMatrix',
+def randomMatrixWithZeroDiagonal(size, lower=5.0, upper=15.0, save=False, name='symmetricMatrix',
                                  indexName='Val'):  # TODO add doc
+    # FIXME at nodeGeneratorUtility, make it possible to return the DF
     timeMatrix = np.random.uniform(lower, upper, size=(size, size))
     np.fill_diagonal(timeMatrix, 0.0)
     if save:
@@ -330,17 +332,26 @@ def randomMatrixWithZeroDiagonal(size, lower=5.0, upper=15.0, save=True, name='s
     return timeMatrix
 
 
-def saveInfoMatrix(nodeInfo: dict, name='timeMatrixRandom'):  # TODO add doc
+def saveInfoMatrix(nodeInfo: dict, name='timeMatrixRandom', path='../data/simpleImplementation/'):  # TODO add doc
     df = pd.DataFrame()
     for nodeID in nodeInfo.keys():
         row = pd.DataFrame(nodeInfo[nodeID], index=[nodeID])
         row.index.name = 'ID'
         df = df.append(row)
     print(df)
-    path = '../data/simpleImplementation/' + name + '_info' + str(len(nodeInfo)) + '.csv'
-    print('Saving to ', path)
+    pathName = path + name + '.csv'
+    print('Saving to ', pathName)
     df.to_csv(path)
     return
+
+
+def makeInfoMatrix(nodeInfo: dict):  # TODO add doc
+    df = pd.DataFrame()
+    for nodeID in nodeInfo.keys():
+        row = pd.DataFrame(nodeInfo[nodeID], index=[nodeID])
+        row.index.name = 'ID'
+        df = df.append(row)
+    return df
 
 
 def createOptimizationVector(nodeSequences, chargeSequences, x0Sequence, vehiclesDict):
@@ -412,10 +423,130 @@ def feasible(nodeSequences, chargeSequences, x0Sequence, vehiclesDict):
     constraintRows += sumSi
 
     # 26.1
-    constraintRows += nVehicles
+    constraintRows += sumSi
 
     # 26.2
+    constraintRows += sumSi
+
+    # K0
+    lenK0 = 2 * sumSi - 2 * nVehicles
+
+    # Create linear inequalities matrix Ax <= b
+    sizeOfOpVector = 5 * sumSi
+
+    A = np.zeros((constraintRows, sizeOfOpVector))
+    b = np.zeros((constraintRows, 1))
+
+    # Start filling
+    rowToChange = 0
+
+    # 16
+    i1 = 2 * sumSi
+    i2 = 2 * sumSi
+    for j in vehiclesDict:
+        i2 += len(nodeSequences[j]) - 1
+
+        A[rowToChange, i1] = -1.0
+        A[rowToChange, i2] = 1.0
+        b[rowToChange] = vehiclesDict[j].maxTourDuration
+        rowToChange += 1
+        # print('16:', rowToChange)
+        i1 += len(nodeSequences[j])
+        i2 += 1
+
+    # 17 & 18
+    i1 = 2 * sumSi
+    for j in vehiclesDict:
+        for nodeID in nodeSequences[j]:
+            if networkDict[nodeID].isCustomer():
+                A[rowToChange, i1] = -1.0
+                b[rowToChange] = -networkDict[nodeID].timeWindowDown
+                rowToChange += 1
+                # print('17:', rowToChange)
+
+                A[rowToChange, i1] = 1.0
+                b[rowToChange] = networkDict[nodeID].timeWindowUp - networkDict[nodeID].serviceTime
+                rowToChange += 1
+                # print('18:', rowToChange)
+            i1 += 1
+
+    # 25.1 & 25.2
+    i1 = 3 * sumSi
+    for i, j in enumerate(vehiclesDict):
+        for k in range(len(nodeSequences[j])):
+            A[rowToChange, i1] = -1.0
+            b[rowToChange] = -vehiclesDict[j].alphaDown
+            rowToChange += 1
+            # print('25.1:', rowToChange)
+
+            A[rowToChange, i1] = 1.0
+            b[rowToChange] = vehiclesDict[j].alphaUp
+            rowToChange += 1
+            # print('25.2:', rowToChange)
+            i1 += 1
+
+    # 26.1 & 26.2
+    i1 = 3 * sumSi
+    for i, j in enumerate(vehiclesDict):
+        for k in range(len(nodeSequences[j])):
+            A[rowToChange, i1] = -1.0
+            b[rowToChange] = -vehiclesDict[j].alphaDown + vehiclesDict[j].chargingSequence[k]
+            rowToChange += 1
+            # print('25.1:', rowToChange)
+
+            A[rowToChange, i1] = 1.0
+            b[rowToChange] = vehiclesDict[j].alphaUp - vehiclesDict[j].chargingSequence[k]
+            rowToChange += 1
+            # print('25.2:', rowToChange)
+            i1 += 1
+
+    # Check
+    mult = np.matmul(A, X)
+    for res, cond in zip(mult, b):
+        if not res[0] <= cond[0]:
+            return False
+    return True
+
+
+def distance(nodeSequences, chargeSequences, x0Sequence, vehiclesDict, allowed_charging_operations=2):
+    # Obtain optimization vector
+    X = createOptimizationVector(nodeSequences, chargeSequences, x0Sequence, vehiclesDict)
+    # print("nodeSequences", nodeSequences)
+    # print("chargeSequences", chargeSequences)
+    # print("x0Sequence", x0Sequence)
+    # LINEAR CONTRAINTS
+    # Amount of vehicles and customers, and the network information dictionary
+    nVehicles = len(vehiclesDict)
+    nCustomers = np.sum([x.customerCount for _, x in vehiclesDict.items()])
+    networkDict = vehiclesDict[0].networkInfo
+
+    networkSize = len(networkDict['DEPOT_LIST']) + len(networkDict['CUSTOMER_LIST']) + len(networkDict['CS_LIST'])
+
+    # Amount of rows each constraint will occupy at the A matrix
+    sumSi = np.sum([len(x) for _, x in nodeSequences.items()])
+
+    constraintRows = 0
+
+    # 16
     constraintRows += nVehicles
+
+    # 17
+    constraintRows += nCustomers
+
+    # 18
+    constraintRows += nCustomers
+
+    # 25.1
+    constraintRows += sumSi
+
+    # 25.2
+    constraintRows += sumSi
+
+    # 26.1
+    constraintRows += sumSi
+
+    # 26.2
+    constraintRows += sumSi
 
     # Create linear inequalities matrix Ax <= b
     sizeOfOpVector = 5 * sumSi
@@ -490,125 +621,6 @@ def feasible(nodeSequences, chargeSequences, x0Sequence, vehiclesDict):
 
     # Check
     mult = np.matmul(A, X)
-    for res, cond in zip(mult, b):
-        if not res[0] <= cond[0]:
-            return False
-    return True
-
-
-def distance(nodeSequences, chargeSequences, x0Sequence, vehiclesDict, allowed_charging_operations=2):
-    # Obtain optimization vector
-    X = createOptimizationVector(nodeSequences, chargeSequences, x0Sequence, vehiclesDict)
-    # print("nodeSequences", nodeSequences)
-    # print("chargeSequences", chargeSequences)
-    # print("x0Sequence", x0Sequence)
-    # LINEAR CONTRAINTS
-    # Amount of vehicles and customers, and the network information dictionary
-    nVehicles = len(vehiclesDict)
-    nCustomers = np.sum([x.customerCount for _, x in vehiclesDict.items()])
-    networkDict = vehiclesDict[0].networkInfo
-
-    networkSize = len(networkDict['DEPOT_LIST']) + len(networkDict['CUSTOMER_LIST']) + len(networkDict['CS_LIST'])
-
-    # Amount of rows each constraint will occupy at the A matrix
-    sumSi = np.sum([len(x) for _, x in nodeSequences.items()])
-
-    constraintRows = 0
-
-    # 16
-    constraintRows += nVehicles
-
-    # 17
-    constraintRows += nCustomers
-
-    # 18
-    constraintRows += nCustomers
-
-    # 25.1
-    constraintRows += sumSi
-
-    # 25.2
-    constraintRows += sumSi
-
-    # 26.1
-    constraintRows += nVehicles
-
-    # 26.2
-    constraintRows += nVehicles
-
-    # Create linear inequalities matrix Ax <= b
-    sizeOfOpVector = 5 * sumSi
-
-    A = np.zeros((constraintRows, sizeOfOpVector))
-    b = np.zeros((constraintRows, 1))
-
-    # Start filling
-    rowToChange = 0
-
-    # 16
-    i1 = 2 * sumSi
-    i2 = 2 * sumSi
-    for j in vehiclesDict:
-        i2 += len(nodeSequences[j]) - 1
-
-        A[rowToChange, i1] = -1.0
-        A[rowToChange, i2] = 1.0
-        b[rowToChange] = vehiclesDict[j].maxTourDuration
-        rowToChange += 1
-        # print('16:', rowToChange)
-        i1 += len(nodeSequences[j])
-        i2 += 1
-
-    # 17 & 18
-    i1 = 2 * sumSi
-    for j in vehiclesDict:
-        for nodeID in nodeSequences[j]:
-            if networkDict[nodeID].isCustomer():
-                A[rowToChange, i1] = -1.0
-                b[rowToChange] = -networkDict[nodeID].timeWindowDown
-                rowToChange += 1
-                # print('17:', rowToChange)
-
-                A[rowToChange, i1] = 1.0
-                b[rowToChange] = networkDict[nodeID].timeWindowUp
-                rowToChange += 1
-                # print('18:', rowToChange)
-            i1 += 1
-
-    # 25.1 & 25.2
-    i1 = 3 * sumSi
-    for i, j in enumerate(vehiclesDict):
-        for k in range(len(nodeSequences[j])):
-            A[rowToChange, i1] = -1.0
-            b[rowToChange] = -vehiclesDict[j].alphaDown
-            rowToChange += 1
-            # print('25.1:', rowToChange)
-
-            A[rowToChange, i1] = 1.0
-            b[rowToChange] = vehiclesDict[j].alphaUp
-            rowToChange += 1
-            # print('25.2:', rowToChange)
-            i1 += 1
-
-    # 26.1 & 26.2
-    i1 = 3 * sumSi
-    for i, j in enumerate(vehiclesDict):
-        i1 += len(nodeSequences[j]) - 1
-
-        A[rowToChange, i1] = -1.0
-        b[rowToChange] = vehiclesDict[j].betaDown
-        rowToChange += 1
-        # print('26.1:', rowToChange)
-
-        A[rowToChange, i1] = 1.0
-        b[rowToChange] = vehiclesDict[j].betaUp
-        rowToChange += 1
-        # print('26.2:', rowToChange)
-
-        i1 += 1
-
-    # Check
-    mult = np.matmul(A, X)
     boolList = [0] * np.size(b)
 
     for i, (res, cond) in enumerate(zip(mult, b)):
@@ -625,49 +637,49 @@ def distance(nodeSequences, chargeSequences, x0Sequence, vehiclesDict, allowed_c
     for j in vehiclesDict:
         if not boolList[rowToCheck]:
             # print("Unfeasible maximum service time.")
-            dist += np.power(mult[rowToCheck] - b[rowToCheck], 2)
+            dist += np.power(mult[rowToCheck, 0] - b[rowToCheck, 0], 2)
         rowToCheck += 1
 
     # 17
     for j in range(nCustomers):
         if not boolList[rowToCheck]:
             # print("Unfeasible TW lower bound.")
-            dist += np.power(mult[rowToCheck] - b[rowToCheck], 2)[0]
+            dist += np.power(mult[rowToCheck, 0] - b[rowToCheck, 0], 2)
         rowToCheck += 1
 
     # 18
     for j in range(nCustomers):
         if not boolList[rowToCheck]:
             # print("Unfeasible TW upper bound.")
-            dist += np.power(mult[rowToCheck] - b[rowToCheck], 2)[0]
+            dist += np.power(mult[rowToCheck, 0] - b[rowToCheck, 0], 2)
         rowToCheck += 1
 
     # 25.1
     for j in range(sumSi):
         if not boolList[rowToCheck]:
             # print("Unfeasible SOH pol1cy lower")
-            dist += np.power(mult[rowToCheck] - b[rowToCheck], 2)[0]
+            dist += np.power(mult[rowToCheck, 0] - b[rowToCheck, 0], 2)
         rowToCheck += 1
 
     # 25.2
     for j in range(sumSi):
         if not boolList[rowToCheck]:
             # print("Unfeasible SOH policy upper")
-            dist += np.power(mult[rowToCheck] - b[rowToCheck], 2)[0]
+            dist += np.power(mult[rowToCheck, 0] - b[rowToCheck, 0], 2)
         rowToCheck += 1
 
     # 26.1
-    for j in vehiclesDict:
+    for j in range(sumSi):
         if not boolList[rowToCheck]:
-            # print("Unfeasible SOH policy 2 lower")
-            dist += np.power(mult[rowToCheck] - b[rowToCheck], 2)[0]
+            # print("Unfeasible SOH pol1cy lower")
+            dist += np.power(mult[rowToCheck, 0] - b[rowToCheck, 0], 2)
         rowToCheck += 1
 
     # 26.2
-    for j in vehiclesDict:
+    for j in range(sumSi):
         if not boolList[rowToCheck]:
-            # print("Unfeasible SOH policy 2 upper")
-            dist += np.power(mult[rowToCheck] - b[rowToCheck], 2)[0]
+            # print("Unfeasible SOH pol1cy lower")
+            dist += np.power(mult[rowToCheck, 0] - b[rowToCheck, 0], 2)
         rowToCheck += 1
 
     return dist

@@ -1,6 +1,3 @@
-# %% md
-# Simple E-VRP implementation
-
 import importlib
 
 import sys
@@ -22,17 +19,18 @@ import res.GA_utilities_1
 
 t0 = time.time()
 
-networkSize = 10
+networkSize = 30
+path = '../data/GA_implementation/'
 
 # %% md
 # Import time and energy matrices and show a value example
 
-pathTM = "../data/simpleImplementation/timeMatrixRandom" + str(networkSize) + ".csv"
+pathTM = path + 'timeMatrix_' + str(networkSize) + 'nodes.csv'
 timeMatrix = pd.read_csv(pathTM).set_index("TT(MIN)")
 
 print(timeMatrix, "\n")
 
-pathEM = '../data/simpleImplementation/energyMatrixRandom' + str(networkSize) + '.csv'
+pathEM = path + 'energyMatrix_' + str(networkSize) + 'nodes.csv'
 energyMatrix = pd.read_csv(pathEM).set_index("ENERGY(AH)")
 
 print(energyMatrix, '\n')
@@ -47,8 +45,7 @@ print("Energy consumption from 1 to 2: ", e)
 # %% md
 # Import nodes information to differentiate among them
 
-path = '../data/simpleImplementation/timeMatrixRandom_info' + str(networkSize) + '_wide.csv'
-infoMatrix = pd.read_csv(path)
+infoMatrix = pd.read_csv(path + 'infoMatrix_' + str(networkSize) + 'nodes.csv')
 
 depotDF = infoMatrix[infoMatrix['TYPE'] == 'DEPOT'].dropna(axis=1)
 customerDF = infoMatrix[infoMatrix['TYPE'] == 'CUSTOMER'].dropna(axis=1)
@@ -98,7 +95,8 @@ nVehicles = 2
 
 vehiclesDict = {}
 
-customersID = [[2, 3, 4, 5], [6, 7, 9]]     # Customers each vehicle will visit
+customersID = [[1, 4, 5, 6, 7, 8, 9, 10, 11],
+               [12, 13, 14, 15, 16, 17]]  # Customers each vehicle will visit
 
 nCustomers = sum([len(x) for x in customersID])
 
@@ -111,19 +109,13 @@ for carId, customersToVisit in enumerate(customersID):
 
     # instantiate
     Qi = 80.0
+    x1 = 24.0*30.0
     sumDi = np.sum([networkDict[i].demand for i in nodeSequence])
     vehiclesDict[carId] = res.EV_utilities.ElectricVehicle(carId, customersToVisit, networkDict,
                                                            nodeSequence=nodeSequence, chargingSequence=chargingSequence,
                                                            timeMatrix=timeMatrix.iat, energyMatrix=energyMatrix.iat,
-                                                           x2=Qi, x3=sumDi)
+                                                           x1=x1, x2=Qi, x3=sumDi)
 
-for i in vehiclesDict.keys():
-    seq = []
-    for nodeId in vehiclesDict[i].nodeSequence:
-        nodeStr = str(nodeId)
-        seq.append(str(nodeStr + '  (' + networkDict[nodeId].getTypeAbbreviation() + ')'))
-    print('The nodes sequence for vehicle', i, 'is', seq)
-    print('The charging sequence for vehicle', i, 'is', vehiclesDict[i].chargingSequence, '\n')
 
 # %% Genetic algorithm
 
@@ -132,42 +124,9 @@ print("##### GA #####")
 # allowed charging operations
 numChargeOp = 2
 
-'''
-# an example individual
-ind1 = [2, 3, 4, 5, 3, 8, 10.0, -1, 4, 2, 720., 6, 7, 9, -1, 1, 10.0, -1, 1, 10., 740.]
-ind2 = [5, 4, 3, 2, -1, 8, 10.0, 3, 4, 2, 750., 9, 7, 6, -1, 1, 10.0, -1, 1, 10., 760.]
 
-# their fitness
-fit1 = res.GA_utilities_1.fitness(ind1, vehiclesDict, allowed_charging_operations=numChargeOp)
-fit2 = res.GA_utilities_1.fitness(ind2, vehiclesDict, allowed_charging_operations=numChargeOp)
-print("fitness 1: ", fit1)
-print("fitness 2: ", fit2)
 
-# %% A crossover operation
-print("ind 1: ", ind1)
-print("ind 2: ", ind2)
-
-print("*** crossover ***")
-ind1New, ind2New = res.GA_utilities_1.crossover(ind1, ind2, vehiclesDict, allowed_charging_operations=numChargeOp)
-print("ind 1 new: ", ind1New)
-print("ind 2 new: ", ind2New, "\n")
-
-# %% 4 mutation operations
-print("*** mutation ***")
-importlib.reload(res.GA_utilities_1)
-ind1Mut1 = res.GA_utilities_1.mutate(ind1, vehiclesDict)
-ind1Mut2 = res.GA_utilities_1.mutate(ind1, vehiclesDict, index=1)
-ind1Mut3 = res.GA_utilities_1.mutate(ind1, vehiclesDict, index=5)
-ind1Mut4 = res.GA_utilities_1.mutate(ind1, vehiclesDict, index=10)
-
-# %% A random individual
-importlib.reload(res.GA_utilities_1)
-randomIndividual = res.GA_utilities_1.createRandomIndividual(vehiclesDict)
-
-print("A random generated individual: ", randomIndividual, "\n")
-'''
-
-# %% Using DEAP
+# Using DEAP
 
 creator.create("FitnessMax", base.Fitness, weights=(1.0,))
 creator.create("Individual", list, fitness=creator.FitnessMax)
@@ -192,15 +151,11 @@ toolbox.register("distance", res.GA_utilities_1.distanceToFeasibleZone, vehicleD
 toolbox.register("feasible", res.GA_utilities_1.feasibleIndividual, vehicleDict=vehiclesDict)
 toolbox.decorate("evaluate", tools.DeltaPenality(toolbox.feasible, -500000.0, toolbox.distance))
 
-# %% Test feasibility. The following is a feasible solution
-ind = creator.Individual([3, 2, 5, 4, -1, 0, 10.0, -1, 0, 10.0, 623, 9, 6, 7, -1, 0, 10.0, -1, 0, 10.0, 506])
-
-print("Feasible?", toolbox.feasible(ind))
 
 # %% the algorithm
 # Population TODO create function
 n = 250
-generations = 100
+generations = 200
 
 pop = []
 for i in range(0, n):
@@ -291,8 +246,8 @@ while g < generations:
     print("  Avg %s" % mean)
     print("  Std %s" % std)
 
-    Ymax.append(max(fits))
-    Ymin.append(min(fits))
+    Ymax.append(-max(fits))
+    Ymin.append(-min(fits))
     Yavg.append(mean)
     Ystd.append(std)
 
@@ -309,7 +264,7 @@ while g < generations:
 # %%
 print("################  End of (successful) evolution  ################")
 
-#bestInd = tools.selBest(pop, 1)[0]
+# bestInd = tools.selBest(pop, 1)[0]
 bestInd = bestOfAll
 print("Best individual: ", bestInd)
 print("Fitness of best (stored): ", bestInd.fitness.values[0])
@@ -321,11 +276,12 @@ print("Fitness of worst (stored): ", worstInd.fitness.values[0])
 # %%
 fig1, ax1 = plt.subplots(1)
 n = generations
-plt.plot(X[0:n], Ymax[0:n], '*', alpha=1)
-plt.plot(X[0:n], Ymin[0:n], '*', alpha=.5)
+
+fromIndex = 80
+plt.plot(X[fromIndex:n], np.log(Ymax[fromIndex:n]), '*', alpha=1)
 plt.legend(('Best fitness', 'Worst fitness'))
 plt.xlabel('Generations', fontsize=14)
-plt.ylabel('Fitness', fontsize=14)
+plt.ylabel('log(fitness)', fontsize=14)
 plt.title('Best vs worst fitness per generation (constrained problem)', fontsize=14)
 # plt.xlim((-200, 2100))
 # plt.ylim((-130, -60))
@@ -362,8 +318,8 @@ tWindowsWidth = []
 for i, node in enumerate(nSeq):
     if networkDict[node].isCustomer():
         kCustomers.append(i)
-        tWindowsCenter.append((networkDict[node].timeWindowUp + networkDict[node].timeWindowDown)/2.0)
-        tWindowsWidth.append((networkDict[node].timeWindowUp - networkDict[node].timeWindowDown)/2.0)
+        tWindowsCenter.append((networkDict[node].timeWindowUp + networkDict[node].timeWindowDown) / 2.0)
+        tWindowsWidth.append((networkDict[node].timeWindowUp - networkDict[node].timeWindowDown) / 2.0)
 
 seqEta = np.zeros(vehiclesDict[0].si)
 xReachingLeaving = vehiclesDict[0].createReachingLeavingStates(seqEta)
@@ -383,8 +339,8 @@ plt.subplot(232)
 for k, node in enumerate(vehiclesDict[0].nodeSequence):
     plt.annotate(str(node), (k, xReachingLeaving[3, k]))
 
-plt.plot(80*np.ones_like(stateSequences[0][1, :]), '--k')
-plt.plot(40*np.ones_like(stateSequences[0][1, :]), '--k')
+plt.plot(80 * np.ones_like(stateSequences[0][1, :]), '--k')
+plt.plot(40 * np.ones_like(stateSequences[0][1, :]), '--k')
 plt.plot(xReachingLeaving[2, :], '-o', markersize=2, linewidth=1)
 plt.plot(xReachingLeaving[3, :], '-o', markersize=2, linewidth=1)
 plt.title('SOC at each stop')
@@ -411,7 +367,6 @@ for i, node in enumerate(nSeq):
         tWindowsCenter.append((networkDict[node].timeWindowUp + networkDict[node].timeWindowDown) / 2.0)
         tWindowsWidth.append((networkDict[node].timeWindowUp - networkDict[node].timeWindowDown) / 2.0)
 
-
 # TODO fix functions to obtain these
 seqEta = np.zeros(vehiclesDict[1].si)
 xReachingLeaving = vehiclesDict[1].createReachingLeavingStates(seqEta)
@@ -430,8 +385,8 @@ plt.ylabel('X1')
 plt.subplot(235)
 for k, node in enumerate(vehiclesDict[1].nodeSequence):
     plt.annotate(str(node), (k, xReachingLeaving[3, k]))
-plt.plot(80*np.ones_like(stateSequences[1][1, :]), '--k')
-plt.plot(40*np.ones_like(stateSequences[1][1, :]), '--k')
+plt.plot(80 * np.ones_like(stateSequences[1][1, :]), '--k')
+plt.plot(40 * np.ones_like(stateSequences[1][1, :]), '--k')
 plt.plot(xReachingLeaving[2, :], '-o', markersize=2, linewidth=1)
 plt.plot(xReachingLeaving[3, :], '-o', markersize=2, linewidth=1)
 plt.title('SOC at each stop')
@@ -453,4 +408,4 @@ plt.close()
 
 # %%
 tEnd = time.time()
-print("Total execution time:", (tEnd - t0)*1000.0, "ms")
+print("Total execution time:", (tEnd - t0) * 1000.0, "ms")

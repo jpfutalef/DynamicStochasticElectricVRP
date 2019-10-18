@@ -16,11 +16,11 @@ import res.GA_utilities_1
 
 t0 = time.time()
 
-networkSize = 10
+networkSize = 40
 
 # %% md
 # choose if do random matrices
-doAllWork = False
+doAllWork = True
 createTimeMatrix = True
 createEnergyMatrix = True
 createInfoFile = True
@@ -41,7 +41,8 @@ if createEnergyMatrix and doAllWork:
 if createInfoFile and doAllWork:
     depotNodes = [0]
     idNodes = range(1, networkSize)
-    customerNodes = random.sample(idNodes, random.randint(1, networkSize - 1))
+    #customerNodes = random.sample(idNodes, random.randint(1, networkSize - 1))
+    customerNodes = random.sample(idNodes, 37)
     csNodes = [x for x in idNodes if x not in customerNodes]
 
     if len(csNodes) > len(customerNodes):
@@ -69,7 +70,7 @@ if createInfoFile and doAllWork:
         info[i] = {'TYPE': ['CS'], 'POS_X': [np.random.uniform(-150.0, 150.0)],
                    'POS_Y': [np.random.uniform(-150.0, 150.0)]}
 
-    res.EV_utilities.saveInfoMatrix(info, name='timeMatrixRandom')
+    res.EV_utilities.saveInfoMatrix(info, name='infoMatrix')
 
     print('Number of depots:', len(depotNodes))
     print('Number of customers:', len(customerNodes))
