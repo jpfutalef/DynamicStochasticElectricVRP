@@ -19,7 +19,7 @@ import res.GA_utilities_1
 
 t0 = time.time()
 
-networkSize = 30
+networkSize = 23
 path = '../data/GA_implementation/'
 
 # %% md
@@ -92,33 +92,67 @@ for _, row in csDF.iterrows():
 t1 = time.time()
 
 nVehicles = 2
+chooseCustomersRandom = True
 
 vehiclesDict = {}
 
-customersID = [[1, 4, 5, 6, 7, 8, 9, 10, 11],
-               [12, 13, 14, 15, 16, 17]]  # Customers each vehicle will visit
+if chooseCustomersRandom:
+    # Choose the customers each vehicle will visit randomly
+    customersID = [evID for evID in customerDF['ID']]
+    nCustomers = len(networkDict['CUSTOMER_LIST'])
+    nCustomersPerCar = [int(nCustomers / nVehicles)] * nVehicles
 
-nCustomers = sum([len(x) for x in customersID])
+    if len(customersID) % nVehicles != 0:
+        nCustomersPerCar[-1] = int(len(customersID) / nVehicles) + 1
 
-for carId, customersToVisit in enumerate(customersID):
-    print('Car', carId, 'must visit customers with ID:', customersToVisit)
+    for i, j in enumerate(nCustomersPerCar):
+        print('Car', i, 'must visit', j, 'customer/s')
+    print('\n')
 
-    # IMPORTANT: the proposed nodeSequence
-    nodeSequence = [0] + customersToVisit + [0]
-    chargingSequence = [0] * len(nodeSequence)
+    for carId, nCustomersCar in enumerate(nCustomersPerCar):
+        carCustomersId = []
+        for j in range(0, nCustomersCar):
+            index = random.randint(0, len(customersID) - 1)
+            carCustomersId.append(customersID.pop(index))
+        customersToVisit = [customerId for customerId in carCustomersId]
+        print('Car', carId, 'must visit customers with ID:', customersToVisit)
 
-    # instantiate
-    Qi = 80.0
-    x1 = 24.0*30.0
-    sumDi = np.sum([networkDict[i].demand for i in nodeSequence])
-    vehiclesDict[carId] = res.EV_utilities.ElectricVehicle(carId, customersToVisit, networkDict,
-                                                           nodeSequence=nodeSequence, chargingSequence=chargingSequence,
-                                                           timeMatrix=timeMatrix.iat, energyMatrix=energyMatrix.iat,
-                                                           x1=x1, x2=Qi, x3=sumDi)
+        nodeSequence = [0] + customersToVisit + [0]
+        chargingSequence = [0] * len(nodeSequence)
 
+        # instantiate
+        Qi = 80.0
+        x1 = 24.0*30.0
+        sumDi = np.sum([networkDict[i].demand for i in nodeSequence])
+        vehiclesDict[carId] = res.EV_utilities.ElectricVehicle(carId, customersToVisit, networkDict,
+                                                               nodeSequence=nodeSequence, chargingSequence=chargingSequence,
+                                                               timeMatrix=timeMatrix.iat, energyMatrix=energyMatrix.iat,
+                                                               x1=x1, x2=Qi, x3=sumDi)
+else:
+    customersID = [[1, 4, 5, 6, 7, 8, 9, 10, 11],
+                   [12, 13, 14, 15, 16, 17]]  # Customers each vehicle will visit
+
+    nCustomers = sum([len(x) for x in customersID])
+
+    for carId, customersToVisit in enumerate(customersID):
+        print('Car', carId, 'must visit customers with ID:', customersToVisit)
+
+        # IMPORTANT: the proposed nodeSequence
+        nodeSequence = [0] + customersToVisit + [0]
+        chargingSequence = [0] * len(nodeSequence)
+
+        # instantiate
+        Qi = 80.0
+        sumDi = np.sum([networkDict[i].demand for i in nodeSequence])
+        vehiclesDict[carId] = res.EV_utilities.ElectricVehicle(carId, customersToVisit, networkDict,
+                                                               nodeSequence=nodeSequence,
+                                                               chargingSequence=chargingSequence,
+                                                               timeMatrix=timeMatrix.iat, energyMatrix=energyMatrix.iat,
+                                                               x2=Qi, x3=sumDi)
 
 # %% Genetic algorithm
 
+input("To start evolution press ENTER...")
 print("##### GA #####")
 
 # allowed charging operations
@@ -138,24 +172,30 @@ toolbox.register("individual", res.GA_utilities_1.createRandomIndividual, vehicl
                  allowed_charging_operations=numChargeOp)
 
 # Fitness, crossover, mutation and selection
-toolbox.register("evaluate", res.GA_utilities_1.fitness, vehiclesDict=vehiclesDict)
-toolbox.register("mate", res.GA_utilities_1.crossover, vehiclesDict=vehiclesDict)
-toolbox.register("mutate", res.GA_utilities_1.mutate, vehiclesDict=vehiclesDict)
+toolbox.register("evaluate", res.GA_utilities_1.fitness, vehiclesDict=vehiclesDict,
+                 allowed_charging_operations=numChargeOp)
+toolbox.register("mate", res.GA_utilities_1.crossover, vehiclesDict=vehiclesDict,
+                 allowed_charging_operations=numChargeOp)
+toolbox.register("mutate", res.GA_utilities_1.mutate, vehiclesDict=vehiclesDict,
+                 allowed_charging_operations=numChargeOp)
 toolbox.register("select", tools.selTournament, tournsize=3)
 
 # Useful to decode
-toolbox.register("decode", res.GA_utilities_1.decodeFunction, vehiclesDict=vehiclesDict)
+toolbox.register("decode", res.GA_utilities_1.decodeFunction, vehiclesDict=vehiclesDict,
+                 allowed_charging_operations=numChargeOp)
 
 # Constraint handling
-toolbox.register("distance", res.GA_utilities_1.distanceToFeasibleZone, vehicleDict=vehiclesDict)
-toolbox.register("feasible", res.GA_utilities_1.feasibleIndividual, vehicleDict=vehiclesDict)
+toolbox.register("distance", res.GA_utilities_1.distanceToFeasibleZone, vehicleDict=vehiclesDict,
+                 allowed_charging_operations=numChargeOp)
+toolbox.register("feasible", res.GA_utilities_1.feasibleIndividual, vehicleDict=vehiclesDict,
+                 allowed_charging_operations=numChargeOp)
 toolbox.decorate("evaluate", tools.DeltaPenality(toolbox.feasible, -500000.0, toolbox.distance))
 
 
 # %% the algorithm
 # Population TODO create function
 n = 250
-generations = 200
+generations = 600
 
 pop = []
 for i in range(0, n):
@@ -403,6 +443,7 @@ plt.ylabel('X3')
 
 plt.show()
 plt.close()
+
 
 # %% Using bokeh
 
