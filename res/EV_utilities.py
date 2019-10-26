@@ -318,42 +318,6 @@ def createEmptyInequalityMatrix(pathLengthsList):
     return
 
 
-def randomMatrixWithZeroDiagonal(size, lower=5.0, upper=15.0, save=False, name='symmetricMatrix',
-                                 indexName='Val'):  # TODO add doc
-    # FIXME at nodeGeneratorUtility, make it possible to return the DF
-    timeMatrix = np.random.uniform(lower, upper, size=(size, size))
-    np.fill_diagonal(timeMatrix, 0.0)
-    if save:
-        path = '../data/simpleImplementation/' + name + str(size) + '.csv'
-        print('Saving to ', path)
-        df = pd.DataFrame(data=timeMatrix)
-        df.index.name = indexName
-        df.to_csv(path)
-    return timeMatrix
-
-
-def saveInfoMatrix(nodeInfo: dict, name='timeMatrixRandom', path='../data/simpleImplementation/'):  # TODO add doc
-    df = pd.DataFrame()
-    for nodeID in nodeInfo.keys():
-        row = pd.DataFrame(nodeInfo[nodeID], index=[nodeID])
-        row.index.name = 'ID'
-        df = df.append(row)
-    print(df)
-    pathName = path + name + '.csv'
-    print('Saving to ', pathName)
-    df.to_csv(path)
-    return
-
-
-def makeInfoMatrix(nodeInfo: dict):  # TODO add doc
-    df = pd.DataFrame()
-    for nodeID in nodeInfo.keys():
-        row = pd.DataFrame(nodeInfo[nodeID], index=[nodeID])
-        row.index.name = 'ID'
-        df = df.append(row)
-    return df
-
-
 def createOptimizationVector(nodeSequences, chargeSequences, x0Sequence, vehiclesDict):
     # FIXME do not create state sequences here. Or maybe?
     # FIXME preallocate to arrays before to make more efficient
