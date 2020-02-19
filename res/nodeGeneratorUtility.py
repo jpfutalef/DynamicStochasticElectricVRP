@@ -6,6 +6,16 @@ import numpy as np
 import pandas as pd
 import random
 
+# %% User defined values
+
+depotAmount = 1
+customersAmount = 67
+chargeStationsAmount = 2
+
+createTimeMatrix = True
+createEnergyMatrix = True
+createInfoFile = True
+
 
 # %% Useful functions
 def randomMatrixWithZeroDiagonal(size, lower=5.0, upper=15.0, save=True, file_name='randomMatrix',
@@ -40,10 +50,6 @@ def makeInfoMatrix(nodesInfo: dict, save=True, file_name='infoMatrix', folder_pa
 
 # %% md User defined sizes for the whole network and amounts of customer, CSs and depots
 
-depotAmount = 1
-customersAmount = 25
-chargeStationsAmount = 2
-
 if len(sys.argv) > 1:
     depotAmount = int(sys.argv[1])
     customersAmount = int(sys.argv[2])
@@ -53,10 +59,6 @@ folderPath = '../data/GA_implementation/'
 
 networkSize = depotAmount + chargeStationsAmount + customersAmount
 
-createTimeMatrix = True
-createEnergyMatrix = True
-createInfoFile = True
-
 if createTimeMatrix:
     lowVal = 8.0
     upVal = 20.0
@@ -65,8 +67,8 @@ if createTimeMatrix:
                                               folder_path=folderPath, indexName='TT(MIN)')
 
 if createEnergyMatrix:
-    lowVal = .5
-    upVal = 5.
+    lowVal = 3.0
+    upVal = 8.5
     fileName = 'energyMatrix_' + str(networkSize) + 'nodes'
     energyMatrix = randomMatrixWithZeroDiagonal(networkSize, lower=lowVal, upper=upVal, file_name=fileName,
                                                 folder_path=folderPath, indexName='ENERGY(AH)')
@@ -76,7 +78,7 @@ if createInfoFile:
 
     depotNodes = [x for x in range(0, depotAmount)]
     customerNodes = [x for x in range(depotAmount, depotAmount + customersAmount)]
-    csNodes = [x for x in range(depotAmount+customersAmount, networkSize)]
+    csNodes = [x for x in range(depotAmount + customersAmount, networkSize)]
 
     info = {}
 
@@ -91,10 +93,10 @@ if createInfoFile:
         serviceTime_upper = 10.0
 
         # Time window bounds in minutes
-        timeWindow_lower_lower = 60.*10.
-        timeWindow_lower_upper = 60.*14.
+        timeWindow_lower_lower = 60. * 10.
+        timeWindow_lower_upper = 60. * 12
         timeWindow_upper_lower = 60.
-        timeWindow_upper_upper = 60.*3.
+        timeWindow_upper_upper = 60. * 3.
 
         # Create times
         serviceTime = random.uniform(serviceTime_lower, serviceTime_upper)

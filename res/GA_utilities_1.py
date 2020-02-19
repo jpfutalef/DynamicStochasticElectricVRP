@@ -90,7 +90,7 @@ def fitness(individual, vehiclesDict, allowed_charging_operations=2):
         v.chargingTimeCost = 0
 
     # Decode
-    decodeFunction(individual, vehiclesDict, allowed_charging_operations=allowed_charging_operations)
+    S, L, x0 = decodeFunction(individual, vehiclesDict, allowed_charging_operations=allowed_charging_operations)
 
     # Zero disturbance by the moment
     stateSequences = {}
@@ -101,12 +101,14 @@ def fitness(individual, vehiclesDict, allowed_charging_operations=2):
     # Cost function of sequences
     travelTimeCost = np.sum([vehiclesDict[x].travelTimeCost for x in vehiclesDict.keys()])
     chargingTimeCost = np.sum([vehiclesDict[x].chargingTimeCost for x in vehiclesDict.keys()])
-    totalCost = travelTimeCost + chargingTimeCost
+    energyConsumptionCost = np.sum([vehiclesDict[x].energyConsumptionCost for x in vehiclesDict.keys()])
+    totalCost = .8*chargingTimeCost + energyConsumptionCost + .2*travelTimeCost
 
     # reset
     for k, v in vehiclesDict.items():
         v.travelTimeCost = 0
         v.chargingTimeCost = 0
+        v.energyConsumptionCost = 0
 
     return -totalCost,
 

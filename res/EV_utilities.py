@@ -121,7 +121,7 @@ class ElectricVehicle:  # TODO add documentation
     timeMatrix: list
 
     def __init__(self, evId, customersToVisitId, networkInfo, nodeSequence=None, chargingSequence=None,
-                 maxPayload=2.0, batteryCapacity=40.0, maxTourDuration=300.0, alphaDown=40.0, alphaUp=80.0,
+                 maxPayload=2.0, batteryCapacity=200.0, maxTourDuration=300.0, alphaDown=40.0, alphaUp=80.0,
                  betaDown=45.0, betaUp=55.0, x1=0.0, x2=40.0, x3=2.0, timeMatrix=None, energyMatrix=None):
         """
         EV model
@@ -177,6 +177,7 @@ class ElectricVehicle:  # TODO add documentation
 
         # Internal costs
         self.travelTimeCost = 0.0
+        self.energyConsumptionCost = 0.0
         self.chargingTimeCost = 0.0
         self.chargingCost = 0.0
 
@@ -229,6 +230,7 @@ class ElectricVehicle:  # TODO add documentation
             else:
                 # TODO incorporate the following to functions
                 self.travelTimeCost += self.timeMatrix[self.nodeSequence[k], self.nodeSequence[k + 1]]
+                self.energyConsumptionCost += self.energyMatrix[self.nodeSequence[k], self.nodeSequence[k + 1]]
                 if self.networkInfo[self.nodeSequence[k]].isChargeStation():
                     self.chargingTimeCost += self.networkInfo[self.nodeSequence[k]].spentTime(self.x3,
                                                                                               self.chargingSequence[k])
@@ -337,6 +339,7 @@ def createOptimizationVector(nodeSequences, chargeSequences, x0Sequence, vehicle
     for vehicleID, v in vehiclesDict.items():
         v.travelTimeCost = 0
         v.chargingTimeCost = 0
+        v.energyConsumptionCost = 0
 
         v.updateSequences(nodeSequences[vehicleID], chargeSequences[vehicleID], x0Sequence[vehicleID])
         seqEta = np.zeros(v.si)
@@ -344,8 +347,10 @@ def createOptimizationVector(nodeSequences, chargeSequences, x0Sequence, vehicle
         X1 += list(X[0, :])
         X2 += list(X[1, :])
         X3 += list(X[2, :])
+
         v.travelTimeCost = 0
         v.chargingTimeCost = 0
+        v.energyConsumptionCost = 0
 
     # TODO does this affect integer nature of sequences?
     V = np.vstack(S + L + X1 + X2 + X3)

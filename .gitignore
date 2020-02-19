@@ -194,3 +194,11 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# data folder
+data/
+
+# .idea folder
+.idea/
+
+# pictures folder
+pictures/
