@@ -1,0 +1,8 @@
+[out:xml];
+/*relation(191190)*/
+area[name="Macul"][admin_level=8]->.macul;
+(
+  node(area.macul);
+  way(area.macul);
+);
+out meta;
