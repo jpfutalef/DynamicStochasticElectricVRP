@@ -1,0 +1,12 @@
+<additional>
+  <routeProbe id="cali_edge1_probe" edge="774868639" freq="5" file="output-routeprobe.xml"/>
+
+  <calibrator id="calibtest_edge" edge="774868639" freq="2" pos="0" routeProbe="cali_edge1_probe">
+    <route id="cali1_fallback" edges="774868639"/>
+    <flow begin="0"    end="100" route="cali1_fallback" vehsPerHour="3600" speed="10.0" departPos="free" departSpeed="10.0"/>
+    <flow begin="200" end="300"  route="cali1_fallback" vehsPerHour="3600" speed="30.0" departPos="free" departSpeed="30.0"/>
+    <flow begin="300" end="400"  route="cali1_fallback" vehsPerHour="3600" speed="20.0" departPos="free" departSpeed="20.0"/>
+  </calibrator>
+
+  <edgeData id="edge_data_calib" file= "output-meas-edges.xml" freq="2" excludeEmpty="True"/>
+</additional>
