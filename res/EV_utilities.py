@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import networkx as nx
 
 """
 Classes
@@ -51,7 +52,8 @@ class ChargeStationNode(NetworkNode):
         self.timePoints = timePoints
         self.socPoints = socPoints
 
-    def calculateTimeSpent(self, initSOC, endSOC):  # FIXME actually, verify it is working properly
+    def calculateTimeSpent(self, initSOC, endSOC):
+        # FIXME actually, verify it is working properly
         # TODO verify complexity
         # TODO add documentation
         doInit = True
