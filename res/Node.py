@@ -12,7 +12,7 @@ class NetworkNode:
     A general network node which has an associated Id
     """
 
-    def __init__(self, node_id, spent_time=0, demand=0):
+    def __init__(self, node_id, spent_time=0, demand=0, pos=(0, 0)):
         """
         Simplest constructor with Id and a zero spent time
         :param node_id: an int number with an associated Id
@@ -20,6 +20,7 @@ class NetworkNode:
         self.id = node_id
         self.spent_time = spent_time
         self.demand = demand
+        self.pos = pos
 
     def spentTime(self, p, q):
         """
@@ -47,8 +48,8 @@ class NetworkNode:
 
 
 class DepotNode(NetworkNode):  # TODO add documentation
-    def __init__(self, node_id):
-        super().__init__(node_id)
+    def __init__(self, node_id, *args, **kwargs):
+        super().__init__(node_id, *args, **kwargs)
 
     def isDepot(self):  # TODO add doc
         return True
@@ -58,8 +59,8 @@ class DepotNode(NetworkNode):  # TODO add documentation
 
 
 class CustomerNode(NetworkNode):  # TODO add documentation
-    def __init__(self, node_id, spent_time, demand, time_window_up=None, time_window_down=None):
-        super().__init__(node_id, spent_time=spent_time, demand=demand)
+    def __init__(self, node_id, spent_time, demand, time_window_up=None, time_window_down=None, *args, **kwargs):
+        super().__init__(node_id, spent_time=spent_time, demand=demand, *args, **kwargs)
         self.timeWindowDown = time_window_down
         self.timeWindowUp = time_window_up
 
@@ -76,8 +77,9 @@ class CustomerNode(NetworkNode):  # TODO add documentation
 class ChargeStationNode(NetworkNode):
     # TODO add documentation
     # TODO unit test
-    def __init__(self, node_id, maximum_parallel_operations=4, time_points=(0.0, 120.0), soc_points=(0.0, 100.0)):
-        super().__init__(node_id)
+    def __init__(self, node_id, maximum_parallel_operations=4, time_points=(0.0, 120.0),
+                 soc_points=(0.0, 100.0), *args, **kwargs):
+        super().__init__(node_id, *args, **kwargs)
         self.maximumParallelOperations = maximum_parallel_operations
         self.timePoints = time_points
         self.socPoints = soc_points
