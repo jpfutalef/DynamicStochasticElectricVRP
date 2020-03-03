@@ -14,10 +14,8 @@ class ElectricVehicle:  # TODO add documentation
 
     def __init__(self, ev_id, node_sequence, charging_sequence, depart_time, network,
                  max_payload=2.0, battery_capacity=200.0, max_tour_duration=300.0, alpha_down=40.0, alpha_up=80.0,
-                 x2_0=40.0, x3_0=2.0, attrib=None):
+                 x2_0=40.0, attrib=None):
         self.id = ev_id
-        self.node_sequence = node_sequence
-        self.charging_sequence = charging_sequence
         self.network = network
 
         self.alpha_up = alpha_up
@@ -27,9 +25,7 @@ class ElectricVehicle:  # TODO add documentation
         self.max_payload = max_payload
         self.attrib = attrib
 
-        self.x1_0 = depart_time
-        self.x2_0 = x2_0
-        self.x3_0 = x3_0
+        self.updateSequences(node_sequence, charging_sequence, depart_time, x2_0)
 
     def F1(self, x_prev: np.ndarray, node_from, node_to, soc_increment):
         # TODO hacer if node is cs?
@@ -52,30 +48,29 @@ class ElectricVehicle:  # TODO add documentation
         return x3_current, x3_current
 
     def transition_function(self, x_prev, node_from, node_to, soc_increment):
-        return np.vstack([self.F1(x_prev, node_from, node_to, soc_increment),
-                          self.F2(x_prev, node_from, node_to, soc_increment),
-                          self.F3(x_prev, node_from, node_to, soc_increment)])
+        return np.array([self.F1(x_prev, node_from, node_to, soc_increment),
+                         self.F2(x_prev, node_from, node_to, soc_increment),
+                         self.F3(x_prev, node_from, node_to, soc_increment)])
 
     def iterateState(self):
-        x_prev = np.vstack([self.x1_0, self.x2_0, self.x3_0])
+        x_prev = np.array([self.x1_0, self.x2_0, self.x3_0])
         x_leaving = np.zeros((3, len(self.node_sequence)))
         x_reaching = np.zeros((3, len(self.node_sequence)))
-        x_leaving[:, 0] = x_prev
-        x_reaching[:, 0] = x_prev
 
         node_from = 0
         charging_amount_from = 0
 
         for k, (node_to, charging_amount_to) in enumerate(zip(self.node_sequence, self.charging_sequence)):
             if k == 0:
-                node_from = node_to
-                charging_amount_from = charging_amount_to
+                x = np.concatenate((np.vstack(x_prev), np.vstack(x_prev)), axis=1)
             else:
                 x = self.transition_function(x_prev, node_from, node_to, charging_amount_from)
-                x_prev = x[:, 0]
-                x_reaching[:, k] = x[:, 0]
-                x_leaving[:, k] = x[:, 1]
-
+                x_leaving[:, k - 1] = x[:, 0]
+            x_reaching[:, k] = x[:, 1]
+            x_prev = x[:, 1]
+            node_from = node_to
+            charging_amount_from = charging_amount_to
+        x_leaving[:, -1] = x_reaching[:, -1]
         return x_reaching, x_leaving
 
     def indexInSequence(self, nodeId):
@@ -90,5 +85,17 @@ class ElectricVehicle:  # TODO add documentation
     def createReachingLeavingStates(self, sequenceEta):  # TODO docu
         return
 
-    def updateSequences(self, node_sequence, charging_sequence, depart_time):
+    def updateSequences(self, node_sequence, charging_sequence, depart_time, x2_0):
+        self.node_sequence = node_sequence
+        self.charging_sequence = charging_sequence
+        self.x1_0 = depart_time
+        self.x2_0 = x2_0
+        self.x3_0 = np.sum([self.network.nodes[i]['attr'].demand for i in node_sequence])
         return
+
+    def get_travel_times(self):
+        return [self.network.travel_time(r_0, l_1) for r_0, l_1 in zip(self.node_sequence[:-1], self.node_sequence[1:])]
+
+    def get_spent_times(self):
+        r, l = self.iterateState()
+        return (l-r)[0,:]
