@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import random
 import time
-import matplotlib.pyplot as plt
+import copy
 
 # GA library
 from deap import base
@@ -16,13 +16,7 @@ from deap import creator
 from deap import tools
 
 # Visualization tools
-from bokeh.plotting import figure, output_notebook, show
-from bokeh.layouts import gridplot, column
-from bokeh.layouts import row as layout_row
-from bokeh.models.annotations import Arrow, Label
-from bokeh.models.arrow_heads import OpenHead, NormalHead, VeeHead
-from bokeh.models import ColumnDataSource, Div, Whisker, Span, Range1d
-from bokeh.io import export_svgs, export_png
+import matplotlib.pyplot as plt
 
 # To reload modules
 import importlib
@@ -30,11 +24,6 @@ import importlib
 # XML tools
 import xml.etree.ElementTree as ET
 
-# Copy tools
-import copy
-
-# Display useful loading of bokeh library and start timer
-output_notebook()
 t0 = time.time()
 
 sys.path.append('..')
@@ -101,20 +90,22 @@ print('There are', networkSize, 'nodes in the network.')
 # %%
 # [START Edge data]
 id_nodes = [x.id for x in nodes]
-timeMatrix = np.zeros((networkSize, networkSize))
-energyMatrix = np.zeros((networkSize, networkSize))
+travel_time = {}
+energy_consumption = {}
 coordinates = {}
 
 for i, nodeFrom in enumerate(_edges):
+    tt_dict = travel_time[i] = {}
+    ec_dict = energy_consumption[i] = {}
     for j, nodeTo in enumerate(nodeFrom):
-        timeMatrix[i][j] = float(nodeTo.get('travel_time'))
-        energyMatrix[i][j] = float(nodeTo.get('energy_consumption'))
+        tt_dict[j] = float(nodeTo.get('travel_time'))
+        ec_dict[j] = float(nodeTo.get('energy_consumption'))
     coordinates[i] = nodes[i].pos
 
 # Show stored values
 print('NODES IDSs:\n', id_nodes)
-print('RESULTING TIME MATRIX:\n', timeMatrix)
-print('RESULTING ENERGY CONSUMPTION MATRIX:\n', energyMatrix)
+print('RESULTING TIME MATRIX:\n', travel_time)
+print('RESULTING ENERGY CONSUMPTION MATRIX:\n', energy_consumption)
 print('RESULTING NODES COORDINATES:\n', coordinates)
 # [END Edge data]
 
@@ -122,15 +113,17 @@ print('RESULTING NODES COORDINATES:\n', coordinates)
 # 5. Instance Network
 from res.Network import Network
 
-net = Network(nodes, timeMatrix, energyMatrix)
-#net.draw()
+net = Network()
+net.set_nodes(nodes)
+net.set_travel_time(travel_time)
+net.set_energy_consumption(energy_consumption)
+net.draw()
 
 # Usage example
 f = 5
 t = 6
 key = 'energy_consumption'
 print(key, net[f][t][key])
-
 # %%
 # 6. EVs attributes
 numVehicles = int(_fleet.find('fleet_size').text)
@@ -152,7 +145,7 @@ print('\n')
 
 # %%
 # 8. Instantiate EVS with initial sequences and attributes
-from res.EV import ElectricVehicle
+from res.ElectricVehicle import ElectricVehicle
 
 vehicles_dict = {}
 ids_customer = copy.deepcopy(net.ids_customer)
@@ -170,16 +163,16 @@ for id_car, num_customers in enumerate(customers_per_car):
     departure_time = 24.0 * 30.0
 
     # Other variables
-    attrib['x2_0'] = 80
+    soc_init = 80
 
     # instantiate
-    vehicles_dict[id_car] = ev = ElectricVehicle(id_car, node_sequence, charging_sequence, departure_time, net, **attrib)
+    ev = vehicles_dict[id_car] = ElectricVehicle(id_car, net, **attrib)
+    ev.set_sequences(node_sequence, charging_sequence, departure_time, soc_init)
     r, l = ev.iterateState()
     print('node seq:', ev.node_sequence)
-    print('spent times:', (l-r)[0,:])
+    print('spent times:', (l - r)[0, :])
     print('spent times:', ev.get_spent_times())
-    print('travel times', [r_next-l_prev for r_next, l_prev in zip(r[0,1:], l[0,0:-1])] )
-    print('travel times',  ev.get_travel_times())
+    print('travel times', [r_next - l_prev for r_next, l_prev in zip(r[0, 1:], l[0, 0:-1])])
+    print('travel times', ev.get_travel_times())
 # %%
-
 

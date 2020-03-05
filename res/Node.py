@@ -7,7 +7,7 @@ Classes
 """
 
 
-class NetworkNode(dict):
+class NetworkNode:
     """
     A general network node which has an associated Id
     """
@@ -17,7 +17,6 @@ class NetworkNode(dict):
         Simplest constructor with Id and a zero spent time
         :param node_id: an int number with an associated Id
         """
-        super().__init__(*args, **kwargs)
         self.id = node_id
         self.spent_time = spent_time
         self.demand = demand
@@ -74,7 +73,6 @@ class CustomerNode(NetworkNode):  # TODO add documentation
 
     def isCustomer(self):
         return True
-
 
 
 class ChargeStationNode(NetworkNode):

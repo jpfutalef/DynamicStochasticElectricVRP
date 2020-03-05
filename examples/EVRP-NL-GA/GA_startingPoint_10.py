@@ -138,8 +138,8 @@ ind1 = [2, 3, 4, 5, 3, 8, 10.0, -1, 4, 2, 720., 6, 7, 9, -1, 1, 10.0, -1, 1, 10.
 ind2 = [5, 4, 3, 2, -1, 8, 10.0, 3, 4, 2, 750., 9, 7, 6, -1, 1, 10.0, -1, 1, 10., 760.]
 
 # their fitness
-fit1 = res.GA_utilities_1.fitness(ind1, vehiclesDict, allowed_charging_operations=numChargeOp)
-fit2 = res.GA_utilities_1.fitness(ind2, vehiclesDict, allowed_charging_operations=numChargeOp)
+fit1 = res.GA_utilities_1.fitness(ind1, vehicles, allowed_charging_operations=numChargeOp)
+fit2 = res.GA_utilities_1.fitness(ind2, vehicles, allowed_charging_operations=numChargeOp)
 print("fitness 1: ", fit1)
 print("fitness 2: ", fit2)
 
@@ -148,21 +148,21 @@ print("ind 1: ", ind1)
 print("ind 2: ", ind2)
 
 print("*** crossover ***")
-ind1New, ind2New = res.GA_utilities_1.crossover(ind1, ind2, vehiclesDict, allowed_charging_operations=numChargeOp)
+ind1New, ind2New = res.GA_utilities_1.crossover(ind1, ind2, vehicles, allowed_charging_operations=numChargeOp)
 print("ind 1 new: ", ind1New)
 print("ind 2 new: ", ind2New, "\n")
 
 # %% 4 mutation operations
 print("*** mutation ***")
 importlib.reload(res.GA_utilities_1)
-ind1Mut1 = res.GA_utilities_1.mutate(ind1, vehiclesDict)
-ind1Mut2 = res.GA_utilities_1.mutate(ind1, vehiclesDict, index=1)
-ind1Mut3 = res.GA_utilities_1.mutate(ind1, vehiclesDict, index=5)
-ind1Mut4 = res.GA_utilities_1.mutate(ind1, vehiclesDict, index=10)
+ind1Mut1 = res.GA_utilities_1.mutate(ind1, vehicles)
+ind1Mut2 = res.GA_utilities_1.mutate(ind1, vehicles, index=1)
+ind1Mut3 = res.GA_utilities_1.mutate(ind1, vehicles, index=5)
+ind1Mut4 = res.GA_utilities_1.mutate(ind1, vehicles, index=10)
 
 # %% A random individual
 importlib.reload(res.GA_utilities_1)
-randomIndividual = res.GA_utilities_1.createRandomIndividual(vehiclesDict)
+randomIndividual = res.GA_utilities_1.createRandomIndividual(vehicles)
 
 print("A random generated individual: ", randomIndividual, "\n")
 '''

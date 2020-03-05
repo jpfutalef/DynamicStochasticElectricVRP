@@ -6,25 +6,14 @@ import matplotlib.pyplot as plt
 
 
 class Network(nx.DiGraph):
-    node_attr_dict_factory = NetworkNode
 
-    def __init__(self, nodes, travel_time=None, energy_consumption=None, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.coordinates = {}
         self.ids_depot = []
         self.ids_customer = []
         self.ids_charge_stations = []
-
-        self.set_nodes(nodes)
-
-        self.node_attr_dict_factory = self.node_attr_dict_factory
-
-        if travel_time is not None:
-            self.travel_time_worker(travel_time)
-
-        if energy_consumption is not None:
-            self.energy_consumption_worker(energy_consumption)
 
     def set_nodes(self, nodes):
         for node in nodes:
@@ -38,23 +27,23 @@ class Network(nx.DiGraph):
             else:
                 self.ids_charge_stations.append(node.id)
 
-    def travel_time_worker(self, travel_time: np.ndarray):
-        shape = travel_time.shape
-        for node0 in range(shape[0]):
-            for node1 in range(shape[1]):
-                self.add_edge(node0, node1, travel_time=travel_time[node0][node1])
+    def set_travel_time(self, travel_time: dict):
+        for node_from, node_to_dict in travel_time.items():
+            for node_to, tt in node_to_dict.items():
+                self.add_edge(node_from, node_to, travel_time=tt)
 
-    def energy_consumption_worker(self, energy_consumption):
-        shape = energy_consumption.shape
-        for node0 in range(shape[0]):
-            for node1 in range(shape[1]):
-                self.add_edge(node0, node1, energy_consumption=energy_consumption[node0][node1])
+    def set_energy_consumption(self, energy_consumption: dict):
+        for node_from, node_to_dict in energy_consumption.items():
+            for node_to, ec in node_to_dict.items():
+                self.add_edge(node_from, node_to, energy_consumption=ec)
 
-    def travel_time(self, node_from, node_to, time_of_day=0.0):
-        return self[node_from][node_to]['travel_time']
+    def t(self, node_from, node_to, time_of_day=0.0):
+        tt = self[node_from][node_to]['travel_time']
+        return tt
 
-    def energy_consumption(self, node_from, node_to, payload, time_of_day=0.0):
-        return self[node_from][node_to]['energy_consumption']
+    def e(self, node_from, node_to, payload, time_of_day=0.0):
+        ec = self[node_from][node_to]['energy_consumption']
+        return ec
 
     def spent_time(self, node, p=0, q=0):
         return self.nodes[node]['attr'].spentTime(p, q)
