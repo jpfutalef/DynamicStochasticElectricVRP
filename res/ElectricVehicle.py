@@ -5,6 +5,21 @@ from res.Network import Network
 from res.Node import CustomerNode, ChargeStationNode, DepotNode
 
 
+def cost_arc(item):
+    cost = 0
+    for node_from, d in item.items():
+        for node_to, c in d.items():
+            cost += c
+    return cost
+
+
+def cost_node(item):
+    cost = 0
+    for node, c in item:
+        cost += c
+    return cost
+
+
 class ElectricVehicle:
     # TODO add documentation
     ev_id: int
@@ -33,7 +48,7 @@ class ElectricVehicle:
         # Variables obtained by iterating state
         self.travel_time = {}
         self.energy_consumption = {}
-        self.spent_time = {}
+        self.spent_time = []
         self.x_reaching = []
         self.x_leaving = []
         self.iteration_done = False
@@ -47,11 +62,11 @@ class ElectricVehicle:
         self.charging_sequence = charging_sequence
         self.x1_0 = depart_time
         self.x2_0 = x2_0
-        self.x3_0 = np.sum([self.network.nodes[i]['attr'].demand for i in node_sequence])
+        self.x3_0 = np.sum([self.network.nodes[i]['attr'].demand for i in node_sequence if self.network.isCustomer(i)])
 
         self.travel_time = {}
         self.energy_consumption = {}
-        self.spent_time = {}
+        self.spent_time = []
         self.x_reaching = []
         self.x_leaving = []
         self.iteration_done = False
@@ -71,7 +86,7 @@ class ElectricVehicle:
         from_dict = self.travel_time[node_from] = {}
         from_dict[node_to] = travel_time
 
-        self.spent_time[node_from] = spent_time
+        self.spent_time.append(spent_time)
 
         # Return
         return x1_leaving_previous, x1_reaching_current
@@ -139,16 +154,24 @@ class ElectricVehicle:
         return self.spent_time
 
     def cost_travel_time(self):
-        tt = self.travel_time
+        return cost_arc(self.travel_time)
 
     def cost_charging_time(self):
-        st = self.spent_time
+        cost = 0
+        for k, node in enumerate(self.node_sequence):
+            if self.network.isChargeStation(node):
+                cost += self.spent_time[k]
+        return cost
 
     def cost_energy_consumption(self):
-        ec = self.energy_consumption
+        return cost_arc(self.energy_consumption)
 
     def cost_charging_cost(self):
-        ec = self.energy_consumption
+        cost = 0
+        for k, node in enumerate(self.node_sequence):
+            if self.network.isChargeStation(node):
+                cost += self.charging_sequence[k]
+        return cost
 
     def reset(self):
         self.set_sequences(self.node_sequence, self.charging_sequence, self.x1_0, self.x2_0)
@@ -160,7 +183,6 @@ def createOptimizationVector(vehicles):
     :param vehicles: dict with already-iterated vehicles by id
     :return: the optimization vector
     """
-    # FIXME preallocate to arrays before to make more efficient
 
     S = []
     L = []
@@ -182,7 +204,7 @@ def createOptimizationVector(vehicles):
     return V
 
 
-def feasible(x, vehicles):
+def feasible(x: np.ndarray, vehicles: dict):
     """
     Checks feasibility of the optimization vector x. It's been assumed all EVs have already ran the
     ev.iterate() method.
@@ -191,116 +213,107 @@ def feasible(x, vehicles):
     :return: Tuple (feasibility, distance) where feasibility=True and distance=0 if x is feasible; otherwise,
     feasibility=False and distance>0 if x isn't feasible. Distance is the squared accumulated distance.
     """
+    vehicle: ElectricVehicle
+
+    # Variables to return
     is_feasible = True
-    distance = 0
+    dist = 0
 
-    # Amount of vehicles and customers, and the network information dictionary
-    nVehicles = len(vehicles)
-    nCustomers = np.sum([x.ni for _, x in vehicles.items()])
+    # Variables from the optimization vector and vehicles
+    n_vehicles = len(vehicles)
+    n_customers = np.sum([vehicle.ni for _, vehicle in vehicles.items()])
     network = vehicles[0].network
+    sum_si = np.sum(len(vehicle.node_sequence) for _, vehicle in vehicles.items())
+    lenght_op_vector = len(x)
 
-    networkSize = len(network.ids_customer) + len(network.ids_depot) + len(network.ids_charge_stations)
+    i_S, i_L, i_x1, i_x2, i_x3, i_theta = 0, sum_si, 2 * sum_si, 3 * sum_si, 4 * sum_si, 5 * sum_si
 
-    # Amount of rows each constraint will occupy at the A matrix
-    sumSi = np.sum([len(vehicle.node_sequence) for _, vehicle in vehicles.items()])
+    # Amount of rows
+    rows = 0
 
-    # The following variable tracks the amount of rows per constraint
-    constraintRows = 0
+    rows += n_vehicles   # 2.16
+    rows += n_customers  # 2.17
+    rows += n_customers  # 2.18
+    rows += sum_si  # 2.25-1
+    rows += sum_si  # 2.25-2
+    rows += sum_si  # 2.26-1
+    rows += sum_si  # 2.26-2
 
-    # 16
-    constraintRows += nVehicles
-
-    # 17
-    constraintRows += nCustomers
-
-    # 18
-    constraintRows += nCustomers
-
-    # 25.1
-    constraintRows += sumSi
-
-    # 25.2
-    constraintRows += sumSi
-
-    # 26.1
-    constraintRows += sumSi
-
-    # 26.2
-    constraintRows += sumSi
-
-    # K0
-    lenK0 = 2 * sumSi - 2 * nVehicles
-
-    # Create linear inequalities matrix Ax <= b
-    sizeOfOpVector = 5 * sumSi
-    A = np.zeros((constraintRows, sizeOfOpVector))
-    b = np.zeros((constraintRows, 1))
+    # Matrices
+    A = np.zeros((rows, lenght_op_vector))
+    b = np.zeros((rows, 1))
 
     # Start filling
-    rowToChange = 0
+    row = 0
 
-    # 16
-    i1 = 2 * sumSi
-    i2 = 2 * sumSi
+    # 2.16
+    si = 0
     for j, vehicle in vehicles.items():
-        vehicle: ElectricVehicle
-        i2 += len(vehicle.node_sequence) - 1
+        A[row, i_x1+si] = -1.0
+        si += len(vehicle.node_sequence)
+        A[row, i_x1+si-1] = 1.0
+        b[row] = vehicle.max_tour_duration
+        row += 1
 
-        A[rowToChange, i1] = -1.0
-        A[rowToChange, i2] = 1.0
-        b[rowToChange] = vehicle.max_tour_duration
-        rowToChange += 1
-        # print('16:', rowToChange)
-        i1 += len(vehicle.node_sequence)
-        i2 += 1
+    # 2.17 & 2.18
+    si = 0
+    for _, vehicle in vehicles.items():
+        for k, Sk in enumerate(vehicle.node_sequence):
+            if network.isCustomer(Sk):
+                A[row, i_x1+si+k] = -1.0
+                b[row] = -network.nodes[Sk]['attr'].timeWindowDown
+                row += 1
 
-    # 17 & 18
-    i1 = 2 * sumSi
-    for j, vehicle in vehicles.items():
-        vehicle: ElectricVehicle
-        for nodeID in vehicle.node_sequence:
-            if network.isCustomer(nodeID):
-                A[rowToChange, i1] = -1.0
-                b[rowToChange] = -networkDict[nodeID].timeWindowDown
-                rowToChange += 1
-                # print('17:', rowToChange)
+                A[row, i_x1+si+k] = 1.0
+                b[row] = network.nodes[Sk]['attr'].timeWindowUp - network.spent_time(Sk)
+                row += 1
+        si += len(vehicle.node_sequence)
 
-                A[rowToChange, i1] = 1.0
-                b[rowToChange] = networkDict[nodeID].timeWindowUp - networkDict[nodeID].serviceTime
-                rowToChange += 1
-                # print('18:', rowToChange)
-            i1 += 1
+    # 2.25-1 & 2.25-2
+    si = 0
+    for _, vehicle in vehicles.items():
+        for k, Sk in enumerate(vehicle.node_sequence):
+            A[row, i_x2+si+k] = -1.0
+            b[row] = -vehicle.alpha_down
+            row += 1
 
-    # 25.1 & 25.2
-    i1 = 3 * sumSi
-    for i, j in enumerate(vehiclesDict):
-        for k in range(len(nodeSequences[j])):
-            A[rowToChange, i1] = -1.0
-            b[rowToChange] = -vehiclesDict[j].alphaDown
-            rowToChange += 1
-            # print('25.1:', rowToChange)
+            A[row, i_x2+si+k] = 1.0
+            b[row] = vehicle.alpha_up
+            row += 1
+        si += len(vehicle.node_sequence)
 
-            A[rowToChange, i1] = 1.0
-            b[rowToChange] = vehiclesDict[j].alphaUp
-            rowToChange += 1
-            # print('25.2:', rowToChange)
-            i1 += 1
+    # 2.26-1 & 2.26-2
+    si = 0
+    for _, vehicle in vehicles.items():
+        for k, Sk in enumerate(vehicle.node_sequence):
+            A[row, i_x2 + si + k] = -1.0
+            b[row] = -vehicle.alpha_down + vehicle.charging_sequence[k]
+            row += 1
 
-    # 26.1 & 26.2
-    i1 = 3 * sumSi
-    for i, j in enumerate(vehiclesDict):
-        for k in range(len(nodeSequences[j])):
-            A[rowToChange, i1] = -1.0
-            b[rowToChange] = -vehiclesDict[j].alphaDown + vehiclesDict[j].chargingSequence[k]
-            rowToChange += 1
-            # print('25.1:', rowToChange)
+            A[row, i_x2 + si + k] = 1.0
+            b[row] = vehicle.alpha_up - vehicle.charging_sequence[k]
+            row += 1
+        si += len(vehicle.node_sequence)
 
-            A[rowToChange, i1] = 1.0
-            b[rowToChange] = vehiclesDict[j].alphaUp - vehiclesDict[j].chargingSequence[k]
-            rowToChange += 1
-            # print('25.2:', rowToChange)
-            i1 += 1
+    # Check
+    mult = np.matmul(A, x)
+    boolList = mult <= b
+    for result in boolList:
+        if not result:
+            dist = distance(boolList, mult, b, vehicles)
+            is_feasible = False
+            break
 
-    return is_feasible, distance
+    return is_feasible, dist
+
+
+def distance(results, mult, b, vehicles):
+    def dist_fun(x, y):
+        # return np.abs(x - y)
+        # return np.sqrt(np.power(x - y, 2))
+        # return np.abs(np.power(x - y, 2))
+        return np.power(x - y, 2)
+
+    return np.sum([dist_fun(mult[i, 0], b[i, 0]) for i, result in enumerate(results) if result])
 
 

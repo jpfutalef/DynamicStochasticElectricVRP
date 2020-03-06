@@ -24,12 +24,17 @@ import importlib
 # XML tools
 import xml.etree.ElementTree as ET
 
+# EV and network libraries
+import res.GA_prev_test
+from res.ElectricVehicle import ElectricVehicle
+from res.Node import DepotNode, CustomerNode, ChargeStationNode
+from res.Network import Network
+
 t0 = time.time()
 
 sys.path.append('..')
 
 # %%
-
 # 1. Specify instance name
 instanceName = 'd1c7cs2_ev2'
 
@@ -45,10 +50,7 @@ _network = tree.find('network')
 _fleet = tree.find('fleet')
 
 # %%
-
 # 4. Store data
-from res.Node import DepotNode, CustomerNode, ChargeStationNode
-
 # [START Node data]
 _nodes = _network.find('nodes')
 _edges = _network.find('edges')
@@ -111,13 +113,11 @@ print('RESULTING NODES COORDINATES:\n', coordinates)
 
 # %%
 # 5. Instance Network
-from res.Network import Network
-
 net = Network()
 net.set_nodes(nodes)
 net.set_travel_time(travel_time)
 net.set_energy_consumption(energy_consumption)
-net.draw()
+#net.draw()
 
 # Usage example
 f = 5
@@ -145,34 +145,159 @@ print('\n')
 
 # %%
 # 8. Instantiate EVS with initial sequences and attributes
-from res.ElectricVehicle import ElectricVehicle
 
-vehicles_dict = {}
-ids_customer = copy.deepcopy(net.ids_customer)
-for id_car, num_customers in enumerate(customers_per_car):
+vehicles = {}
+
+ids_customer = [[1, 2, 3, 4], [5, 6, 7]]
+for id_car, customers in enumerate(ids_customer):
     # sequences
-    ids_customer_to_visit = []
-    for j in range(0, num_customers):
-        index = random.randint(0, len(ids_customer) - 1)
-        ids_customer_to_visit.append(ids_customer.pop(index))
-    print('Car', id_car, 'must visit customers with ID:', ids_customer_to_visit)
-
-    # First decision variables
-    node_sequence = [0] + ids_customer_to_visit + [0]
-    charging_sequence = [0] * len(node_sequence)
-    departure_time = 24.0 * 30.0
+    print('Car', id_car, 'must visit customers with ID:', customers)
 
     # Other variables
     soc_init = 80
 
     # instantiate
-    ev = vehicles_dict[id_car] = ElectricVehicle(id_car, net, **attrib)
-    ev.set_sequences(node_sequence, charging_sequence, departure_time, soc_init)
-    r, l = ev.iterateState()
-    print('node seq:', ev.node_sequence)
-    print('spent times:', (l - r)[0, :])
-    print('spent times:', ev.get_spent_times())
-    print('travel times', [r_next - l_prev for r_next, l_prev in zip(r[0, 1:], l[0, 0:-1])])
-    print('travel times', ev.get_travel_times())
-# %%
+    ev = vehicles[id_car] = ElectricVehicle(id_car, net, **attrib)
+    ev.set_customers_to_visit(customers)
 
+# %%
+# 9. Initialize GA
+attrib_ga = {'allowed_charging_operations': 2, 'vehicles': vehicles}
+i0, i1, i2 = res.GA_prev_test.createImportantIndices(**attrib_ga)
+indices = [i0, i1, i2]
+soc_init = 80.0
+
+penalization_constant = -500000
+weights = (1.0, 1.0, 1.0, 1.0)
+
+# Build toolbox and useful classes
+creator.create("FitnessMax", base.Fitness, weights=(1.0,))
+creator.create("Individual", list, fitness=creator.FitnessMax)
+
+toolbox = base.Toolbox()
+
+# Individual initializer
+toolbox.register("individual", res.GA_prev_test.createRandomIndividual, **attrib_ga)
+
+# Fitness, crossover, mutation and selection
+toolbox.register("evaluate", res.GA_prev_test.fitness_raw, weights=weights, penalization_constant=penalization_constant,
+                 x2_0=soc_init, **attrib_ga)
+toolbox.register("mate", res.GA_prev_test.crossover, indices=indices, index=None, **attrib_ga)
+toolbox.register("mutate", res.GA_prev_test.mutate, indices=indices, index=None, **attrib_ga )
+toolbox.register("select", tools.selTournament, tournsize=3)
+
+# Useful to decode
+toolbox.register("decode", res.GA_prev_test.decode, **attrib_ga)
+
+# %% the algorithm
+
+tInitGA = time.time()
+# Population TODO create function
+n = 100
+generations = 170
+
+pop = []
+for i in range(0, n):
+    pop.append(creator.Individual(toolbox.individual()))
+
+# CXPB  is the probability with which two individuals
+#       are crossed
+#
+# MUTPB is the probability for mutating an individual
+CXPB, MUTPB = 0.4, 0.4
+
+# Evaluate the entire population
+# fitnesses = list(map(toolbox.evaluate, pop))
+
+for ind in pop:
+    fit = toolbox.evaluate(ind)
+    ind.fitness.values = fit
+
+print("  Evaluated %i individuals" % len(pop))
+
+# Extracting all the fitnesses of
+fits = [ind.fitness.values[0] for ind in pop]
+
+# Variable keeping track of the number of generations
+g = 0
+Ymax = []
+Ymin = []
+Yavg = []
+Ystd = []
+X = []
+
+bestOfAll = tools.selBest(pop, 1)[0]
+
+print("################  Start of evolution  ################")
+# Begin the evolution
+while g < generations:
+    # A new generation
+    g = g + 1
+    X.append(g)
+    print("-- Generation %i --" % g)
+
+    # Select the next generation individuals
+    offspring = toolbox.select(pop, len(pop))
+    # Clone the selected individuals
+    offspring = list(map(toolbox.clone, offspring))
+
+    # Apply crossover and mutation on the offspring
+    for child1, child2 in zip(offspring[::2], offspring[1::2]):
+
+        # cross two individuals with probability CXPB
+        if random.random() < CXPB:
+            toolbox.mate(child1, child2)
+
+            # fitness values of the children
+            # must be recalculated later
+            del child1.fitness.values
+            del child2.fitness.values
+
+    for mutant in offspring:
+
+        # mutate an individual with probability MUTPB
+        if random.random() < MUTPB:
+            toolbox.mutate(mutant)
+            del mutant.fitness.values
+
+    # Evaluate the individuals with an invalid fitness
+    invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+    for ind in invalid_ind:
+        fit = toolbox.evaluate(ind)
+        ind.fitness.values = fit
+
+    print("  Evaluated %i individuals" % len(invalid_ind))
+
+    # The population is entirely replaced by the offspring
+    pop[:] = offspring
+
+    # Gather all the fitnesses in one list and print the stats
+    fits = [ind.fitness.values[0] for ind in pop]
+
+    length = len(pop)
+    mean = sum(fits) / length
+    sum2 = sum(x * x for x in fits)
+    std = abs(sum2 / length - mean ** 2) ** 0.5
+
+    print("  Min %s" % min(fits))
+    print("  Max %s" % max(fits))
+    print("  Avg %s" % mean)
+    print("  Std %s" % std)
+
+    Ymax.append(-max(fits))
+    Ymin.append(-min(fits))
+    Yavg.append(mean)
+    Ystd.append(std)
+
+    bestInd = tools.selBest(pop, 1)[0]
+    print("Best individual: ", bestInd)
+
+    worstInd = tools.selWorst(pop, 1)[0]
+    print("Worst individual: ", worstInd)
+
+    # Save best ind
+    if bestInd.fitness.values[0] > bestOfAll.fitness.values[0]:
+        bestOfAll = bestInd
+
+# %%
+print("################  End of (successful) evolution  ################")

@@ -4,9 +4,7 @@ from random import uniform
 from random import sample
 from deap.tools import initCycle
 
-from res.EV_utilities import feasible
-from res.EV_utilities import distance
-from res.ElectricVehicle import ElectricVehicle
+from res.ElectricVehicle import ElectricVehicle, feasible, createOptimizationVector
 
 
 def decode(individual, vehicles, allowed_charging_operations=2):
@@ -80,7 +78,9 @@ def decode(individual, vehicles, allowed_charging_operations=2):
     return S, L, x0
 
 
-def fitness(individual, vehicles, allowed_charging_operations=2, x2_0=80.0):
+def fitness_raw(individual, vehicles, weights = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
+                penalization_constant=-500000,
+                allowed_charging_operations=2, x2_0=80.0):
     """
     Calculates fitness of individual.
     :param individual: The individual to decode
@@ -132,7 +132,17 @@ def fitness(individual, vehicles, allowed_charging_operations=2, x2_0=80.0):
     energy_consumption_cost = np.sum(energy_consumption_costs)
     charging_cost = np.sum(charging_costs)
 
-    return travel_time_cost, charging_time_cost, energy_consumption_cost, charging_cost
+    # TODO verify if this is ok to check feasibility
+    op_vector = createOptimizationVector(vehicles)
+    is_feasible, dist = feasible(op_vector, vehicles)
+
+    costs = np.array([travel_time_cost, charging_time_cost, energy_consumption_cost, charging_cost])
+    fit = np.dot(costs, np.array(weights))
+
+    if not is_feasible:
+        fit += dist + penalization_constant
+
+    return fit, is_feasible
 
 
 def mutate(individual, vehicles, indices, allowed_charging_operations=2, index=None):
@@ -341,7 +351,8 @@ def createRandomIndividual(vehicles, allowed_charging_operations=2):
 
         customerSequence = sample(vehicle.customers_to_visit, vehicle.ni)
         #seq = [lambda: -1, lambda: 0, lambda: 10.0]
-        seq = [lambda: sample(customerSequence, 1), lambda: sample(vehicle.network.ids_charge_stations, 1),
+        seq = [lambda: sample([sample(customerSequence, 1)[0], -1], 1)[0],
+               lambda: sample(vehicle.network.ids_charge_stations, 1)[0],
                lambda: uniform(0.0, 90.0)]
 
         chargingSequence = initCycle(list, seq, n=allowed_charging_operations)
@@ -349,15 +360,3 @@ def createRandomIndividual(vehicles, allowed_charging_operations=2):
         individual += customerSequence + chargingSequence + departingTime
 
     return individual
-
-
-def feasibleIndividual(individual, vehicleDict, allowed_charging_operations=2):
-    nodeSeq, charSeq, x0Seq = decode(individual, vehicleDict,
-                                     allowed_charging_operations=allowed_charging_operations)
-    return feasible(nodeSeq, charSeq, x0Seq, vehicleDict)
-
-
-def distanceToFeasibleZone(individual, vehicleDict, allowed_charging_operations=2):
-    nodeSeq, charSeq, x0Seq = decode(individual, vehicleDict,
-                                     allowed_charging_operations=allowed_charging_operations)
-    return distance(nodeSeq, charSeq, x0Seq, vehicleDict)
