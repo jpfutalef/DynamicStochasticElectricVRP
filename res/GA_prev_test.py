@@ -144,6 +144,7 @@ def fitness(individual, vehicles, weights=(1.0, 1.0, 1.0, 1.0), penalization_con
 
     return fit,
 
+
 def mutate(individual, vehicles, indices, allowed_charging_operations=2, index=None):
     """
     Mutates individual.

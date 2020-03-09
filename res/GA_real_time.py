@@ -9,7 +9,7 @@ from res.EV_utilities import distance
 from res.ElectricVehicle import ElectricVehicle
 
 
-def decodeFunction(individual, vehicles, starting_points, allowed_charging_operations=2):
+def decodeFunction(individual, indices, starting_points, allowed_charging_operations=2):
     """
     Decodes an individual to the corresponding node sequence and charging sequence. S is the node sequence with the
     following structure  S = [S1, ..., Sm], where Si = [Si(0),..., Si(s_0-1)].  The L structure is the same as S
@@ -22,10 +22,15 @@ def decodeFunction(individual, vehicles, starting_points, allowed_charging_opera
     :return: A 3-size tuple (S, L, x0)
     """
     # print("individual to decode: ", individual)
+    # Lists with indices of sub blocks
+    i0List, i1List = indices[0], indices[1]
+
     S = {}
     L = {}
-    i0 = 0
-    i1 = 0
+
+
+    for i, (i0, i1) in enumerate(zip(i0List, i1List)):  # i is the EV id
+        pass
 
     for id_vehicle, vehicle in vehicles.items():
         vehicle: ElectricVehicle
@@ -285,8 +290,9 @@ def createImportantIndices(vehicles, allowed_charging_operations=2):
     i0 = 0
     i1 = 0
 
-    for k, v in vehicles.items():
-        ni = v.customerCount
+    for i, vehicle in vehicles.items():
+        vehicle: ElectricVehicle
+        ni = len(vehicle.remaining_customers_to_visit)
         i1 += ni
 
         i0List.append(i0)
@@ -318,14 +324,3 @@ def createRandomIndividual(vehicles, allowed_charging_operations=2):
 
     return individual
 
-
-def feasibleIndividual(individual, vehicleDict, allowed_charging_operations=2):
-    nodeSeq, charSeq, x0Seq = decodeFunction(individual, vehicleDict,
-                                             allowed_charging_operations=allowed_charging_operations)
-    return feasible(nodeSeq, charSeq, x0Seq, vehicleDict)
-
-
-def distanceToFeasibleZone(individual, vehicleDict, allowed_charging_operations=2):
-    nodeSeq, charSeq, x0Seq = decodeFunction(individual, vehicleDict,
-                                             allowed_charging_operations=allowed_charging_operations)
-    return distance(nodeSeq, charSeq, x0Seq, vehicleDict)

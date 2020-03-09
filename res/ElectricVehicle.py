@@ -58,6 +58,10 @@ class ElectricVehicle:
         self.customers_to_visit = []
         self.ni = 0
 
+        # For using in real time
+        self.visited_customers = []
+        self.remaining_customers_to_visit = []
+
     def set_sequences(self, node_sequence, charging_sequence, depart_time, x2_0):
         self.node_sequence = node_sequence
         self.charging_sequence = charging_sequence
@@ -75,6 +79,7 @@ class ElectricVehicle:
     def set_customers_to_visit(self, id_customers):
         self.customers_to_visit = id_customers
         self.ni = len(id_customers)
+        self.remaining_customers_to_visit = id_customers
 
     def F1(self, x_prev: np.ndarray, node_from, node_to, soc_increment):
         # Calculate values
@@ -176,6 +181,13 @@ class ElectricVehicle:
 
     def reset(self):
         self.set_sequences(self.node_sequence, self.charging_sequence, self.x1_0, self.x2_0)
+
+    # Real time functions
+    def update_visited_customers(self, new_visited_customers):
+        for new_customer in new_visited_customers:
+            self.visited_customers.append(new_customer)
+            ind = self.customers_to_visit.index(new_customer)
+            self.remaining_customers_to_visit.pop(ind)
 
 
 def createOptimizationVector(vehicles):
@@ -335,7 +347,7 @@ def from_xml(path, net):
     # instantiate
     numVehicles = int(_fleet.find('fleet_size').text)
     vehicles = {}
-    for id_car, in range(numVehicles):
+    for id_car in range(numVehicles):
         ev = vehicles[id_car] = ElectricVehicle(id_car, net, **attrib)
 
     return vehicles
