@@ -187,3 +187,4 @@ for id_ev, vehicle in vehicles_dict.items():
 x = createOptimizationVector(vehicles_dict)
 print(x)
 print(feasible(x, vehicles_dict))
+

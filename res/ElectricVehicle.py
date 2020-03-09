@@ -3,6 +3,7 @@ import pandas as pd
 import networkx as nx
 from res.Network import Network
 from res.Node import CustomerNode, ChargeStationNode, DepotNode
+import xml.etree.ElementTree as ET
 
 
 def cost_arc(item):
@@ -231,7 +232,7 @@ def feasible(x: np.ndarray, vehicles: dict):
     # Amount of rows
     rows = 0
 
-    rows += n_vehicles   # 2.16
+    rows += n_vehicles  # 2.16
     rows += n_customers  # 2.17
     rows += n_customers  # 2.18
     rows += sum_si  # 2.25-1
@@ -249,9 +250,9 @@ def feasible(x: np.ndarray, vehicles: dict):
     # 2.16
     si = 0
     for j, vehicle in vehicles.items():
-        A[row, i_x1+si] = -1.0
+        A[row, i_x1 + si] = -1.0
         si += len(vehicle.node_sequence)
-        A[row, i_x1+si-1] = 1.0
+        A[row, i_x1 + si - 1] = 1.0
         b[row] = vehicle.max_tour_duration
         row += 1
 
@@ -260,11 +261,11 @@ def feasible(x: np.ndarray, vehicles: dict):
     for _, vehicle in vehicles.items():
         for k, Sk in enumerate(vehicle.node_sequence):
             if network.isCustomer(Sk):
-                A[row, i_x1+si+k] = -1.0
+                A[row, i_x1 + si + k] = -1.0
                 b[row] = -network.nodes[Sk]['attr'].timeWindowDown
                 row += 1
 
-                A[row, i_x1+si+k] = 1.0
+                A[row, i_x1 + si + k] = 1.0
                 b[row] = network.nodes[Sk]['attr'].timeWindowUp - network.spent_time(Sk)
                 row += 1
         si += len(vehicle.node_sequence)
@@ -273,11 +274,11 @@ def feasible(x: np.ndarray, vehicles: dict):
     si = 0
     for _, vehicle in vehicles.items():
         for k, Sk in enumerate(vehicle.node_sequence):
-            A[row, i_x2+si+k] = -1.0
+            A[row, i_x2 + si + k] = -1.0
             b[row] = -vehicle.alpha_down
             row += 1
 
-            A[row, i_x2+si+k] = 1.0
+            A[row, i_x2 + si + k] = 1.0
             b[row] = vehicle.alpha_up
             row += 1
         si += len(vehicle.node_sequence)
@@ -308,12 +309,33 @@ def feasible(x: np.ndarray, vehicles: dict):
 
 
 def distance(results, mult, b, vehicles):
-    def dist_fun(x, y):
-        # return np.abs(x - y)
-        # return np.sqrt(np.power(x - y, 2))
-        # return np.abs(np.power(x - y, 2))
-        return np.power(x - y, 2)
-
     return np.sum([dist_fun(mult[i, 0], b[i, 0]) for i, result in enumerate(results) if result])
 
 
+def dist_fun(x, y):
+    # return np.abs(x - y)
+    # return np.sqrt(np.power(x - y, 2))
+    # return np.abs(np.power(x - y, 2))
+    return (x - y) ** 2
+
+
+def from_xml(path, net):
+    # Open XML file
+    tree = ET.parse(path)
+    _info = tree.find('info')
+    _network = tree.find('network')
+    _fleet = tree.find('fleet')
+
+    attrib = {}
+    for _attrib in _fleet.find('vehicle_attributes'):
+        attrib[_attrib.tag] = float(_attrib.text)
+
+    print('EV attributes:', attrib, '\n')
+
+    # instantiate
+    numVehicles = int(_fleet.find('fleet_size').text)
+    vehicles = {}
+    for id_car, in range(numVehicles):
+        ev = vehicles[id_car] = ElectricVehicle(id_car, net, **attrib)
+
+    return vehicles

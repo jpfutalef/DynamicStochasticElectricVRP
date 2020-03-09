@@ -7,7 +7,7 @@ from deap.tools import initCycle
 from res.ElectricVehicle import ElectricVehicle, feasible, createOptimizationVector
 
 
-def decode(individual, vehicles, allowed_charging_operations=2):
+def decode(individual, vehicles, indices=(), allowed_charging_operations=2):
     """
     Decodes an individual to the corresponding node sequence and charging sequence. The individual has
     the following structure: ind = [customers, charg_ops, x0, ...]. S is the node sequence with the
@@ -78,11 +78,11 @@ def decode(individual, vehicles, allowed_charging_operations=2):
     return S, L, x0
 
 
-def fitness_raw(individual, vehicles, weights = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
-                penalization_constant=-500000,
-                allowed_charging_operations=2, x2_0=80.0):
+def fitness(individual, vehicles, weights=(1.0, 1.0, 1.0, 1.0), penalization_constant=500000,
+            indices=(), allowed_charging_operations=2, x2_0=80.0):
     """
     Calculates fitness of individual.
+    :param indices:
     :param individual: The individual to decode
     :param vehicles: dictionary with vehicle instances. They must have been assigned to customers
     :param allowed_charging_operations: maximum charging operations per ev
@@ -134,20 +134,19 @@ def fitness_raw(individual, vehicles, weights = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
 
     # TODO verify if this is ok to check feasibility
     op_vector = createOptimizationVector(vehicles)
-    is_feasible, dist = feasible(op_vector, vehicles)
-
-    costs = np.array([travel_time_cost, charging_time_cost, energy_consumption_cost, charging_cost])
-    fit = np.dot(costs, np.array(weights))
+    is_feasible, penalization = feasible(op_vector, vehicles)
 
     if not is_feasible:
-        fit += dist + penalization_constant
+        penalization += penalization_constant
 
-    return fit, is_feasible
+    costs = np.array([travel_time_cost, charging_time_cost, energy_consumption_cost, charging_cost])
+    fit = np.dot(costs, np.array(weights)) + penalization
 
+    return fit,
 
 def mutate(individual, vehicles, indices, allowed_charging_operations=2, index=None):
     """
-    Mutataes individual.
+    Mutates individual.
     :param individual: the individual
     :param vehicles: dictionary containing vehicles instances by id
     :param indices: indices of sub blocks created by doing i0, i1, i2 = createImportantIndices(vehicles,
@@ -208,9 +207,9 @@ def mutate(individual, vehicles, indices, allowed_charging_operations=2, index=N
             # print("Charge....")
             # Choose a customer node randomly
             g = 0
+            customer = sample(vehicles[i].customers_to_visit, 1)[0]
             while g < 5000:
                 customer = sample(vehicles[i].customers_to_visit, 1)[0]
-                # print("After customer: ", individual[j])
                 g += 1
                 if customer not in [individual[x] for x in csBlocks]:
                     break
@@ -322,7 +321,7 @@ def createImportantIndices(vehicles, allowed_charging_operations=2):
 
     for id_vehicle, vehicle in vehicles.items():
         vehicle: ElectricVehicle
-        
+
         ni = vehicle.ni
         i1 += ni
         i2 += ni + 3 * allowed_charging_operations
@@ -338,7 +337,7 @@ def createImportantIndices(vehicles, allowed_charging_operations=2):
     return i0List, i1List, i2List
 
 
-def createRandomIndividual(vehicles, allowed_charging_operations=2):
+def createRandomIndividual(vehicles, indices=(), allowed_charging_operations=2):
     """
     Creates a random individual
     :param vehicles: dict with vechiles info
@@ -350,7 +349,7 @@ def createRandomIndividual(vehicles, allowed_charging_operations=2):
         vehicle: ElectricVehicle
 
         customerSequence = sample(vehicle.customers_to_visit, vehicle.ni)
-        #seq = [lambda: -1, lambda: 0, lambda: 10.0]
+        # seq = [lambda: -1, lambda: 0, lambda: 10.0]
         seq = [lambda: sample([sample(customerSequence, 1)[0], -1], 1)[0],
                lambda: sample(vehicle.network.ids_charge_stations, 1)[0],
                lambda: uniform(0.0, 90.0)]
