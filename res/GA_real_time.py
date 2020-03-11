@@ -72,6 +72,90 @@ def decode(individual, indices, starting_points, allowed_charging_operations=2):
     return S, L
 
 
+def mutate(individual, indices, starting_points, customers, charging_stations, allowed_charging_operations=2,
+           index=None):
+    # Choose a random index if not passed
+    if index is None:
+        index = randint(0, len(individual))
+
+    # Find concerning block
+    i = 0
+    i0, i1 = indices[0]
+    for i, (i0, i1) in enumerate(indices):  # i is the EV id
+        if i0 <= index <= i1 + 3 * allowed_charging_operations - 1:
+            break
+
+    # Case customer
+    if i0 <= index < i1:
+        i = randint(i0, i1 - 1)
+        while True:
+            j = randint(i0, i1 - 1)
+            if j != i:
+                break
+        swapElements(individual, i, j)
+
+    # Case CS
+    elif i1 <= index <= i1 + 3 * allowed_charging_operations - 1:
+        # Find corresponding operation index
+        j = 0
+        for j in range(allowed_charging_operations):
+            if i1 + j * allowed_charging_operations <= index <= i1 + j * allowed_charging_operations + 2:
+                break
+
+        # Choose if making a charging operation
+        if randint(0, 1):
+            # Choose a customer node randomly
+            while True:
+                sample_space = [starting_points[i][0]] + customers[i]
+                customer = sample(sample_space, 1)[0]
+                # Ensure customer is not already chosen
+                if customer not in [individual[i1 + 3 * x] for x in range(allowed_charging_operations)]:
+                    break
+            individual[i1 + 3 * j] = customer
+
+        else:
+            individual[i1 + 3 * j] = -1
+
+        # Choose a random CS anyways
+        individual[i1 + 3 * j + 1] = sample(charging_stations, 1)[0]
+
+        # Choose amount anyways
+        individual[i1 + 3 * j + 2] = uniform(0.0, 90.0)
+    return individual
+
+
+def crossover(ind1, ind2, vehiclesDict, allowed_charging_operations=2, index=None):
+    i0List, i1List, i2List = createImportantIndices(vehiclesDict,
+                                                    allowed_charging_operations=allowed_charging_operations)
+
+    # Choose a random index if not passed
+    if index is None:
+        index = randint(0, len(ind1))
+
+    # Find concerning block
+    i = 0  # vehicle ID
+    i0 = 0
+    i1 = 0
+    i2 = 0
+
+    for i, (i0, i2) in enumerate(zip(i0List, i2List)):  # i is the EV id
+        if i0 <= index <= i2:
+            i1 = i1List[i]
+            break
+
+    # Case customer
+    if i0 <= index < i1:
+        swapBlock(ind1, ind2, i0, i1)
+
+    # Case CS
+    elif i1 <= index < i2:
+        swapBlock(ind1, ind2, i1, i2)
+    # Case x0
+    else:
+        swapBlock(ind1, ind2, i2, i2 + 1)
+    return ind1, ind2
+
+
 def fitness(individual, vehicles, indices, starting_points, weights=(1.0, 1.0, 1.0, 1.0), penalization_constant=500000,
             allowed_charging_operations=2):
     """
@@ -138,124 +222,7 @@ def fitness(individual, vehicles, indices, starting_points, weights=(1.0, 1.0, 1
     return fit,
 
 
-def mutate(individual, vehicles, allowed_charging_operations=2, index=None):
-    # print("Original individual: ", individual)
-    # indices lists TODO: prevent creation of these list every time
-    i0List, i1List, i2List = createImportantIndices(vehicles,
-                                                    allowed_charging_operations=allowed_charging_operations)
-
-    # Choose a random index if not passed
-    if index is None:
-        index = randint(0, len(individual))
-
-    # Find concerning block
-    i = 0
-    i0 = 0
-    i1 = 0
-    i2 = 0
-
-    for i, (i0, i2) in enumerate(zip(i0List, i2List)):  # i is the EV id
-        if i0 <= index <= i2:
-            i1 = i1List[i]
-            break
-
-    # Case customer
-    # print('Original Individual:', individual)
-    # print('Index: ', index)
-    if i0 <= index < i1:
-        # print("Case customer", (i0, i1))
-        case = "customer"
-        i = randint(i0, i1 - 1)
-        while True:
-            j = randint(i0, i1 - 1)
-            if j != i:
-                break
-        swapList(individual, i, j)
-
-    # Case CS
-    elif i1 <= index < i2:
-        # print("Case charge station", (i1, i2))
-        case = "CS"
-        # FIXME make this more efficient. Might be good to return tuples with the
-        #  values in the function that creates these
-
-        # Find corresponding operation index
-        j = 0
-        csBlocks = [i1 + 3 * x for x in range(0, allowed_charging_operations)]
-        for j in csBlocks:
-            if j <= index <= j + 2:
-                break
-
-        # Choose if making a charging operation
-        if randint(0, 1):
-            # print("Charge....")
-            # Choose a customer node randomly
-            g = 0
-            while g < 5000:
-                customer = sample(vehicles[i].customersId, 1)[0]
-                # print("After customer: ", individual[j])
-                g += 1
-                if customer not in [individual[x] for x in csBlocks]:
-                    break
-
-            individual[j] = customer
-        else:
-            # print("Don't charge")
-            individual[j] = -1
-
-        # Choose a random CS
-        individual[j + 1] = sample(vehicles[i].networkInfo['CS_LIST'], 1)[0].id
-        # print("At CS: ", individual[j+1])
-
-        # Choose amount
-        individual[j + 2] = uniform(0.0, 90.0)
-
-        # print("The amount of: ", individual[j+2])
-
-    # Case x0
-    else:
-        case = "x0"
-        # print("Case x0", i2)
-        individual[i2] += uniform(-60, 60)
-
-    # print("Mutated individual: ", individual)
-    # print("Case: ", case)
-    return individual
-
-
-def crossover(ind1, ind2, vehiclesDict, allowed_charging_operations=2, index=None):
-    i0List, i1List, i2List = createImportantIndices(vehiclesDict,
-                                                    allowed_charging_operations=allowed_charging_operations)
-
-    # Choose a random index if not passed
-    if index is None:
-        index = randint(0, len(ind1))
-
-    # Find concerning block
-    i = 0  # vehicle ID
-    i0 = 0
-    i1 = 0
-    i2 = 0
-
-    for i, (i0, i2) in enumerate(zip(i0List, i2List)):  # i is the EV id
-        if i0 <= index <= i2:
-            i1 = i1List[i]
-            break
-
-    # Case customer
-    if i0 <= index < i1:
-        swapBlock(ind1, ind2, i0, i1)
-
-    # Case CS
-    elif i1 <= index < i2:
-        swapBlock(ind1, ind2, i1, i2)
-    # Case x0
-    else:
-        swapBlock(ind1, ind2, i2, i2 + 1)
-    return ind1, ind2
-
-
-def swapList(l, i, j):
+def swapElements(l, i, j):
     """
     This function allows to swap two elements in a list, given two positions.
     :param l: the list
@@ -354,6 +321,20 @@ if __name__ == '__main__':
     print(S, L)
 
     # Mate i1 and i2
-
+    print('Individual 1:', ind1)
+    print('Individual 2:', ind2, '\nMate...')
+    while True:
+        crossover(ind1,ind2)
+        print('Individual 1:', ind1)
+        print('Individual 2:', ind2)
+        if input() == 's':
+            break
 
     # Mutate i3
+    print('Individual 3:', ind3, '\nMutate...')
+    while True:
+        mutate(ind3, indices, init_state, customers_to_visit, charging_stations,
+               allowed_charging_operations=all_ch_ops, index=15)
+        print('Individual 3:', ind3)
+        if input() == 's':
+            break
