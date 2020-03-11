@@ -6,95 +6,87 @@ from deap.tools import initCycle
 
 from res.EV_utilities import feasible
 from res.EV_utilities import distance
-from res.ElectricVehicle import ElectricVehicle
+from res.ElectricVehicle import ElectricVehicle, feasible, createOptimizationVector
 
 
-def decodeFunction(individual, indices, starting_points, allowed_charging_operations=2):
+def decode(individual, indices, starting_points, allowed_charging_operations=2):
     """
     Decodes an individual to the corresponding node sequence and charging sequence. S is the node sequence with the
     following structure  S = [S1, ..., Sm], where Si = [Si(0),..., Si(s_0-1)].  The L structure is the same as S
     structure.
     :param allowed_charging_operations: number of charging operations each vehicle is allowed to perform
     :param individual: The coded individual
-    :param vehicles: a dictionary containing all vehicles instances
+    :param indices: a
     :param starting_points: dictionary with information about the start of sequences {id_vehicle:(S0, L0, x1_0,
     x2_0),..., }
     :return: A 3-size tuple (S, L, x0)
     """
     # print("individual to decode: ", individual)
-    # Lists with indices of sub blocks
-    i0List, i1List = indices[0], indices[1]
-
     S = {}
     L = {}
 
+    for id_ev, (i0, i1) in enumerate(indices):  # i is the EV id
+        charging_operations = [(individual[i1 + 3 * i], individual[i1 + 3 * i + 1], individual[i1 + 3 * i + 2])
+                               for i in range(allowed_charging_operations) if individual[i1 + 3 * i] != -1]
+        customers_block = individual[i0:i1]
+        ni = len(customers_block)
 
-    for i, (i0, i1) in enumerate(zip(i0List, i1List)):  # i is the EV id
-        pass
-
-    for id_vehicle, vehicle in vehicles.items():
-        vehicle: ElectricVehicle
-
-        ni = len(vehicle.customers_to_visit)
-        i1 += ni
-
-        # iterate through every charging operation
-        indices = [i1 + 3 * k for k in range(0, allowed_charging_operations)]
-        chargeAfterDict = {individual[i]: (individual[i + 1], individual[i + 2]) for i in indices if
-                           individual[i] != -1}
-
-        nodeSequence = [0] * (ni + len(chargeAfterDict))
-        chargingSequence = [0] * (ni + len(chargeAfterDict))
+        init_node_seq = [starting_points[id_ev][0]] + customers_block
+        init_charging_seq = [starting_points[id_ev][1]] + [0] * ni
 
         # case: there are not recharging operations
-        if len(chargeAfterDict) == 0:
-            nodeSequence = individual[i0:i1]
+        if len(charging_operations) == 0:
+            node_sequence = init_node_seq
+            charging_sequence = init_charging_seq
 
         # case: there are recharging operations
         else:
-            key = individual[i0]
-            j = 0
-            insertCS = False
+            node_sequence = [0] * (ni + len(charging_operations) + 1)
+            charging_sequence = [0] * (ni + len(charging_operations) + 1)
 
-            for i, _ in enumerate(nodeSequence):
-                if insertCS:
-                    nodeSequence[i] = chargeAfterDict[key][0]
-                    chargingSequence[i] = chargeAfterDict[key][1]
-                    insertCS = False
+            customers_after = [x[0] for x in charging_operations]
 
-                elif individual[i0 + j] in chargeAfterDict.keys():
-                    nodeSequence[i] = individual[i0 + j]
-                    key = individual[i0 + j]
-                    j += 1
-                    insertCS = True
-
+            iseq = 0
+            iop = 0
+            insert_cs = False
+            for j, _ in enumerate(node_sequence):
+                if insert_cs:
+                    node_sequence[j] = charging_operations[iop][1]
+                    charging_sequence[j] = charging_operations[iop][2]
+                    insert_cs = False
+                elif init_node_seq[iseq] in customers_after:
+                    node_sequence[j] = init_node_seq[iseq]
+                    charging_sequence[j] = init_charging_seq[iseq]
+                    iop = customers_after.index(init_node_seq[iseq])
+                    iseq += 1
+                    insert_cs = True
                 else:
-                    nodeSequence[i] = individual[i0 + j]
-                    j += 1
+                    node_sequence[j] = init_node_seq[iseq]
+                    charging_sequence[j] = init_charging_seq[iseq]
+                    iseq += 1
 
         # Store in dictionary
-        S[id_vehicle] = [starting_points[id_vehicle][0]] + nodeSequence + [0]
-        L[id_vehicle] = [starting_points[id_vehicle][1]] + chargingSequence + [0]
+        S[id_ev] = node_sequence + [0]
+        L[id_ev] = charging_sequence + [0]
 
-        i0 += ni + 3 * allowed_charging_operations + 1
-        i1 += 3 * allowed_charging_operations + 1
     return S, L
 
 
-def fitness(individual, vehicles, starting_points, allowed_charging_operations=2):
+def fitness(individual, vehicles, indices, starting_points, weights=(1.0, 1.0, 1.0, 1.0), penalization_constant=500000,
+            allowed_charging_operations=2):
     """
     Calculates fitness of individual.
     :param individual: The individual to decode
     :param vehicles: dictionary with vehicle instances. They must have been assigned to customers
     :param starting_points: dictionary with info of the initial state {id_vehicle:(S0, L0, x1_0, x2_0)}
     :param allowed_charging_operations: maximum charging operations per ev
-    :param weight: tuple with weights of each variable in cost function (w1, w2, w3, w4)
+    :param weights: tuple with weights of each variable in cost function (w1, w2, w3, w4)
+    :param penalization_constant: positive number that represents the penalization of unfeasible individual
     :return: the fitness of the individual
     """
 
     # Decode
-    S, L = decodeFunction(individual, vehicles, starting_points,
-                          allowed_charging_operations=allowed_charging_operations)
+    S, L = decode(individual, indices, starting_points, allowed_charging_operations=allowed_charging_operations)
 
     # Lists to store costs
     travel_time_costs = []
@@ -110,9 +102,6 @@ def fitness(individual, vehicles, starting_points, allowed_charging_operations=2
     # Iterate each vehicle
     for id_vehicle, vehicle in vehicles.items():
         vehicle: ElectricVehicle
-
-        # Ensure reset
-        vehicle.reset()
 
         # Sequences
         Si = S[id_vehicle]
@@ -136,7 +125,17 @@ def fitness(individual, vehicles, starting_points, allowed_charging_operations=2
     energy_consumption_cost = np.sum(energy_consumption_costs)
     charging_cost = np.sum(charging_costs)
 
-    return travel_time_cost, charging_time_cost, energy_consumption_cost, charging_cost
+    # TODO verify if this is ok to check feasibility
+    op_vector = createOptimizationVector(vehicles)
+    is_feasible, penalization = feasible(op_vector, vehicles)
+
+    if not is_feasible:
+        penalization += penalization_constant
+
+    costs = np.array([travel_time_cost, charging_time_cost, energy_consumption_cost, charging_cost])
+    fit = np.dot(costs, np.array(weights)) + penalization
+
+    return fit,
 
 
 def mutate(individual, vehicles, allowed_charging_operations=2, index=None):
@@ -277,31 +276,27 @@ def swapBlock(l1, l2, i, j):
     l1[i: j], l2[i:j] = l2[i:j], l1[i:j]
 
 
-def createImportantIndices(vehicles, allowed_charging_operations=2):
+def blockIndices(customer_count, allowed_charging_operations=2):
     """
     Creates the indices of sub blocks.
-    :param vehicles: dict with vehicles info by id
+    :param customer_count: list with the amount of customer to visit, after initial condition
     :param allowed_charging_operations:
-    :return: tuple with indices list (i0, i1)
+    :return: tuples list with indices [(i0, j0), (i1, j1),...] where iN represent location of the beginning of customers
+    block and jN location of the beginning of charging operations block of evN in the individual, respectively.
     """
-    i0List = []
-    i1List = []
+    indices = []
 
     i0 = 0
     i1 = 0
-
-    for i, vehicle in vehicles.items():
-        vehicle: ElectricVehicle
-        ni = len(vehicle.remaining_customers_to_visit)
+    for ni in customer_count:
         i1 += ni
 
-        i0List.append(i0)
-        i1List.append(i1)
+        indices.append((i0, i1))
 
-        i0 += ni + 3 * allowed_charging_operations + 1
-        i1 += 3 * allowed_charging_operations + 1
+        i0 += ni + 3 * allowed_charging_operations
+        i1 += 3 * allowed_charging_operations
 
-    return i0List, i1List
+    return indices
 
 
 def createRandomIndividual(vehicles, allowed_charging_operations=2):
@@ -324,3 +319,41 @@ def createRandomIndividual(vehicles, allowed_charging_operations=2):
 
     return individual
 
+
+if __name__ == '__main__':
+    customers_to_visit = [[1, 4, 5],
+                          [2, 3, 6]]
+    customer_count = [len(x) for x in customers_to_visit]
+
+    charging_stations = [7, 8]
+    all_ch_ops = 2
+
+    # Indices
+    indices = blockIndices(customer_count, allowed_charging_operations=all_ch_ops)
+
+    # Starting points (S0, L0, x1_0, x2_0)
+    init_state = {0: (0, 0, 150., 80.), 1: (0, 0, 250., 80.)}
+
+    ind1 = [5, 1, 4, -1, 8, 10.5, 1, 7, 15.5,
+            6, 3, 2, 6, 8, 11.5, -1, 7, 12.5]
+    ind2 = [5, 1, 4, 5, 8, 10.5, 1, 7, 15.5,
+            6, 3, 2, 6, 8, 11.5, 3, 7, 12.5]
+    ind3 = [5, 1, 4, 0, 8, 10.5, 1, 7, 15.5,
+            6, 3, 2, 6, 8, 11.5, 3, 7, 12.5]
+
+    # Decode i1
+    S, L = decode(ind1, indices, init_state, allowed_charging_operations=all_ch_ops)
+    print(S, L)
+
+    # Decode i2
+    S, L = decode(ind2, indices, init_state, allowed_charging_operations=all_ch_ops)
+    print(S, L)
+
+    # Decode i3
+    S, L = decode(ind3, indices, init_state, allowed_charging_operations=all_ch_ops)
+    print(S, L)
+
+    # Mate i1 and i2
+
+
+    # Mutate i3

@@ -29,10 +29,13 @@ class ElectricVehicle:
     depart_time: float
     network: Network
 
-    def __init__(self, ev_id, network, max_payload=2.0, battery_capacity=200.0, max_tour_duration=300.0,
+    def __init__(self, ev_id, network=None, max_payload=2.0, battery_capacity=200.0, max_tour_duration=300.0,
                  alpha_down=40.0, alpha_up=80.0, attrib=None):
         self.id = ev_id
-        self.network = network
+        if network:
+            self.network = network
+        else:
+            self.network = Network()
 
         self.alpha_up = alpha_up
         self.alpha_down = alpha_down
@@ -188,6 +191,9 @@ class ElectricVehicle:
             self.visited_customers.append(new_customer)
             ind = self.customers_to_visit.index(new_customer)
             self.remaining_customers_to_visit.pop(ind)
+
+    def updateNetwork(self, net):
+        self.network = net
 
 
 def createOptimizationVector(vehicles):
