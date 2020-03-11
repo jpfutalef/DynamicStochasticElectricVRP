@@ -124,23 +124,15 @@ def mutate(individual, indices, starting_points, customers, charging_stations, a
     return individual
 
 
-def crossover(ind1, ind2, vehiclesDict, allowed_charging_operations=2, index=None):
-    i0List, i1List, i2List = createImportantIndices(vehiclesDict,
-                                                    allowed_charging_operations=allowed_charging_operations)
-
+def crossover(ind1, ind2, indices, allowed_charging_operations=2, index=None):
     # Choose a random index if not passed
     if index is None:
         index = randint(0, len(ind1))
 
     # Find concerning block
-    i = 0  # vehicle ID
-    i0 = 0
-    i1 = 0
-    i2 = 0
-
-    for i, (i0, i2) in enumerate(zip(i0List, i2List)):  # i is the EV id
-        if i0 <= index <= i2:
-            i1 = i1List[i]
+    i0, i1 = indices[0]
+    for i, (i0, i1) in enumerate(indices):  # i is the EV id
+        if i0 <= index <= i1 + 3 * allowed_charging_operations - 1:
             break
 
     # Case customer
@@ -148,12 +140,8 @@ def crossover(ind1, ind2, vehiclesDict, allowed_charging_operations=2, index=Non
         swapBlock(ind1, ind2, i0, i1)
 
     # Case CS
-    elif i1 <= index < i2:
-        swapBlock(ind1, ind2, i1, i2)
-    # Case x0
-    else:
-        swapBlock(ind1, ind2, i2, i2 + 1)
-    return ind1, ind2
+    elif i1 <= index <= i1 + 3 * allowed_charging_operations - 1:
+        swapBlock(ind1, ind2, i1, i1 + 3 * allowed_charging_operations - 1)
 
 
 def fitness(individual, vehicles, indices, starting_points, weights=(1.0, 1.0, 1.0, 1.0), penalization_constant=500000,
@@ -324,17 +312,23 @@ if __name__ == '__main__':
     print('Individual 1:', ind1)
     print('Individual 2:', ind2, '\nMate...')
     while True:
-        crossover(ind1,ind2)
+        index = input()
+        if index == 's':
+            break
+        else:
+            index = int(index)
+        crossover(ind1, ind2, indices, allowed_charging_operations=all_ch_ops, index=index)
         print('Individual 1:', ind1)
         print('Individual 2:', ind2)
-        if input() == 's':
-            break
 
     # Mutate i3
     print('Individual 3:', ind3, '\nMutate...')
     while True:
-        mutate(ind3, indices, init_state, customers_to_visit, charging_stations,
-               allowed_charging_operations=all_ch_ops, index=15)
-        print('Individual 3:', ind3)
-        if input() == 's':
+        index = input()
+        if index == 's':
             break
+        else:
+            index = int(index)
+        mutate(ind3, indices, init_state, customers_to_visit, charging_stations,
+               allowed_charging_operations=all_ch_ops, index=index)
+        print('Individual 3:', ind3)
