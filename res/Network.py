@@ -15,6 +15,7 @@ class Network(nx.DiGraph):
         self.ids_depot = []
         self.ids_customer = []
         self.ids_charge_stations = []
+        self.xml_path = ''
 
     def set_nodes(self, nodes):
         for node in nodes:
@@ -70,12 +71,12 @@ class Network(nx.DiGraph):
         plt.show()
 
     # Import tools
-    def from_xml(self, path):
+    def from_xml(self, path, verbose=False):
+        self.xml_path = path
         # Open XML file
         tree = ET.parse(path)
         _info = tree.find('info')
         _network = tree.find('network')
-        _fleet = tree.find('fleet')
 
         # [START Node data]
         _nodes = _network.find('nodes')
@@ -97,7 +98,8 @@ class Network(nx.DiGraph):
                 spent_time = float(_node.get('spent_time'))
                 node = CustomerNode(id_node, spent_time, demand, tw_upp, tw_low, pos=pos)
 
-            elif node_type == '2':
+            #elif node_type == '2':
+            else:
                 index_technology = int(_node.get('technology')) - 1
                 _technology = _technologies[index_technology]
                 charging_times = []
@@ -111,8 +113,6 @@ class Network(nx.DiGraph):
             nodes.append(node)
 
         networkSize = len(nodes)
-
-        print('There are', networkSize, 'nodes in the network.')
         # [END Node data]
         # [START Edge data]
         id_nodes = [x.id for x in nodes]
@@ -127,16 +127,20 @@ class Network(nx.DiGraph):
                 tt_dict[j] = float(nodeTo.get('travel_time'))
                 ec_dict[j] = float(nodeTo.get('energy_consumption'))
             coordinates[i] = nodes[i].pos
-
-        # Show stored values
-        print('NODES IDSs:\n', id_nodes)
-        print('RESULTING TIME MATRIX:\n', travel_time)
-        print('RESULTING ENERGY CONSUMPTION MATRIX:\n', energy_consumption)
-        print('RESULTING NODES COORDINATES:\n', coordinates)
         # [END Edge data]
+
+        # Show report
+        if verbose:
+            print('There are', networkSize, 'nodes in the network.')
+            print('NODES IDSs:\n', id_nodes)
+            print('RESULTING TIME MATRIX:\n', travel_time)
+            print('RESULTING ENERGY CONSUMPTION MATRIX:\n', energy_consumption)
+            print('RESULTING NODES COORDINATES:\n', coordinates)
 
         # Instance Network
         self.set_nodes(nodes)
         self.set_travel_time(travel_time)
         self.set_energy_consumption(energy_consumption)
-        return
+
+        # Return the tree
+        return tree

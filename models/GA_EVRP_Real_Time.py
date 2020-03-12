@@ -27,18 +27,17 @@ from res.Network import Network
 # Initialize time
 
 
-# %% 1. Specify instance name and import
-instanceName = 'd1c7cs2_ev2'
-folderPath = '../data/GA_implementation_xml/' + instanceName + '/'
-filePath = folderPath + instanceName + '.xml'
-print('Opening:', filePath)
-
+# %% 1. Specify real time instance folder
+instance_name = 'd1c7cs2_ev2'
+folder_path = '../data/GA_real_time/' + instance_name + '/'
+file_path = folder_path + instance_name + '.xml'
+print('Opening:', file_path)
 
 # %% 2. Instance Network with initial values
-network = Network.from_xml(filePath)
+network = Network.from_xml(file_path)
 
 # %% 3. Instantiate EVs
-fleet = Fleet.from_xml(filePath)
+fleet = res.ElectricVehicle.from_xml()
 
 # %% 4. GA hyperparameters
 

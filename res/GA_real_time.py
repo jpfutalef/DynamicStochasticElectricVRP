@@ -75,7 +75,7 @@ def mutate(individual, indices, starting_points, customers, charging_stations, a
     if index is None:
         index = randint(0, len(individual))
 
-    # Find concerning block
+    # Find block
     for id_ev, (i0, i1) in indices.items():
         if i0 <= index <= i1 + 3 * allowed_charging_operations - 1:
             # Case customer
@@ -89,7 +89,7 @@ def mutate(individual, indices, starting_points, customers, charging_stations, a
 
             # Case CS
             elif i1 <= index <= i1 + 3 * allowed_charging_operations - 1:
-                # Find corresponding operation index
+                # Find operation sub-block
                 for j in range(allowed_charging_operations):
                     if i1 + j * allowed_charging_operations <= index <= i1 + j * allowed_charging_operations + 2:
                         # Choose if making a charging operation
@@ -122,8 +122,8 @@ def crossover(ind1, ind2, indices, allowed_charging_operations=2, index=None):
     if index is None:
         index = randint(0, len(ind1))
 
-    # Find concerning block
-    for id_ev, (i0, i1) in indices.items():  # i is the EV id
+    # Find block
+    for id_ev, (i0, i1) in indices.items():
         if i0 <= index <= i1 + 3 * allowed_charging_operations - 1:
             # Case customer
             if i0 <= index < i1:
@@ -272,7 +272,6 @@ def fitness(individual, vehicles, indices, starting_points, weights=(1.0, 1.0, 1
 
 
 if __name__ == '__main__':
-    ids = [0, 1]
     customers_to_visit = {0: [1, 4, 5],
                           1: [2, 3, 6]}
 

@@ -88,7 +88,7 @@ input('Press enter to continue...')
 
 # %%
 # 7. GA hyperparameters
-CXPB, MUTPB = 0.4, 0.8
+CXPB, MUTPB = 0.6, 0.8
 n_individuals = 100
 generations = 170
 penalization_constant = 500000
