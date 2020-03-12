@@ -134,7 +134,7 @@ for _attrib in _fleet.find('vehicle_attributes'):
 
 print('EV attributes:', attrib, '\n')
 
-# 7. Proposal of how many customers each EV will visit
+# 7. Proposal of how many customers_per_vehicle each EV will visit
 customers_per_car = [int(len(net.ids_customer) / numVehicles)] * numVehicles
 if len(net.ids_customer) % numVehicles != 0:
     customers_per_car[-1] = int(len(net.ids_customer) / numVehicles) + 1
@@ -150,7 +150,7 @@ vehicles_dict = {}
 ids_customer = [[1, 2, 3, 4], [5, 6, 7]]
 for id_car, customers in enumerate(ids_customer):
     # sequences
-    print('Car', id_car, 'must visit customers with ID:', customers)
+    print('Car', id_car, 'must visit customers_per_vehicle with ID:', customers)
 
     # First decision variables
     node_sequence = [0] + customers + [0]

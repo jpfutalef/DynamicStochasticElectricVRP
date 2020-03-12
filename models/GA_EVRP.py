@@ -63,7 +63,7 @@ print(key, net[f][t][key])
 # %% 4. Instantiate EVs
 vehicles = res.ElectricVehicle.from_xml(filePath, net)
 
-# 5. Proposal of how many customers each EV will visit
+# 5. Proposal of how many customers_per_vehicle each EV will visit
 chooseCustomersRandom = False
 
 numVehicles = len(vehicles)
@@ -82,7 +82,7 @@ if chooseCustomersRandom:
         for j in range(0, num_customers):
             index = random.randint(0, len(ids_customer) - 1)
             ids_customer_to_visit.append(ids_customer.pop(index))
-        print('Car', id_car, 'must visit customers with ID:', ids_customer_to_visit)
+        print('Car', id_car, 'must visit customers_per_vehicle with ID:', ids_customer_to_visit)
         vehicles[id_car].set_customers_to_visit(ids_customer_to_visit)
 else:
     ids_customer = [[1, 2, 3, 4], [5, 6, 7]]

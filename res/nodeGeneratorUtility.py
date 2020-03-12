@@ -120,5 +120,5 @@ if createInfoFile:
     dataFrame = makeInfoMatrix(info, file_name=fileName, folder_path=folderPath)
 
     print('Number of depots:', len(depotNodes))
-    print('Number of customers:', len(customerNodes))
+    print('Number of customers_per_vehicle:', len(customerNodes))
     print('Number of CSs:', len(csNodes))

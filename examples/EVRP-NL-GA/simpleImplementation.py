@@ -73,7 +73,7 @@ if createInfoFile and doAllWork:
     res.EV_utilities.saveInfoMatrix(info, name='infoMatrix')
 
     print('Number of depots:', len(depotNodes))
-    print('Number of customers:', len(customerNodes))
+    print('Number of customers_per_vehicle:', len(customerNodes))
     print('Number of CSs:', len(csNodes))
 
 # %% md
@@ -171,12 +171,12 @@ for carId, nCustomersCar in enumerate(nCustomersPerCar):
         index = random.randint(0, len(customersId) - 1)
         carCustomersId.append(customersId.pop(index))
     customersToVisit = [customerId for customerId in carCustomersId]
-    print('Car', carId, 'must visit customers with ID:', customersToVisit)
+    print('Car', carId, 'must visit customers_per_vehicle with ID:', customersToVisit)
 
     # IMPORTANT: the proposed nodeSequence
     nodeSequence = [0] + customersToVisit + [0]
     chargingSequence = [0] * len(nodeSequence)
-    print('Car ', carId, 'will visit customers in the following order:', nodeSequence, '\n')
+    print('Car ', carId, 'will visit customers_per_vehicle in the following order:', nodeSequence, '\n')
     if insertChargeStations and len(nodeSequence) > 3:
         for j, nodeId in enumerate(nodeSequence[2:-1]):
             if random.randint(0, 1):

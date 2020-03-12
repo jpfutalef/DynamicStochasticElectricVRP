@@ -157,7 +157,7 @@ class ElectricVehicle:  # TODO add documentation
         except TypeError:
             self.si = 0
 
-        # the number of customers to visit
+        # the number of customers_per_vehicle to visit
         self.customerCount = len(customersToVisitId)
 
         # Save initial conditions
@@ -384,7 +384,7 @@ def feasible(nodeSequences, chargeSequences, x0Sequence, vehiclesDict):
     # print("chargeSequences", chargeSequences)
     # print("x0Sequence", x0Sequence)
     # LINEAR CONTRAINTS
-    # Amount of vehicles and customers, and the network information dictionary
+    # Amount of vehicles and customers_per_vehicle, and the network information dictionary
     nVehicles = len(vehiclesDict)
     nCustomers = np.sum([x.customerCount for _, x in vehiclesDict.items()])
     networkDict = vehiclesDict[0].networkInfo
@@ -503,7 +503,7 @@ def distance(nodeSequences, chargeSequences, x0Sequence, vehiclesDict, allowed_c
     # print("chargeSequences", chargeSequences)
     # print("x0Sequence", x0Sequence)
     # LINEAR CONTRAINTS
-    # Amount of vehicles and customers, and the network information dictionary
+    # Amount of vehicles and customers_per_vehicle, and the network information dictionary
     nVehicles = len(vehiclesDict)
     nCustomers = np.sum([x.customerCount for _, x in vehiclesDict.items()])
     networkDict = vehiclesDict[0].networkInfo

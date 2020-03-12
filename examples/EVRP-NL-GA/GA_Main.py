@@ -173,7 +173,7 @@ chooseCustomersRandom = True
 vehiclesDict = {}
 
 if chooseCustomersRandom:
-    # Choose the customers each vehicle will visit randomly
+    # Choose the customers_per_vehicle each vehicle will visit randomly
     customersID = [evID for evID in customerDF['ID']]
     nCustomers = len(customersID)
     nCustomersPerCar = [int(nCustomers / nVehicles)] * nVehicles
@@ -191,7 +191,7 @@ if chooseCustomersRandom:
             index = random.randint(0, len(customersID) - 1)
             carCustomersId.append(customersID.pop(index))
         customersToVisit = [customerId for customerId in carCustomersId]
-        print('Car', carId, 'must visit customers with ID:', customersToVisit)
+        print('Car', carId, 'must visit customers_per_vehicle with ID:', customersToVisit)
 
         nodeSequence = [0] + customersToVisit + [0]
         chargingSequence = [0] * len(nodeSequence)
@@ -213,7 +213,7 @@ else:
     nCustomers = sum([len(x) for x in customersID])
 
     for carId, customersToVisit in enumerate(customersID):
-        print('Car', carId, 'must visit customers with ID:', customersToVisit)
+        print('Car', carId, 'must visit customers_per_vehicle with ID:', customersToVisit)
 
         # IMPORTANT: the proposed nodeSequence
         nodeSequence = [0] + customersToVisit + [0]

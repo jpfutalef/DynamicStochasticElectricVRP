@@ -92,7 +92,7 @@ def mutate(individual, indices, starting_points, customers, charging_stations, a
             j = randint(i0, i1 - 1)
             if j != i:
                 break
-        swapElements(individual, i, j)
+        swap_elements(individual, i, j)
 
     # Case CS
     elif i1 <= index <= i1 + 3 * allowed_charging_operations - 1:
@@ -137,11 +137,79 @@ def crossover(ind1, ind2, indices, allowed_charging_operations=2, index=None):
 
     # Case customer
     if i0 <= index < i1:
-        swapBlock(ind1, ind2, i0, i1)
+        swap_block(ind1, ind2, i0, i1)
 
     # Case CS
     elif i1 <= index <= i1 + 3 * allowed_charging_operations - 1:
-        swapBlock(ind1, ind2, i1, i1 + 3 * allowed_charging_operations - 1)
+        swap_block(ind1, ind2, i1, i1 + 3 * allowed_charging_operations - 1)
+
+
+def swap_elements(l, i, j):
+    """
+    This function allows to swap two elements in a list, given two positions.
+    :param l: the list
+    :param i: first position
+    :param j: second position
+    """
+    l[i], l[j] = l[j], l[i]
+
+
+def swap_block(l1, l2, i, j):
+    """
+    This function allows to swap block within a list, given two positions.
+    :param l1: first list
+    :param l2: second list
+    :param i: first position
+    :param j: second position
+    """
+    l1[i: j], l2[i:j] = l2[i:j], l1[i:j]
+
+
+def block_indices(customer_count, allowed_charging_operations=2):
+    """
+    Creates the indices of sub blocks.
+    :param customer_count: list with the amount of customer to visit, after initial condition
+    :param allowed_charging_operations:
+    :return: tuples list with indices [(i0, j0), (i1, j1),...] where iN represent location of the beginning of customers_per_vehicle
+    block and jN location of the beginning of charging operations block of evN in the individual, respectively.
+    """
+    indices = []
+
+    i0 = 0
+    i1 = 0
+    for ni in customer_count:
+        i1 += ni
+
+        indices.append((i0, i1))
+
+        i0 += ni + 3 * allowed_charging_operations
+        i1 += 3 * allowed_charging_operations
+
+    return indices
+
+
+def random_individual(indices, starting_points, customers_per_vehicle, charging_stations,
+                      allowed_charging_operations=2):
+    """
+    Creates a random individual
+    :param allowed_charging_operations:
+    :return: a random individual
+    """
+    individual = []
+    for init_point, customers, (i0, i1) in zip(starting_points.values(), customers_per_vehicle, indices):
+        customer_sequence = sample(customers, len(customers))
+
+        sample_space = customers + [init_point[0]] + [-1] * allowed_charging_operations
+        after_customers = sample(sample_space, allowed_charging_operations)
+        charging_sequence = [0] * allowed_charging_operations * 3
+        for i, customer in enumerate(after_customers):
+            charging_sequence[3*i] = customer
+            charging_sequence[3*i + 1] = sample(charging_stations, 1)[0]
+            charging_sequence[3*i + 2] = uniform(0.0, 90.0)
+
+        individual += customer_sequence + charging_sequence
+
+    return individual
 
 
 def fitness(individual, vehicles, indices, starting_points, weights=(1.0, 1.0, 1.0, 1.0), penalization_constant=500000,
@@ -149,7 +217,7 @@ def fitness(individual, vehicles, indices, starting_points, weights=(1.0, 1.0, 1
     """
     Calculates fitness of individual.
     :param individual: The individual to decode
-    :param vehicles: dictionary with vehicle instances. They must have been assigned to customers
+    :param vehicles: dictionary with vehicle instances. They must have been assigned to customers_per_vehicle
     :param starting_points: dictionary with info of the initial state {id_vehicle:(S0, L0, x1_0, x2_0)}
     :param allowed_charging_operations: maximum charging operations per ev
     :param weights: tuple with weights of each variable in cost function (w1, w2, w3, w4)
@@ -157,6 +225,7 @@ def fitness(individual, vehicles, indices, starting_points, weights=(1.0, 1.0, 1
     :return: the fitness of the individual
     """
 
+    #TODO remove ElectricVehicle dependence
     # Decode
     S, L = decode(individual, indices, starting_points, allowed_charging_operations=allowed_charging_operations)
 
@@ -197,7 +266,6 @@ def fitness(individual, vehicles, indices, starting_points, weights=(1.0, 1.0, 1
     energy_consumption_cost = np.sum(energy_consumption_costs)
     charging_cost = np.sum(charging_costs)
 
-    # TODO verify if this is ok to check feasibility
     op_vector = createOptimizationVector(vehicles)
     is_feasible, penalization = feasible(op_vector, vehicles)
 
@@ -210,71 +278,6 @@ def fitness(individual, vehicles, indices, starting_points, weights=(1.0, 1.0, 1
     return fit,
 
 
-def swapElements(l, i, j):
-    """
-    This function allows to swap two elements in a list, given two positions.
-    :param l: the list
-    :param i: first position
-    :param j: second position
-    """
-    l[i], l[j] = l[j], l[i]
-
-
-def swapBlock(l1, l2, i, j):
-    """
-    This function allows to swap block within a list, given two positions.
-    :param l1: first list
-    :param l2: second list
-    :param i: first position
-    :param j: second position
-    """
-    l1[i: j], l2[i:j] = l2[i:j], l1[i:j]
-
-
-def blockIndices(customer_count, allowed_charging_operations=2):
-    """
-    Creates the indices of sub blocks.
-    :param customer_count: list with the amount of customer to visit, after initial condition
-    :param allowed_charging_operations:
-    :return: tuples list with indices [(i0, j0), (i1, j1),...] where iN represent location of the beginning of customers
-    block and jN location of the beginning of charging operations block of evN in the individual, respectively.
-    """
-    indices = []
-
-    i0 = 0
-    i1 = 0
-    for ni in customer_count:
-        i1 += ni
-
-        indices.append((i0, i1))
-
-        i0 += ni + 3 * allowed_charging_operations
-        i1 += 3 * allowed_charging_operations
-
-    return indices
-
-
-def createRandomIndividual(vehicles, allowed_charging_operations=2):
-    """
-    Creates a random individual
-    :param vehicles: dict with vechiles info
-    :param allowed_charging_operations:
-    :return: a random individual
-    """
-    individual = []
-    for id_vehicle, vehicle in vehicles.items():
-        vehicle: ElectricVehicle
-
-        customerSequence = sample(vehicle.customers_to_visit, len(vehicle.customers_to_visit))
-        seq = [lambda: sample(customerSequence, 1), lambda: sample(vehicle.network.ids_charge_stations, 1),
-               lambda: uniform(0.0, 90.0)]
-
-        chargingSequence = initCycle(list, seq, n=allowed_charging_operations)
-        individual += customerSequence + chargingSequence
-
-    return individual
-
-
 if __name__ == '__main__':
     customers_to_visit = [[1, 4, 5],
                           [2, 3, 6]]
@@ -284,7 +287,7 @@ if __name__ == '__main__':
     all_ch_ops = 2
 
     # Indices
-    indices = blockIndices(customer_count, allowed_charging_operations=all_ch_ops)
+    indices = block_indices(customer_count, allowed_charging_operations=all_ch_ops)
 
     # Starting points (S0, L0, x1_0, x2_0)
     init_state = {0: (0, 0, 150., 80.), 1: (0, 0, 250., 80.)}
@@ -313,7 +316,7 @@ if __name__ == '__main__':
     print('Individual 2:', ind2, '\nMate...')
     while True:
         index = input()
-        if index == 's':
+        if index == '':
             break
         else:
             index = int(index)
@@ -325,10 +328,20 @@ if __name__ == '__main__':
     print('Individual 3:', ind3, '\nMutate...')
     while True:
         index = input()
-        if index == 's':
+        if index == '':
             break
         else:
             index = int(index)
         mutate(ind3, indices, init_state, customers_to_visit, charging_stations,
                allowed_charging_operations=all_ch_ops, index=index)
         print('Individual 3:', ind3)
+
+    # Create random individuals
+    print('Random individuals')
+    while True:
+        index = input()
+        if index == 's':
+            break
+        else:
+            print(random_individual(indices, init_state, customers_to_visit, charging_stations,
+                                    allowed_charging_operations=all_ch_ops))

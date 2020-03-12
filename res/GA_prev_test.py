@@ -10,7 +10,7 @@ from res.ElectricVehicle import ElectricVehicle, feasible, createOptimizationVec
 def decode(individual, vehicles, indices=(), allowed_charging_operations=2):
     """
     Decodes an individual to the corresponding node sequence and charging sequence. The individual has
-    the following structure: ind = [customers, charg_ops, x0, ...]. S is the node sequence with the
+    the following structure: ind = [customers_per_vehicle, charg_ops, x0, ...]. S is the node sequence with the
     following structure  S = [S1, ..., Sm], where Si = [Si(0),..., Si(s_0-1)].  The L structure is the same as S
     structure. The x0 structure is x0=[x0_1,...x0_m].
     :param allowed_charging_operations: number of charging operations each vehicle is allowed to perform
@@ -84,7 +84,7 @@ def fitness(individual, vehicles, weights=(1.0, 1.0, 1.0, 1.0), penalization_con
     Calculates fitness of individual.
     :param indices:
     :param individual: The individual to decode
-    :param vehicles: dictionary with vehicle instances. They must have been assigned to customers
+    :param vehicles: dictionary with vehicle instances. They must have been assigned to customers_per_vehicle
     :param allowed_charging_operations: maximum charging operations per ev
     :param x2_0: SOC of EVs leaving depot
     :return: the fitness of the individual

@@ -103,7 +103,7 @@ customersID = [[2, 3, 4, 5], [6, 7, 9]]     # Customers each vehicle will visit
 nCustomers = sum([len(x) for x in customersID])
 
 for carId, customersToVisit in enumerate(customersID):
-    print('Car', carId, 'must visit customers with ID:', customersToVisit)
+    print('Car', carId, 'must visit customers_per_vehicle with ID:', customersToVisit)
 
     # IMPORTANT: the proposed nodeSequence
     nodeSequence = [0] + customersToVisit + [0]

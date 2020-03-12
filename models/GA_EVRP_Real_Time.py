@@ -53,7 +53,7 @@ while False:
 
 
 
-# %% 7. End GA: All vehicles have reached their assigned customers
+# %% 7. End GA: All vehicles have reached their assigned customers_per_vehicle
 print("################  End of (successful) evolution  ################")
 
 # %% 8. Show report
