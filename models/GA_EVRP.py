@@ -55,11 +55,6 @@ net = Network()
 net.from_xml(filePath)
 # net.draw()
 
-# Usage example
-f = 5
-t = 6
-key = 'energy_consumption'
-print(key, net[f][t][key])
 # %% 4. Instantiate EVs
 vehicles = res.ElectricVehicle.from_xml(filePath, net)
 
@@ -99,6 +94,7 @@ generations = 170
 penalization_constant = 500000
 weights = (1.0, 1.5, 0.0, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
 
+# Arguments
 attrib_ga = {'allowed_charging_operations': 2, 'vehicles': vehicles}
 i0, i1, i2 = res.GA_prev_test.createImportantIndices(**attrib_ga)
 attrib_ga['indices'] = [i0, i1, i2]

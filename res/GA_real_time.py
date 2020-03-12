@@ -2,10 +2,7 @@ import numpy as np
 from random import randint
 from random import uniform
 from random import sample
-from deap.tools import initCycle
 
-from res.EV_utilities import feasible
-from res.EV_utilities import distance
 from res.ElectricVehicle import ElectricVehicle, feasible, createOptimizationVector
 
 
@@ -25,7 +22,7 @@ def decode(individual, indices, starting_points, allowed_charging_operations=2):
     S = {}
     L = {}
 
-    for id_ev, (i0, i1) in enumerate(indices):  # i is the EV id
+    for id_ev, (i0, i1) in indices.items():
         charging_operations = [(individual[i1 + 3 * i], individual[i1 + 3 * i + 1], individual[i1 + 3 * i + 2])
                                for i in range(allowed_charging_operations) if individual[i1 + 3 * i] != -1]
         customers_block = individual[i0:i1]
@@ -79,48 +76,44 @@ def mutate(individual, indices, starting_points, customers, charging_stations, a
         index = randint(0, len(individual))
 
     # Find concerning block
-    i = 0
-    i0, i1 = indices[0]
-    for i, (i0, i1) in enumerate(indices):  # i is the EV id
+    for id_ev, (i0, i1) in indices.items():
         if i0 <= index <= i1 + 3 * allowed_charging_operations - 1:
+            # Case customer
+            if i0 <= index < i1:
+                i = randint(i0, i1 - 1)
+                while True:
+                    j = randint(i0, i1 - 1)
+                    if j != i:
+                        break
+                swap_elements(individual, i, j)
+
+            # Case CS
+            elif i1 <= index <= i1 + 3 * allowed_charging_operations - 1:
+                # Find corresponding operation index
+                for j in range(allowed_charging_operations):
+                    if i1 + j * allowed_charging_operations <= index <= i1 + j * allowed_charging_operations + 2:
+                        # Choose if making a charging operation
+                        if randint(0, 1):
+                            # Choose a customer node randomly
+                            while True:
+                                sample_space = [starting_points[id_ev][0]] + customers[id_ev]
+                                customer = sample(sample_space, 1)[0]
+                                # Ensure customer has not been already chosen
+                                if customer not in [individual[i1 + 3 * x] for x in range(allowed_charging_operations)]:
+                                    break
+                            individual[i1 + 3 * j] = customer
+
+                        else:
+                            individual[i1 + 3 * j] = -1
+
+                        # Choose a random CS anyways
+                        individual[i1 + 3 * j + 1] = sample(charging_stations, 1)[0]
+
+                        # Choose amount anyways
+                        amount = uniform(0.0, 90.0)
+                        individual[i1 + 3 * j + 2] = float(f"{amount:.2f}")
             break
 
-    # Case customer
-    if i0 <= index < i1:
-        i = randint(i0, i1 - 1)
-        while True:
-            j = randint(i0, i1 - 1)
-            if j != i:
-                break
-        swap_elements(individual, i, j)
-
-    # Case CS
-    elif i1 <= index <= i1 + 3 * allowed_charging_operations - 1:
-        # Find corresponding operation index
-        j = 0
-        for j in range(allowed_charging_operations):
-            if i1 + j * allowed_charging_operations <= index <= i1 + j * allowed_charging_operations + 2:
-                break
-
-        # Choose if making a charging operation
-        if randint(0, 1):
-            # Choose a customer node randomly
-            while True:
-                sample_space = [starting_points[i][0]] + customers[i]
-                customer = sample(sample_space, 1)[0]
-                # Ensure customer is not already chosen
-                if customer not in [individual[i1 + 3 * x] for x in range(allowed_charging_operations)]:
-                    break
-            individual[i1 + 3 * j] = customer
-
-        else:
-            individual[i1 + 3 * j] = -1
-
-        # Choose a random CS anyways
-        individual[i1 + 3 * j + 1] = sample(charging_stations, 1)[0]
-
-        # Choose amount anyways
-        individual[i1 + 3 * j + 2] = uniform(0.0, 90.0)
     return individual
 
 
@@ -130,18 +123,15 @@ def crossover(ind1, ind2, indices, allowed_charging_operations=2, index=None):
         index = randint(0, len(ind1))
 
     # Find concerning block
-    i0, i1 = indices[0]
-    for i, (i0, i1) in enumerate(indices):  # i is the EV id
+    for id_ev, (i0, i1) in indices.items():  # i is the EV id
         if i0 <= index <= i1 + 3 * allowed_charging_operations - 1:
-            break
+            # Case customer
+            if i0 <= index < i1:
+                swap_block(ind1, ind2, i0, i1)
 
-    # Case customer
-    if i0 <= index < i1:
-        swap_block(ind1, ind2, i0, i1)
-
-    # Case CS
-    elif i1 <= index <= i1 + 3 * allowed_charging_operations - 1:
-        swap_block(ind1, ind2, i1, i1 + 3 * allowed_charging_operations - 1)
+            # Case CS
+            elif i1 <= index <= i1 + 3 * allowed_charging_operations - 1:
+                swap_block(ind1, ind2, i1, i1 + 3 * allowed_charging_operations - 1)
 
 
 def swap_elements(l, i, j):
@@ -165,7 +155,7 @@ def swap_block(l1, l2, i, j):
     l1[i: j], l2[i:j] = l2[i:j], l1[i:j]
 
 
-def block_indices(customer_count, allowed_charging_operations=2):
+def block_indices(customers_to_visit, allowed_charging_operations=2):
     """
     Creates the indices of sub blocks.
     :param customer_count: list with the amount of customer to visit, after initial condition
@@ -173,14 +163,15 @@ def block_indices(customer_count, allowed_charging_operations=2):
     :return: tuples list with indices [(i0, j0), (i1, j1),...] where iN represent location of the beginning of customers_per_vehicle
     block and jN location of the beginning of charging operations block of evN in the individual, respectively.
     """
-    indices = []
+    indices = {}
 
     i0 = 0
     i1 = 0
-    for ni in customer_count:
+    for id_vehicle, customers in customers_to_visit.items():
+        ni = len(customers)
         i1 += ni
 
-        indices.append((i0, i1))
+        indices[id_vehicle] = (i0, i1)
 
         i0 += ni + 3 * allowed_charging_operations
         i1 += 3 * allowed_charging_operations
@@ -196,7 +187,8 @@ def random_individual(indices, starting_points, customers_per_vehicle, charging_
     :return: a random individual
     """
     individual = []
-    for init_point, customers, (i0, i1) in zip(starting_points.values(), customers_per_vehicle, indices):
+    for id_ev, (i0, i1) in indices.items():
+        init_point, customers = starting_points[id_ev], customers_per_vehicle[id_ev]
         customer_sequence = sample(customers, len(customers))
 
         sample_space = customers + [init_point[0]] + [-1] * allowed_charging_operations
@@ -205,7 +197,8 @@ def random_individual(indices, starting_points, customers_per_vehicle, charging_
         for i, customer in enumerate(after_customers):
             charging_sequence[3*i] = customer
             charging_sequence[3*i + 1] = sample(charging_stations, 1)[0]
-            charging_sequence[3*i + 2] = uniform(0.0, 90.0)
+            amount = uniform(0.0, 90.0)
+            charging_sequence[3*i + 2] = float(f"{amount:.2f}")
 
         individual += customer_sequence + charging_sequence
 
@@ -279,23 +272,23 @@ def fitness(individual, vehicles, indices, starting_points, weights=(1.0, 1.0, 1
 
 
 if __name__ == '__main__':
-    customers_to_visit = [[1, 4, 5],
-                          [2, 3, 6]]
-    customer_count = [len(x) for x in customers_to_visit]
+    ids = [0, 1]
+    customers_to_visit = {0: [1, 4, 5],
+                          1: [2, 3, 6]}
 
     charging_stations = [7, 8]
     all_ch_ops = 2
 
     # Indices
-    indices = block_indices(customer_count, allowed_charging_operations=all_ch_ops)
+    indices = block_indices(customers_to_visit, allowed_charging_operations=all_ch_ops)
 
     # Starting points (S0, L0, x1_0, x2_0)
     init_state = {0: (0, 0, 150., 80.), 1: (0, 0, 250., 80.)}
 
     ind1 = [5, 1, 4, -1, 8, 10.5, 1, 7, 15.5,
             6, 3, 2, 6, 8, 11.5, -1, 7, 12.5]
-    ind2 = [5, 1, 4, 5, 8, 10.5, 1, 7, 15.5,
-            6, 3, 2, 6, 8, 11.5, 3, 7, 12.5]
+    ind2 = [1, 4, 5, 5, 8, 12.5, 4, 7, 13.5,
+            6, 2, 3, 2, 7, 11.5, 3, 8, 12.5]
     ind3 = [5, 1, 4, 0, 8, 10.5, 1, 7, 15.5,
             6, 3, 2, 6, 8, 11.5, 3, 7, 12.5]
 
