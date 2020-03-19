@@ -28,13 +28,16 @@ from res.Network import Network
 
 
 # %% 1. Specify real time instance folder
-instance_name = 'd1c7cs2_ev2'
-folder_path = '../data/GA_real_time/' + instance_name + '/'
+instance_name = 'test_instance'
+folder_path = '../data/GA_implementation_xml/' + instance_name + '/'
 file_path = folder_path + instance_name + '.xml'
-print('Opening:', file_path)
+file_path_realtime = folder_path + instance_name + '_realtime.xml'
+print('OFFLINE file path:', file_path)
+print(' ONLINE file path:', file_path_realtime)
 
 # %% 2. Instance Network with initial values
-network = Network.from_xml(file_path)
+network = Network()
+network.from_xml(file_path)
 
 # %% 3. Instantiate EVs
 fleet = res.ElectricVehicle.from_xml()
