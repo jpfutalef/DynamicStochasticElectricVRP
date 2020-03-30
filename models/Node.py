@@ -11,6 +11,7 @@ class NetworkNode:
     """
     A general network node which has an associated Id
     """
+    id: int
 
     def __init__(self, node_id=0, spent_time=0, demand=0, pos=(0, 0), color='black', *args, **kwargs):
         """

@@ -4,7 +4,7 @@ from random import uniform
 from random import sample
 from deap.tools import initCycle
 
-from res.ElectricVehicle import ElectricVehicle, feasible, createOptimizationVector
+from models.ElectricVehicle import ElectricVehicle, feasible, createOptimizationVector
 
 
 def decode(individual, vehicles, indices=(), allowed_charging_operations=2):

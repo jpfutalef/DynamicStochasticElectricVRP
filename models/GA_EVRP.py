@@ -5,7 +5,6 @@ import sys
 
 # scientific libraries and utilities
 import numpy as np
-import pandas as pd
 import random
 import time
 import copy
@@ -16,26 +15,20 @@ from deap import creator
 from deap import tools
 
 # Visualization tools
-import matplotlib.pyplot as plt
-from bokeh.plotting import figure, output_notebook, show
-from bokeh.layouts import gridplot, column
-from bokeh.layouts import row as layout_row
+from bokeh.plotting import figure, show
+from bokeh.layouts import gridplot
 from bokeh.models.annotations import Arrow, Label
-from bokeh.models.arrow_heads import OpenHead, NormalHead, VeeHead
-from bokeh.models import ColumnDataSource, Div, Whisker, Span, Range1d
-from bokeh.io import export_svgs, export_png
+from bokeh.models.arrow_heads import VeeHead
+from bokeh.models import Whisker, Span, Range1d
 
 # To reload modules
-import importlib
 
 # XML tools
-import xml.etree.ElementTree as ET
 
 # EV and network libraries
 import res.GA_prev_test
-from res.ElectricVehicle import ElectricVehicle
-from res.Node import DepotNode, CustomerNode, ChargeStationNode
-from res.Network import Network
+from models.ElectricVehicle import ElectricVehicle
+from models.Network import Network
 
 t0 = time.time()
 
@@ -56,7 +49,7 @@ net.from_xml(filePath)
 # net.draw()
 
 # %% 4. Instantiate EVs
-vehicles = res.ElectricVehicle.from_xml(filePath, net)
+vehicles = models.ElectricVehicle.from_xml(filePath, net)
 
 # 5. Proposal of how many customers_per_vehicle each EV will visit
 chooseCustomersRandom = False

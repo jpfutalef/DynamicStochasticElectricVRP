@@ -3,7 +3,7 @@ from random import randint
 from random import uniform
 from random import sample
 
-from res.ElectricVehicle import ElectricVehicle, feasible, createOptimizationVector
+from models.ElectricVehicle import ElectricVehicle, feasible, createOptimizationVector
 
 
 def decode(individual, indices, starting_points, allowed_charging_operations=2):
