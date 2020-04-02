@@ -15,10 +15,10 @@ import xml.etree.ElementTree as ET
 if __name__ == '__main__':
     # Nodes
     depot = DepotNode(0)
-    customer1 = CustomerNode(1, 15, .4)
-    customer2 = CustomerNode(2, 15, .4)
-    customer3 = CustomerNode(3, 15, .4)
-    customer4 = CustomerNode(4, 15, .4)
+    customer1 = CustomerNode(1, 15, .4, time_window_down=0, time_window_up=24*60)
+    customer2 = CustomerNode(2, 15, .4, time_window_down=0, time_window_up=24*60)
+    customer3 = CustomerNode(3, 15, .4, time_window_down=0, time_window_up=24*60)
+    customer4 = CustomerNode(4, 15, .4, time_window_down=0, time_window_up=24*60)
     charge_station1 = ChargeStationNode(5)
 
     nodes = {0: depot, 1: customer1, 2: customer2, 3: customer3, 4: customer4, 5: charge_station1}
@@ -48,7 +48,7 @@ if __name__ == '__main__':
     ev2.set_customers_to_visit((3, 4))
 
     # The fleet
-    fleet = Fleet(network, {1: ev1, 2: ev2}, (1, 2))
+    fleet = Fleet({1: ev1, 2: ev2}, network, (1, 2))
 
     # Routes and initial conditions
     x1_0_1 = 10 * 60
@@ -59,15 +59,31 @@ if __name__ == '__main__':
     x2_0_2 = 80
     x3_0_2 = sum([network.nodes[i].requiredDemand() for i in ev2.assigned_customers])
 
-    route1 = ((0, 1, 2, 0), (0, 0, 0, 0))
-    route2 = ((0, 3, 5, 4, 0), (0, 0, 10.5, 0, 0))
+    route1 = ((0, 1, 5, 2, 0), (0, 0, 32., 0, 0))
+    route2 = ((0, 3, 5, 4, 0), (0, 0, 33.5, 0, 0))
 
     routes = {1: (route1, x1_0_1, x2_0_1, x3_0_1), 2: (route2, x1_0_2, x2_0_2, x3_0_2)}
 
     # Set routes and iterate
     fleet.set_routes_of_vehicles(routes)
 
-    # Get optimization vector
-    op_vector = fleet.create_optimization_vector()
+    # Create optimization vector
+    fleet.create_optimization_vector()
 
-    a = 1
+    # Obtain costs with specified weights
+    w1, w2, w3, w4 = 1.0, 1.0, 1.0, 1.0
+    cost = fleet.cost_function(w1, w2, w3, w4)
+    print(cost)
+
+    # Check if the solution is feasible
+    feasible, dist = fleet.feasible()
+
+    print('***** FROM FILE *****')
+    path = '../data/GA_implementation_xml/test_instance/test_instance_realtime.xml'
+    fleet_file = Fleet()
+    fleet_file.from_xml(path)
+
+    # Make an update
+    fleet_file.update_from_xml(path, do_network=False, set_customers=True, realtime=True)
+
+    a=1
