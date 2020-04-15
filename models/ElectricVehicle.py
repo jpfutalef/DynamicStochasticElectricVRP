@@ -21,12 +21,12 @@ def F_recursive(k: int, route: RouteVector, state_reaching_matrix: ndarray, stat
         ec = network.e(route[0][k - 1], route[0][k], payload=state_leaving_matrix[2, k - 1],
                        time_of_day=state_leaving_matrix[0, k - 1])
         d = network.demand(route[0][k])
-        u1 = array((tt, -ec, -d))
+        u1 = array((tt, -ec, 0))
         state_reaching_matrix[:, k] = F_recursive(k - 1, route, state_reaching_matrix, state_leaving_matrix,
                                                   tt_array, ec_array, c_op_array, network) + u1
 
         spent_time = network.spent_time(route[0][k], state_reaching_matrix[1, k], route[1][k])
-        u2 = array((spent_time, route[1][k], 0))
+        u2 = array((spent_time, route[1][k], -d))
         state_leaving_matrix[:, k] = state_reaching_matrix[:, k] + u2
 
         tt_array[0, k - 1] = tt
@@ -40,13 +40,13 @@ def F_recursive(k: int, route: RouteVector, state_reaching_matrix: ndarray, stat
 
 @dataclass
 class ElectricVehicle:
+    # Attribs that must be given
     vid: int
-    # Attribs
-    alpha_up: Union[int, float] = 80.
-    alpha_down: Union[int, float] = 40.
-    max_tour_duration: Union[int, float] = 300.
-    battery_capacity: Union[int, float] = 200.
-    max_payload: Union[int, float] = 2.
+    alpha_up: Union[int, float]
+    alpha_down: Union[int, float]
+    max_tour_duration: Union[int, float]
+    battery_capacity: Union[int, float]
+    max_payload: Union[int, float]
 
     # Required by model
     assigned_customers: Tuple[int, ...] = None
@@ -102,4 +102,3 @@ class ElectricVehicle:
         k = len(self.route[0]) - 1
         F_recursive(k, self.route, self.state_reaching, self.state_leaving, self.travel_times, self.energy_consumption,
                     self.charging_times, network)
-
