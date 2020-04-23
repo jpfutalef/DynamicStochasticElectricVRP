@@ -1,13 +1,12 @@
-# %%
-
-# Too work with arguments and script paths
-import sys
-
+# %% Imports
 # scientific libraries and utilities
-import numpy as np
 import random
+import sys
 import time
-import copy
+
+# Visualization tools
+from bokeh.layouts import gridplot
+from bokeh.plotting import figure, show
 
 # GA library
 from deap import base
@@ -15,18 +14,12 @@ from deap import creator
 from deap import tools
 
 # Resources
-from GA_AlreadyAssigned import *
-from Fleet import from_xml, InitialCondition
-
-# Visualization tools
-from bokeh.plotting import figure, show
-from bokeh.layouts import gridplot
-from bokeh.models.annotations import Arrow, Label
-from bokeh.models.arrow_heads import VeeHead
-from bokeh.models import Whisker, Span, Range1d
+from GA_RealTime import *
+from res.Tools import *
+import res.IOTools
+from Fleet import from_xml
 
 t0 = time.time()
-
 sys.path.append('..')
 
 # %%
@@ -34,220 +27,231 @@ sys.path.append('..')
 path = './data/GA_implementation_xml/10C_2CS_1D_2EV/10C_2CS_1D_2EV_realtime.xml'
 print('Opening:', path)
 
-# %% 3. Instance fleet
-init_soc = 80.
-init_node = 0
+# %% 2. Instance fleet
 all_charging_ops = 2
-
 fleet = from_xml(path, assign_customers=True)
-
-customers_to_visit = {ev_id: ev.assigned_customers for ev_id, ev in fleet.vehicles.items()}
-
-starting_points = {ev_id: InitialCondition(init_node, 0, 0, init_soc, sum([fleet.network.nodes[x].demand
-                                                                           for x in ev.assigned_customers]))
-                   for ev_id, ev in fleet.vehicles.items()}
-
 input('Press enter to continue...')
 
-# %%
-# 7. GA hyperparameters
-CXPB, MUTPB = 0.6, 0.8
-n_individuals = 150
-generations = 500
+# %% 3. GA hyper parameters
+CXPB, MUTPB = 0.6, 0.85
+n_individuals = 80
+generations = 150
 penalization_constant = 500000
 weights = (1.0, 1.1, 0.0, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
-keep_best = 1  # Keep the 'keep_best' best individuals
+keep_best = 1 # Keep the 'keep_best' best individuals
+warm_start = True
+warm_start_size = 3
 
-# Arguments
-indices = block_indices(customers_to_visit, allowed_charging_operations=all_charging_ops)
-common_args = {'allowed_charging_operations': all_charging_ops, 'indices': indices}
-# %%
+print('  Summary of GA hyper-parameters:')
+print(f"""CXP  =  {CXPB}
+MUTPB  =  {MUTPB}
+Population size  =  {n_individuals}
+Max. generations  =  {generations}
+Penalization constants  =  {penalization_constant}
+Weights  =  {weights}
+Keeping the best(s) {keep_best} individual(s)
+Warm start: {warm_start}
+Warm start with {warm_start_size} individuals and the best from previous optimization""")
+
+# %% 4. Realtime Loop
 # Fitness objects
 creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
 creator.create("Individual", list, fitness=creator.FitnessMin, feasible=False)
 
-# Toolbox
-toolbox = base.Toolbox()
+while True:
+    # %% Observe
+    input('Update XML file and press ENTER...')
+    fleet.update_from_xml(path, do_network=True)
 
-toolbox.register("individual", random_individual,
-                 starting_points=starting_points, customers_to_visit=customers_to_visit,
-                 charging_stations=fleet.network.charging_stations, **common_args)
-toolbox.register("evaluate", fitness,
-                 fleet=fleet, starting_points=starting_points, weights=weights,
-                 penalization_constant=penalization_constant, **common_args)
-toolbox.register("mate", crossover, index=None, **common_args)
-toolbox.register("mutate", mutate,
-                 starting_points=starting_points, customers_to_visit=customers_to_visit,
-                 charging_stations=fleet.network.charging_stations, index=None, **common_args)
-toolbox.register("select", tools.selTournament, tournsize=3)
-toolbox.register("select_worst", tools.selWorst)
-toolbox.register("decode", decode,
-                 starting_points=starting_points, **common_args)
+    # %% Check if there are vehicles to route
+    if not len(fleet.vehicles):
+        break
 
-# %% the algorithm
+    # %% Create toolbox
+    customers_to_visit = {ev_id: ev.assigned_customers for ev_id, ev in fleet.vehicles.items()}
+    indices = block_indices(customers_to_visit, allowed_charging_operations=all_charging_ops)
+    common_args = {'allowed_charging_operations': all_charging_ops, 'indices': indices}
 
-tInitGA = time.time()
-# Population TODO create function
+    toolbox = base.Toolbox()
+    toolbox.register("individual", random_individual,
+                     starting_points=fleet.starting_points, customers_to_visit=customers_to_visit,
+                     charging_stations=fleet.network.charging_stations, **common_args)
+    toolbox.register("evaluate", fitness,
+                     fleet=fleet, starting_points=fleet.starting_points, weights=weights,
+                     penalization_constant=penalization_constant, **common_args)
+    toolbox.register("mate", crossover, index=None, **common_args)
+    toolbox.register("mutate", mutate,
+                     starting_points=fleet.starting_points, customers_to_visit=customers_to_visit,
+                     charging_stations=fleet.network.charging_stations, index=None, **common_args)
+    toolbox.register("select", tools.selTournament, tournsize=3)
+    toolbox.register("select_worst", tools.selWorst)
+    toolbox.register("decode", decode,
+                     starting_points=fleet.starting_points, **common_args)
+    toolbox.register("best_prev", code, fleet, all_charging_ops)
+    input('Updated! Press ENTER to begin OPTIMIZATION...')
 
-pop = []
-for i in range(0, n_individuals):
-    pop.append(creator.Individual(toolbox.individual()))
+    # %% Setup algorithm
+    t_init = time.time()
 
-# Evaluate the entire population
-# fitnesses = list(map(toolbox.evaluate, pop))
+    # Get the best individual from previous optimization
+    best_prev = creator.Individual(toolbox.best_prev())
+    best_fitness_prev, feasible_prev = toolbox.evaluate(best_prev)
 
-for ind in pop:
-    fit, feasible = toolbox.evaluate(ind)
-    ind.fitness.values = (fit,)
-    ind.feasible = feasible
+    # Warm start with mutated individuals from best
+    warm_start_individuals = []
+    for x in range(warm_start_size):
+        new_warm_ind = toolbox.mutate(toolbox.clone(best_prev))
+        warm_start_individuals.append(new_warm_ind)
 
-print("  Evaluated %i individuals" % len(pop))
+    if warm_start:
+        # Create random population
+        pop = [creator.Individual(toolbox.individual()) for i in range(n_individuals - warm_start_size - 1)]
 
-# Extracting all the fitnesses of
-fits = [ind.fitness.values for ind in pop]
+        # Add warm start to population
+        pop += [best_prev] + warm_start_individuals
 
-# Variable keeping track of the number of generations
-g = 0
-Ymax = []
-Ymin = []
-Yavg = []
-Ystd = []
-X = []
+    else:
+        pop = [creator.Individual(toolbox.individual()) for i in range(n_individuals)]
 
-bestOfAll = tools.selBest(pop, 1)[0]
-
-print("################  Start of evolution  ################")
-# Begin the evolution
-while g < generations:
-    # A new generation
-    g = g + 1
-    X.append(g)
-    print("-- Generation %i --" % g)
-
-    # Select the best individuals, if given
-    if keep_best:
-        best_individuals = list(map(toolbox.clone, tools.selBest(pop, keep_best)))
-
-    # Select the next generation individuals
-    offspring = toolbox.select(pop, len(pop))
-
-    # Clone the selected individuals
-    offspring = list(map(toolbox.clone, offspring))
-
-    # Apply crossover and mutation on the offspring
-    for child1, child2 in zip(offspring[::2], offspring[1::2]):
-        # cross two individuals with probability CXPB
-        if random.random() < CXPB:
-            toolbox.mate(child1, child2)
-
-            # fitness values of the children
-            # must be recalculated later
-            del child1.fitness.values
-            del child2.fitness.values
-
-    for mutant in offspring:
-        # mutate an individual with probability MUTPB
-        if random.random() < MUTPB:
-            toolbox.mutate(mutant)
-            del mutant.fitness.values
-
-    # Evaluate the individuals with an invalid fitness
-    invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-    for ind in invalid_ind:
+    # Evaluate the entire population
+    for ind in pop:
         fit, feasible = toolbox.evaluate(ind)
         ind.fitness.values = (fit,)
         ind.feasible = feasible
 
-    print("  Evaluated %i individuals" % len(invalid_ind))
+    print("  Evaluated %i individuals" % len(pop))
 
-    # The population is entirely replaced by a sorted offspring
-    pop[:] = offspring
-    pop[:] = tools.selBest(pop, len(pop))
+    # Extracting all the fitnesses
+    fits = [ind.fitness.values for ind in pop]
 
-    # Remove worst individuals, if keeping the best of them
-    if keep_best:
-        pop[keep_best:] = pop[:-keep_best]
-        pop[:keep_best] = best_individuals
+    # Variable keeping track of the number of generations
+    g = 0
+    Ymax = []
+    Ymin = []
+    Yavg = []
+    Ystd = []
+    X = []
 
-    # Show worst and best
-    bestInd = tools.selBest(pop, 1)[0]
-    print(f"Best individual: {bestInd} \n        Fitness: {bestInd.fitness.wvalues[0]}  Feasible: {bestInd.feasible}")
+    # The first best individual is the best from the generated population
+    bestOfAll = tools.selBest(pop, 1)[0]
 
-    worstInd = tools.selWorst(pop, 1)[0]
-    print(
-        f"Worst individual: {worstInd} \n        Fitness: {worstInd.fitness.wvalues[0]}  Feasible: {worstInd.feasible}")
+    # %% Begin Algorithm
+    print("################  Start of evolution  ################")
+    while g < generations:
+        # NEW GENERATION
+        g = g + 1
+        X.append(g)
+        print(f"---- Generation {g} ----")
 
-    print(
-        f"Best of all individuals: {bestOfAll} \n        Fitness: {bestOfAll.fitness.wvalues[0]}  Feasible: {bestOfAll.feasible}")
+        # SELECT THE BEST INDIVIDUALS TO KEEP FOR THE NEXT GENERATION
+        if keep_best:
+            best_individuals = list(map(toolbox.clone, tools.selBest(pop, keep_best)))
 
-    # Statistics
-    fits = [sum(ind.fitness.wvalues) for ind in pop]
+        # SELECTION OF INDIVIDUALS
+        offspring = toolbox.select(pop, len(pop))
+        offspring = list(map(toolbox.clone, offspring))
 
-    length = len(pop)
-    mean = sum(fits) / length
-    sum2 = sum(x * x for x in fits)
-    std = abs(sum2 / length - mean ** 2) ** 0.5
+        # GENETIC OPERATIONS
+        for child1, child2 in zip(offspring[::2], offspring[1::2]):
+            # cross two individuals with probability CXPB
+            if random.random() < CXPB:
+                toolbox.mate(child1, child2)
 
-    print("  Max %s" % max(fits))
-    print("  Min %s" % min(fits))
-    print("  Avg %s" % mean)
-    print("  Std %s" % std)
+                # fitness values of the children must be recalculated later
+                del child1.fitness.values
+                del child2.fitness.values
 
-    Ymax.append(-max(fits))
-    Ymin.append(-min(fits))
-    Yavg.append(mean)
-    Ystd.append(std)
+        for mutant in offspring:
+            # mutate an individual with probability MUTPB
+            if random.random() < MUTPB:
+                toolbox.mutate(mutant)
+                del mutant.fitness.values
 
-    # Save best ind
-    if bestInd.fitness.wvalues[0] > bestOfAll.fitness.wvalues[0]:
-        bestOfAll = bestInd
+        # EVALUATE INDIVIDUALS WITH INVALID FITNESS
+        invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+        for ind in invalid_ind:
+            fit, feasible = toolbox.evaluate(ind)
+            ind.fitness.values = (fit,)
+            ind.feasible = feasible
 
-# %%
-print("################  End of (successful) evolution  ################")
+        print(f"  Evaluated {len(invalid_ind)} individuals")
 
+        # REPLACE POPULATION BY OFFSPRING AND ORDER
+        pop[:] = offspring
+        pop[:] = tools.selBest(pop, len(pop))
 
-# %% Vehicles dynamics
-def text_feasibility(feasible):
-    if feasible:
-        return 'is'
-    return 'is not'
+        # REMOVE WORST INDIVIDUALS AND ADD PREVIOUSLY SELECTED BEST INDIVIDUALS TO OFFSPRING
+        if keep_best:
+            pop[keep_best:] = pop[:-keep_best]
+            pop[:keep_best] = best_individuals
 
+        # SUMMARY OF NEW GENERATION
+        bestInd = tools.selBest(pop, 1)[0]
+        print(
+            f"Best individual: {bestInd} \n        Fitness: {bestInd.fitness.wvalues[0]}  Feasible: {bestInd.feasible}")
 
-# decode best
-best_fitness, best_is_feasible = toolbox.evaluate(bestOfAll)
-best_routes = toolbox.decode(bestOfAll)
-print(f'The best individual {text_feasibility(best_is_feasible)} feasible and its fitness is {-best_fitness}')
-print('After decoding:\n', best_routes)
+        worstInd = tools.selWorst(pop, 1)[0]
+        print(
+            f"Worst individual: {worstInd} \n        Fitness: {worstInd.fitness.wvalues[0]}  Feasible: {worstInd.feasible}")
 
-# %% Save operation
-plot_operation = True
+        print(
+            f"Best of all individuals: {bestOfAll} \n        Fitness: {bestOfAll.fitness.wvalues[0]}  Feasible: {bestOfAll.feasible}")
 
-critical_points = {id_ev: (0, ev.state_leaving[0, 0], ev.state_leaving[1, 0], ev.state_leaving[2, 0]) for
-                   id_ev, ev in fleet.vehicles.items()}
-fleet.save_operation_xml(path, critical_points)
+        # STATISTICS
+        fits = [sum(ind.fitness.wvalues) for ind in pop]
 
-if not plot_operation:
-    import sys
-    sys.exit(1)
+        length = len(pop)
+        mean = sum(fits) / length
+        sum2 = sum(x * x for x in fits)
+        std = abs(sum2 / length - mean ** 2) ** 0.5
 
-# %% Fitness per generation
-figFitness = figure(plot_width=400, plot_height=300,
-                    title='Best fitness evolution')
-figFitness.circle(X, np.log(Ymax))
-figFitness.xaxis.axis_label = 'Generation'
-figFitness.yaxis.axis_label = 'log(-fitness)'
+        print("  Max %s" % max(fits))
+        print("  Min %s" % min(fits))
+        print("  Avg %s" % mean)
+        print("  Std %s" % std)
 
-# Standard deviation of fitness per generation
-figFitnessStd = figure(plot_width=400, plot_height=300,
-                       title='Standard deviation of best fitness per generation')
-figFitnessStd.circle(X, Ystd)
-figFitnessStd.xaxis.axis_label = 'Generation'
-figFitnessStd.yaxis.axis_label = 'Standard deviation of fitness'
-figFitnessStd.left[0].formatter.use_scientific = False
+        Ymax.append(-max(fits))
+        Ymin.append(-min(fits))
+        Yavg.append(mean)
+        Ystd.append(std)
 
-# Grid
-p = gridplot([[figFitness, figFitnessStd]], toolbar_location='right')
-show(p)
+        # UPDATE BEST INDIVIDUAL
+        if bestInd.fitness.wvalues[0] > bestOfAll.fitness.wvalues[0]:
+            bestOfAll = bestInd
 
-# %%
-fleet.plot_operation()
+    t_end = time.time()
+    print("################  End of (successful) evolution  ################")
+
+    # %% SUMMARY OF THE WHOLE EVOLUTION
+    best_fitness, best_is_feasible = toolbox.evaluate(bestOfAll)
+    best_routes = toolbox.decode(bestOfAll)
+    print(f'The best individual {text_feasibility(best_is_feasible)} feasible and its fitness is {-best_fitness}')
+    print('Decoding the best individual results in:\n', best_routes)
+
+    # Compare cost to previous cost. If cost is improved, modify previous operation by new operation
+    if -best_fitness > -best_fitness_prev:
+        print('[IMPORTANT] This optimization results in an improvement of previous optimization... Saving!')
+        fleet.set_routes_of_vehicles(best_routes)
+        critical_points = {id_ev: (0, ev.state_leaving[0, 0], ev.state_leaving[1, 0], ev.state_leaving[2, 0]) for
+                           id_ev, ev in fleet.vehicles.items()}
+        fleet.save_operation_xml(path, critical_points, pretty=True)
+        report = res.IOTools.OptimizationReport(best_fitness, best_is_feasible, t_end - t_init)
+        res.IOTools.save_optimization_report(path, report)
+
+    # Unregister toolbox utilities
+    toolbox.unregister('individual')
+    toolbox.unregister('evaluate')
+    toolbox.unregister('mate')
+    toolbox.unregister('mutate')
+    toolbox.unregister('select')
+    toolbox.unregister('select_worst')
+    toolbox.unregister('decode')
+
+    # Check if continue routing
+    s = input('DO IT AGAIN? (Y/N)')
+    if s == 'N':
+        break
+
+# %% If here, there are not more vehicles to route
+print('All vehicles reached depot... Finishing!')
+sys.exit(1)

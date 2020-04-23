@@ -2,6 +2,7 @@ from typing import Tuple, Dict, Union
 
 from models.Edge import Edge, DynamicEdge
 from models.Node import CustomerNode, ChargeStationNode, DepotNode
+import xml.etree.ElementTree as ET
 
 from numpy import array
 
@@ -103,3 +104,51 @@ class DynamicNetwork(Network):
 
     def e(self, node_from: int, node_to: int, payload=0.0, time_of_day=0.0) -> Union[float, int]:
         return self.edges[node_from][node_to].get_energy_consumption(payload, time_of_day)
+
+
+def from_element_tree(tree):
+    _info: ET = tree.find('info')
+    _network: ET = tree.find('network')
+    _fleet: ET = tree.find('fleet')
+    _technologies: ET = _network.find('technologies')
+
+    nodes = {}
+    edges = {}
+    for _node in _network.find('nodes'):
+        node_id = int(_node.get('id'))
+        pos = (float(_node.get('cx')), float(_node.get('cy')))
+        typ = int(_node.get('type'))
+
+        if typ == 0:
+            node = DepotNode(node_id, pos=pos)
+
+        elif typ == 1:
+            spent_time = float(_node.get('spent_time'))
+            time_window_low = float(_node.get('time_window_low'))
+            time_window_upp = float(_node.get('time_window_upp'))
+            demand = float(_node.get('demand'))
+            node = CustomerNode(node_id, spent_time, demand, time_window_upp, time_window_low, pos=pos)
+        else:
+            capacity = int(_node.get('capacity'))
+            technology = int(_node.get('technology'))
+            _technology = _technologies[technology - 1]
+            time_points = tuple([float(bp.get('charging_time')) for bp in _technology])
+            soc_points = tuple([float(bp.get('battery_level')) for bp in _technology])
+            node = ChargeStationNode(node_id, capacity, time_points, soc_points, pos=pos)
+        nodes[node_id] = node
+
+    for _node_from in _network.find('edges'):
+        node_from_id = int(_node_from.get('id'))
+        d_from = edges[node_from_id] = {}
+        for _node_to in _node_from:
+            node_to_id = int(_node_to.get('id'))
+            tt = float(_node_to.get('travel_time'))
+            ec = float(_node_to.get('energy_consumption'))
+            d_from[node_to_id] = Edge(node_from_id, node_to_id, tt, ec)
+
+    return Network(nodes, edges)
+
+
+def from_xml(path):
+    tree = ET.parse(path)
+    return from_element_tree(tree)

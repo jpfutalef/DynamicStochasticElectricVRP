@@ -7,7 +7,7 @@ from numpy import ndarray, zeros
 import time
 
 from models.ElectricVehicle import ElectricVehicle
-from models.Network import Network
+import models.Network as net
 from models.Node import DepotNode, CustomerNode, ChargeStationNode
 from models.Edge import Edge, DynamicEdge
 import res.IOTools
@@ -90,7 +90,7 @@ class TupleIndex(list):
 
 class Fleet:
     vehicles: Dict[int, ElectricVehicle]
-    network: Network
+    network: net.Network
     vehicles_to_route: Tuple[int, ...]
     theta_vector: Union[ndarray, None]
     optimization_vector: Union[ndarray, None]
@@ -111,7 +111,7 @@ class Fleet:
     def set_vehicles(self, vehicles: Dict[int, ElectricVehicle]) -> None:
         self.vehicles = vehicles
 
-    def set_network(self, net: Network) -> None:
+    def set_network(self, net: net.Network) -> None:
         self.network = net
 
     def set_vehicles_to_route(self, vehicles: List[int]) -> None:
@@ -193,7 +193,8 @@ class Fleet:
 
         # Variables from the optimization vector and vehicles
         n_vehicles = len(self.vehicles)
-        n_customers = sum([len(vehicle.assigned_customers) for _, vehicle in self.vehicles.items()])
+        n_customers = sum([1 for id_ev in self.vehicles_to_route
+                           for node in self.vehicles[id_ev].route[0] if self.network.isCustomer(node)])
         network = self.network
         sum_si = np.sum(len(vehicle.route[0]) for _, vehicle in self.vehicles.items())
         length_op_vector = len(self.optimization_vector)
@@ -279,7 +280,7 @@ class Fleet:
         return is_feasible, dist
 
     # Realtime tools
-    def update_from_xml(self, path, do_network=False):
+    def update_from_xml(self, path, do_network=False) -> ET:
         # Open XML file
         tree = ET.parse(path)
         _info: ET = tree.find('info')
@@ -289,53 +290,21 @@ class Fleet:
 
         # Network data
         if do_network:
-            nodes = {}
-            edges = {}
-            for _node in _network.find('nodes'):
-                node_id = int(_node.get('id'))
-                pos = (float(_node.get('cx')), float(_node.get('cy')))
-                typ = int(_node.get('type'))
-
-                if typ == 0:
-                    node = DepotNode(node_id, pos=pos)
-
-                elif typ == 1:
-                    spent_time = float(_node.get('spent_time'))
-                    time_window_low = float(_node.get('time_window_low'))
-                    time_window_upp = float(_node.get('time_window_upp'))
-                    demand = float(_node.get('demand'))
-                    node = CustomerNode(node_id, spent_time, demand, time_window_upp, time_window_low, pos=pos)
-                else:
-                    capacity = int(_node.get('capacity'))
-                    technology = int(_node.get('technology'))
-                    _technology = _technologies[technology - 1]
-                    time_points = tuple([float(bp.get('charging_time')) for bp in _technology])
-                    soc_points = tuple([float(bp.get('battery_level')) for bp in _technology])
-                    node = ChargeStationNode(node_id, capacity, time_points, soc_points, pos=pos)
-                nodes[node_id] = node
-
-            for _node_from in _network.find('edges'):
-                node_from_id = int(_node_from.get('id'))
-                d_from = edges[node_from_id] = {}
-                for _node_to in _node_from:
-                    node_to_id = int(_node_to.get('id'))
-                    tt = _node_to.get('travel_time')
-                    ec = _node_to.get('energy_consumption')
-                    d_from[node_to_id] = Edge(node_from_id, node_to_id, tt, ec)
-
-            self.set_network(Network(nodes, edges))
+            self.set_network(net.from_element_tree(tree))
 
         # Fleet data
         self.starting_points = {}
+        vehicles_to_route = []
         for _vehicle in _fleet:
             ev_id = int(_vehicle.get('id'))
-
-            _previous_sequence = _vehicle.find('previous_route')
-            if _previous_sequence:
+            _critical_point = _vehicle.find('critical_point')
+            k = int(_critical_point.get('k'))
+            if k != -1:
+                vehicles_to_route.append(ev_id)
+                _previous_sequence = _vehicle.find('previous_route')
                 previous_sequence = [[int(x.get('Sk')) for x in _previous_sequence],
                                      [float(x.get('Lk')) for x in _previous_sequence]]
-                _critical_point = _vehicle.find('critical_point')
-                k = int(_critical_point.get('k'))
+
                 new_customers = tuple(x for x in previous_sequence[0][k + 1:] if self.network.isCustomer(x))
                 self.vehicles[ev_id].set_customers_to_visit(new_customers)
 
@@ -345,6 +314,12 @@ class Fleet:
                 x2_0 = float(_critical_point.get('x2'))
                 x3_0 = float(_critical_point.get('x3'))
                 self.starting_points[ev_id] = InitialCondition(S0, L0, x1_0, x2_0, x3_0)
+
+                route_from_crit_point = (tuple(previous_sequence[0][k:]), tuple(previous_sequence[1][k:]))
+                self.vehicles[ev_id].set_route(route_from_crit_point, x1_0, x2_0, x3_0, stochastic=False)
+
+        self.set_vehicles_to_route(vehicles_to_route)
+
         return tree
 
     def plot_operation(self):
@@ -547,25 +522,27 @@ class Fleet:
 
         # Fleet data
         for _vehicle in _fleet:
-            # Remove all previous routes
-            for _prev_route in _vehicle.findall('previous_route'):
-                _vehicle.remove(_prev_route)
-
-            # Remove all previous critical points
-            for _crit_point in _vehicle.findall('critical_point'):
-                _vehicle.remove(_crit_point)
-
-            # Save new route
+            # Just do vehicles with valid critical points
             ev_id = int(_vehicle.get('id'))
-            _previous_route = ET.SubElement(_vehicle, 'previous_route')
-            for Sk, Lk in zip(self.vehicles[ev_id].route[0], self.vehicles[ev_id].route[1]):
-                attrib = {'Sk': str(Sk), 'Lk': str(Lk)}
-                _node = ET.SubElement(_previous_route, 'node', attrib=attrib)
+            if ev_id in self.vehicles_to_route:
+                # Remove all previous routes
+                for _prev_route in _vehicle.findall('previous_route'):
+                    _vehicle.remove(_prev_route)
 
-            critical_point = critical_points[ev_id]
-            attrib_cp = {'k': str(critical_point[0]), 'x1': str(critical_point[1]), 'x2': str(critical_point[2]),
-                         'x3': str(critical_point[3])}
-            _critical_point = ET.SubElement(_vehicle, 'critical_point', attrib=attrib_cp)
+                # Remove all previous critical points
+                for _crit_point in _vehicle.findall('critical_point'):
+                    _vehicle.remove(_crit_point)
+
+                # Save new route
+                _previous_route = ET.SubElement(_vehicle, 'previous_route')
+                for Sk, Lk in zip(self.vehicles[ev_id].route[0], self.vehicles[ev_id].route[1]):
+                    attrib = {'Sk': str(Sk), 'Lk': str(Lk)}
+                    _node = ET.SubElement(_previous_route, 'node', attrib=attrib)
+
+                critical_point = critical_points[ev_id]
+                attrib_cp = {'k': str(critical_point[0]), 'x1': str(critical_point[1]), 'x2': str(critical_point[2]),
+                             'x3': str(critical_point[3])}
+                _critical_point = ET.SubElement(_vehicle, 'critical_point', attrib=attrib_cp)
 
         tree.write(path)
         if pretty:
@@ -583,61 +560,34 @@ def from_xml(path, assign_customers=False):
     _technologies: ET = _network.find('technologies')
 
     # Network data
-    nodes = {}
-    edges = {}
-    for _node in _network.find('nodes'):
-        node_id = int(_node.get('id'))
-        pos = (float(_node.get('cx')), float(_node.get('cy')))
-        typ = int(_node.get('type'))
-
-        if typ == 0:
-            node = DepotNode(node_id, pos=pos)
-
-        elif typ == 1:
-            spent_time = float(_node.get('spent_time'))
-            time_window_low = float(_node.get('time_window_low'))
-            time_window_upp = float(_node.get('time_window_upp'))
-            demand = float(_node.get('demand'))
-            node = CustomerNode(node_id, spent_time, demand, time_window_upp, time_window_low, pos=pos)
-        else:
-            capacity = int(_node.get('capacity'))
-            technology = int(_node.get('technology'))
-            _technology = _technologies[technology - 1]
-            time_points = tuple([float(bp.get('charging_time')) for bp in _technology])
-            soc_points = tuple([float(bp.get('battery_level')) for bp in _technology])
-            node = ChargeStationNode(node_id, capacity, time_points, soc_points, pos=pos)
-        nodes[node_id] = node
-
-    for _node_from in _network.find('edges'):
-        node_from_id = int(_node_from.get('id'))
-        d_from = edges[node_from_id] = {}
-        for _node_to in _node_from:
-            node_to_id = int(_node_to.get('id'))
-            tt = float(_node_to.get('travel_time'))
-            ec = float(_node_to.get('energy_consumption'))
-            d_from[node_to_id] = Edge(node_from_id, node_to_id, tt, ec)
-
-    network = Network(nodes, edges)
+    network = net.from_element_tree(tree)
 
     # Fleet data
     vehicles = {}
     vehicles_to_route = []
     for _vehicle in _fleet:
-        ev_id = int(_vehicle.get('id'))
-        max_tour_duration = float(_vehicle.get('max_tour_duration'))
-        alpha_up = float(_vehicle.get('alpha_up'))
-        alpha_down = float(_vehicle.get('alpha_down'))
-        battery_capacity = float(_vehicle.get('battery_capacity'))
-        max_payload = float(_vehicle.get('max_payload'))
+        add_ev = True
 
-        vehicles[ev_id] = ElectricVehicle(ev_id, alpha_up, alpha_down, max_tour_duration, battery_capacity,
-                                          max_payload)
-        if assign_customers:
-            _assigned_customers = _vehicle.find('assigned_customers')
-            assigned_customers = tuple(int(x.get('id')) for x in _assigned_customers)
-            vehicles[ev_id].set_customers_to_visit(assigned_customers)
+        _cp = _vehicle.find('critical_point')
+        if _cp is not None and int(_cp.get('k')) == -1:
+            add_ev = False
 
-        vehicles_to_route.append(ev_id)
+        if add_ev:
+            ev_id = int(_vehicle.get('id'))
+            max_tour_duration = float(_vehicle.get('max_tour_duration'))
+            alpha_up = float(_vehicle.get('alpha_up'))
+            alpha_down = float(_vehicle.get('alpha_down'))
+            battery_capacity = float(_vehicle.get('battery_capacity'))
+            max_payload = float(_vehicle.get('max_payload'))
+
+            vehicles[ev_id] = ElectricVehicle(ev_id, alpha_up, alpha_down, max_tour_duration, battery_capacity,
+                                              max_payload)
+            if assign_customers:
+                _assigned_customers = _vehicle.find('assigned_customers')
+                assigned_customers = tuple(int(x.get('id')) for x in _assigned_customers)
+                vehicles[ev_id].set_customers_to_visit(assigned_customers)
+
+            vehicles_to_route.append(ev_id)
 
     fleet = Fleet(vehicles, network, tuple(vehicles_to_route))
 

@@ -2,7 +2,7 @@ from typing import Tuple, Dict, Union
 
 from models.Edge import Edge, DynamicEdge
 from models.Node import CustomerNode, ChargeStationNode, DepotNode
-from models.Network import Network, DynamicNetwork
+from models.Network import Network, DynamicNetwork, from_xml, from_element_tree
 
 from numpy import array
 
@@ -76,3 +76,9 @@ if __name__ == '__main__':
     tod = 60 * 8
     print("Travel time from {} to {} at time {} is {:.2f}".format(i, j, tod, n.edges[i][j].get_travel_time(tod)))
     print("Travel time from {} to {} at time {} is {:.2f}".format(i, j, tod, n.t(i, j, tod)))
+
+    # From file
+    path = '../data/GA_implementation_xml/20C_4CS_1D_4EV/20C_4CS_1D_4EV.xml'
+    network = from_xml(path)
+    a=1
+

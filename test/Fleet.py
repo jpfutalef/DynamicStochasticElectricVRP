@@ -78,7 +78,7 @@ if __name__ == '__main__':
     feasible, dist = fleet.feasible()
 
     print('***** FROM FILE *****')
-    path = '../data/GA_implementation_xml/20C_4CS_1D_4EV/20C_4CS_1D_4EV_already_assigned.xml'
+    path = '../data/GA_implementation_xml/20C_4CS_1D_4EV/20C_4CS_1D_4EV_realtime.xml'
     fleet_file = from_xml(path)
     # Make an update
     tree = fleet_file.update_from_xml(path, do_network=False)

@@ -118,8 +118,8 @@ def mutate(individual: IndividualType, indices: IndicesType, starting_points: St
                         # Choose if making a charging operation
                         if randint(0, 1):
                             # Choose a customer node randomly
+                            sample_space = (starting_points[id_ev].S0,) + customers_to_visit[id_ev]
                             while True:
-                                sample_space = (starting_points[id_ev].S0,) + customers_to_visit[id_ev]
                                 customer = sample(sample_space, 1)[0]
                                 # Ensure customer has not been already chosen
                                 if customer not in [individual[i1 + 3 * x] for x in range(allowed_charging_operations)]:
@@ -132,9 +132,9 @@ def mutate(individual: IndividualType, indices: IndicesType, starting_points: St
                         # Choose a random CS anyways
                         individual[i1 + 3 * j + 1] = sample(charging_stations, 1)[0]
 
-                        # Choose amount anyways
-                        amount = uniform(0.0, 90.0)
-                        individual[i1 + 3 * j + 2] = float(f"{amount:.2f}")
+                        # Change amount anyways
+                        amount = uniform(-30.0, 30.0)
+                        individual[i1 + 3 * j + 2] += float(f"{amount:.2f}")
                         return
 
             # Case depart time

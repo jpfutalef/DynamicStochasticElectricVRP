@@ -52,9 +52,9 @@ input('Press enter to continue...')
 
 # %%
 # 7. GA hyperparameters
-CXPB, MUTPB = 0.6, 0.8
-n_individuals = 50
-generations = 50
+CXPB, MUTPB = 0.6, 0.85
+n_individuals = 150
+generations = 200
 penalization_constant = 500000
 weights = (1.0, 1.1, 0.0, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
 keep_best = 1  # Keep the 'keep_best' best individuals
@@ -223,8 +223,6 @@ print(f'The best individual {text_feasibility(best_is_feasible)} feasible and it
 print('After decoding:\n', best_routes)
 
 # %% Save operation if better
-plot_operation = False
-
 save = False
 
 prev_op_report = res.IOTools.read_optimization_report(path)
@@ -235,12 +233,17 @@ elif -best_fitness > -prev_op_report.best_fitness:
     save = True
 
 if save:
+    print('Current optimization is better... Saving!!')
     critical_points = {id_ev: (0, ev.state_leaving[0, 0], ev.state_leaving[1, 0], ev.state_leaving[2, 0]) for
                        id_ev, ev in fleet.vehicles.items()}
     fleet.save_operation_xml(path, critical_points)
     report = res.IOTools.OptimizationReport(best_fitness, best_is_feasible, t_end-t_init)
     res.IOTools.save_optimization_report(path, report)
+else:
+    print('Current optimization is not better.')
 
+# %% Plot operations
+plot_operation = True
 if not plot_operation:
     import sys
     sys.exit(1)
