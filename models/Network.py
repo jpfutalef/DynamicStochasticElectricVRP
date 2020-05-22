@@ -65,14 +65,15 @@ class Network:
         del self.edges
         self.edges = edge_collection
 
-    def t(self, node_from: int, node_to: int, time_of_day=0.0) -> Union[float, int]:
+    def t(self, node_from: int, node_to: int) -> Union[float, int]:
         return self.edges[node_from][node_to].get_travel_time()
 
-    def e(self, node_from: int, node_to: int, payload=0.0, time_of_day=0.0) -> Union[float, int]:
+    def e(self, node_from: int, node_to: int, payload: float) -> Union[float, int]:
         return self.edges[node_from][node_to].get_energy_consumption(payload)
 
     def spent_time(self, node: int, p, q):
-        return self.nodes[node].spentTime(p, q)
+        t = self.nodes[node].spentTime(p, q)
+        return t
 
     def demand(self, node: int):
         return self.nodes[node].requiredDemand()
@@ -99,10 +100,10 @@ class DynamicNetwork(Network):
         super().__init__(network_nodes, network_edges)
         self.sample_time = samp_time
 
-    def t(self, node_from: int, node_to: int, time_of_day=0.0) -> Union[float, int]:
+    def t(self, node_from: int, node_to: int, time_of_day) -> Union[float, int]:
         return self.edges[node_from][node_to].get_travel_time(time_of_day)
 
-    def e(self, node_from: int, node_to: int, payload=0.0, time_of_day=0.0) -> Union[float, int]:
+    def e(self, node_from: int, node_to: int, payload, time_of_day) -> Union[float, int]:
         return self.edges[node_from][node_to].get_energy_consumption(payload, time_of_day)
 
 

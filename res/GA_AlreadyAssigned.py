@@ -2,14 +2,11 @@ from typing import Dict, List, Tuple, Union, NamedTuple
 import models.routetypes
 
 import numpy as np
-from random import randint
-from random import uniform
-from random import sample
+from random import randint, uniform, sample, random
 
 from models.ElectricVehicle import ElectricVehicle
 from models.Fleet import Fleet, InitialCondition
 from models.Network import Network, DynamicNetwork
-
 
 # CLASSES
 
@@ -92,80 +89,117 @@ def decode(individual: IndividualType, indices: IndicesType, starting_points: St
 
 
 def mutate(individual: IndividualType, indices: IndicesType, starting_points: StartingPointsType,
-           customers_to_visit: Dict[int, Tuple[int, ...]] , charging_stations: Tuple, allowed_charging_operations=2, index=None) -> None:
+           customers_to_visit: Dict[int, Tuple[int, ...]], charging_stations: Tuple,
+           allowed_charging_operations=2, index=None) -> None:
     # Choose a random index if not passed
     if index is None:
-        index = randint(0, len(individual))
+        # index = randint(0, len(individual))
+        index = random_block_index(indices)
 
-    # Find block
-    for id_ev, (i0, i1, i2) in indices.items():
-        if i0 <= index <= i2:
-            # Case customer
-            if i0 <= index < i1:
-                i = randint(i0, i1 - 1)
-                while True:
-                    j = randint(i0, i1 - 1)
-                    if j != i:
-                        break
-                swap_elements(individual, i, j)
-                return
+    #repeat = allowed_charging_operations
+    #repeat = len(indices)
+    repeat = 1
+    for i in range(repeat):
+        # Do the following
+        for id_ev, (i0, i1, i2) in indices.items():
+            # find block
+            if i0 <= index <= i2:
+                # Case customer
+                if i0 <= index < i1:
+                    case = random()
+                    if case < 0.5:
+                        i = randint(i0, i1 - 1)
+                        j = randint(i0, i1 - 1)
+                        while i == j:
+                            j = randint(i0, i1 - 1)
+                        swap_elements(individual, i, j)
+                    elif case < 0.8:
+                        i = randint(i0, i1 - 1)
+                        c1 = individual[i0:i]
+                        c2 = individual[i:i1]
+                        individual[i0:i1] = c2 + c1
+                    else:
+                        new_cust = sample(individual[i0:i1], i1 - i0)
+                        individual[i0:i1] = new_cust
 
-            # Case CS
-            elif i1 <= index < i2:
-                # Find operation sub-block
-                for j in range(allowed_charging_operations):
-                    if i1 + j * 3 <= index <= i1 + j * 3 + 2:
-                        # Choose if making a charging operation
-                        if randint(0, 1):
-                            # Choose a customer node randomly
-                            sample_space = (starting_points[id_ev].S0,) + customers_to_visit[id_ev]
-                            while True:
-                                customer = sample(sample_space, 1)[0]
-                                # Ensure customer has not been already chosen
-                                if customer not in [individual[i1 + 3 * x] for x in range(allowed_charging_operations)]:
-                                    break
-                            individual[i1 + 3 * j] = customer
+                # Case CS
+                elif i1 <= index < i2:
+                    # Find operation sub-block
+                    for j in range(allowed_charging_operations):
+                        if i1 + j * 3 <= index <= i1 + j * 3 + 2:
+                            # Choose if making a charging operation
+                            if randint(0, 1):
+                                # Choose a customer node randomly
+                                sample_space = (starting_points[id_ev].S0,) + customers_to_visit[id_ev]
+                                count = 0
+                                while count < allowed_charging_operations:
+                                    customer = sample(sample_space, 1)[0]
+                                    # Ensure customer has not been already chosen
+                                    if customer not in [individual[i1 + 3 * x] for x in
+                                                        range(allowed_charging_operations)]:
+                                        break
+                                    count += 1
+                                if count == allowed_charging_operations:
+                                    individual[i1 + 3 * j] = -1
+                                else:
+                                    individual[i1 + 3 * j] = customer
 
-                        else:
-                            individual[i1 + 3 * j] = -1
+                            else:
+                                individual[i1 + 3 * j] = -1
 
-                        # Choose a random CS anyways
-                        individual[i1 + 3 * j + 1] = sample(charging_stations, 1)[0]
+                            # Choose a random CS anyways
+                            individual[i1 + 3 * j + 1] = sample(charging_stations, 1)[0]
 
-                        # Change amount anyways
-                        amount = uniform(-30.0, 30.0)
-                        individual[i1 + 3 * j + 2] += float(f"{amount:.2f}")
-                        return
+                            # Change amount anyways
+                            # amount = uniform(5, 90)
+                            # individual[i1 + 3 * j + 2] = amount
+                            amount = uniform(1, 10)
+                            new_val = abs(individual[i1 + 3 * j + 2] + float(f"{amount:.2f}"))
+                            new_val = new_val if new_val <= 90 else 90
+                            individual[i1 + 3 * j + 2] = new_val
+                            break
 
-            # Case depart time
-            else:
-                amount = uniform(-60.0, 60.0)
-                individual[i2] += amount
-                return
+                # Case depart time
+                else:
+                    amount = uniform(-20.0, 20.0)
+                    individual[i2] = abs(individual[i2] + amount)
+                    '''
+                    amount = uniform(60.0*6, 60.0*20)
+                    individual[i2] = amount
+                    '''
+                break
+        # index = randint(0, len(individual))
+        index = random_block_index(indices)
 
 
 def crossover(ind1: IndividualType, ind2: IndividualType, indices: IndicesType, allowed_charging_operations=2,
               index=None) -> None:
     # Choose a random index if not passed
     if index is None:
-        index = randint(0, len(ind1))
+        #index = randint(0, len(ind1))
+        index = random_block_index(indices)
 
-    # Find block
-    for id_ev, (i0, i1, i2) in indices.items():
-        if i0 <= index <= i2:
-            # Case customer
-            if i0 <= index < i1:
-                swap_block(ind1, ind2, i0, i1)
-                return
+    #repeat = allowed_charging_operations
+    #repeat = len(indices)
+    repeat = 1
+    for i in range(repeat):
+        for id_ev, (i0, i1, i2) in indices.items():
+            if i0 <= index <= i2:
+                # Case customer
+                if i0 <= index < i1:
+                    swap_block(ind1, ind2, i0, i1)
 
-            # Case CS
-            elif i1 <= index < i2:
-                swap_block(ind1, ind2, i1, i2)
-                return
+                # Case CS
+                elif i1 <= index < i2:
+                    swap_block(ind1, ind2, i1, i2)
 
-            # Case depart time
-            else:
-                swap_block(ind1, ind2, i2, i2)
+                # Case depart time
+                else:
+                    swap_block(ind1, ind2, i2, i2)
+
+                break
+
+        index = random_block_index(indices)
 
 
 def swap_elements(l, i, j):
@@ -190,6 +224,17 @@ def swap_block(l1, l2, i, j):
     l1[i: j], l2[i:j] = l2[i:j], l1[i:j]
 
 
+def random_block_index(indices: IndicesType) -> int:
+    id_ev = sample(indices.keys(), 1)[0]
+    i0, i1, i2 = indices[id_ev]
+    if random() < 0.33:
+        return randint(i0, i1 - 1)
+    elif random() < 0.33:
+        return sample(range(i1, i2, 3), 1)[0]
+    else:
+        return i2
+
+
 def block_indices(customers_to_visit: Dict[int, Tuple[int, ...]], allowed_charging_operations=2) -> IndicesType:
     """
     Creates the indices of sub blocks.
@@ -206,7 +251,7 @@ def block_indices(customers_to_visit: Dict[int, Tuple[int, ...]], allowed_chargi
     for id_vehicle, customers in customers_to_visit.items():
         ni = len(customers)
         i1 += ni
-        i2 += ni + 3*allowed_charging_operations
+        i2 += ni + 3 * allowed_charging_operations
 
         indices[id_vehicle] = (i0, i1, i2)
 
@@ -237,12 +282,12 @@ def random_individual(indices: IndicesType, starting_points: StartingPointsType,
             charging_sequence[3 * i + 1] = sample(charging_stations, 1)[0]
             amount = uniform(0.0, 90.0)
             charging_sequence[3 * i + 2] = float(f"{amount:.2f}")
-        depart_time = [uniform(60*8, 60*18)]
+        depart_time = [uniform(60 * 8, 60 * 18)]
         individual += customer_sequence + charging_sequence + depart_time
     return individual
 
 
-def fitness(individual: IndividualType, fleet: Fleet, indices: IndicesType, starting_points:StartingPointsType,
+def fitness(individual: IndividualType, fleet: Fleet, indices: IndicesType, starting_points: StartingPointsType,
             weights=(1.0, 1.0, 1.0, 1.0), penalization_constant=500000, allowed_charging_operations=2):
     """
     Calculates fitness of individual.
@@ -266,7 +311,7 @@ def fitness(individual: IndividualType, fleet: Fleet, indices: IndicesType, star
     fleet.create_optimization_vector()
 
     # Cost
-    cost_tt, cost_ec, cost_chg_op, cost_chg_cost = fleet.cost_function(weights[0], weights[1], weights[2], weights[3])
+    cost_tt, cost_ec, cost_chg_op, cost_chg_cost = fleet.cost_function()
 
     # Check if the solution is feasible
     feasible, penalization = fleet.feasible()

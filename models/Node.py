@@ -90,6 +90,12 @@ class ChargeStationNode(NetworkNode):
         # FIXME actually, verify it is working properly
         # TODO verify complexity
         # TODO add documentation
+        if end_soc > 100:
+            end_soc = 100
+
+        if init_soc > 100:
+            init_soc = 100
+
         doInit = True
         doEnd = False
         initIndex = 0

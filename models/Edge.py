@@ -13,18 +13,20 @@ class Edge:
     def get_travel_time(self) -> Union[float, int]:
         return self.travel_time
 
-    def get_energy_consumption(self, payload=0.0) -> Union[float, int]:
-        return self.energy_consumption
+    def get_energy_consumption(self, payload) -> Union[float, int]:
+        return payload*self.energy_consumption
 
 
 @dataclass
-class DynamicEdge(Edge):
+class DynamicEdge:
+    node_from: int
+    node_to: int
     travel_time: ndarray
     energy_consumption: ndarray
     sample_time: int
 
-    def get_travel_time(self, time_of_day=720.0) -> Union[float, int]:
+    def get_travel_time(self, time_of_day) -> Union[float, int]:
         return self.travel_time[int(time_of_day/self.sample_time)]
 
-    def get_energy_consumption(self, payload=0.0, time_of_day=720.0) -> Union[float, int]:
-        return self.energy_consumption[int(time_of_day/self.sample_time)]
+    def get_energy_consumption(self, payload, time_of_day) -> Union[float, int]:
+        return payload*self.energy_consumption[int(time_of_day/self.sample_time)]

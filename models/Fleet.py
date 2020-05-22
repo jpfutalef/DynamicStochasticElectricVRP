@@ -114,6 +114,10 @@ class Fleet:
     def set_network(self, net: net.Network) -> None:
         self.network = net
 
+    def assign_customers_in_route(self):
+        for ev in self.vehicles.values():
+            ev.assign_customers_in_route(self.network)
+
     def set_vehicles_to_route(self, vehicles: List[int]) -> None:
         if vehicles:
             self.vehicles_to_route = tuple(vehicles)
@@ -177,13 +181,13 @@ class Fleet:
         # 3. Create optimization vector
         return self.optimization_vector
 
-    def cost_function(self, w1: float, w2: float, w3: float, w4: float) -> Tuple:
+    def cost_function(self) -> Tuple:
         iS, iL, ix1, ix2, ix3, iD, iT, iE, iTheta = self.optimization_vector_indices
         op_vector = self.optimization_vector
-        cost_tt = w1 * np.sum(op_vector[iT:iE])
-        cost_ec = w2 * np.sum(op_vector[iE:iTheta])
-        cost_chg_op = w3 * np.sum(op_vector[iD:iT])
-        cost_chg_cost = w4 * np.sum(op_vector[iL:ix1])
+        cost_tt = np.sum(op_vector[iT:iE])
+        cost_ec = np.sum(op_vector[iE:iTheta])
+        cost_chg_op = np.sum(op_vector[iD:iT])
+        cost_chg_cost = np.sum(op_vector[iL:ix1])
         return cost_tt, cost_ec, cost_chg_op, cost_chg_cost
 
     def feasible(self) -> (bool, Union[int, float]):
@@ -211,6 +215,7 @@ class Fleet:
         rows += sum_si  # 2.25-2
         rows += sum_si  # 2.26-1
         rows += sum_si  # 2.26-2
+        rows += (int(len(self.optimization_vector[iTheta:])/len(self.network.nodes)))*len(self.network.charging_stations)
 
         # Matrices
         A = np.zeros((rows, length_op_vector))
@@ -267,6 +272,14 @@ class Fleet:
                 b[row] = vehicle.alpha_up - Lk
                 row += 1
             si += len(vehicle.route[0])
+
+        # constraint CS capacity
+        num_nodes = len(self.network.nodes)
+        for i in self.network.charging_stations:
+            for k in range(int(len(self.optimization_vector[iTheta:]) / num_nodes)):
+                A[row, iTheta + num_nodes*(k+1) - i] = 1.0
+                b[row] = self.network.nodes[i].maximumParallelOperations
+                row += 1
 
         # Check
         multi = np.matmul(A, np.vstack(self.optimization_vector.T))
@@ -346,10 +359,10 @@ class Fleet:
             figX2 = figure(plot_width=600, plot_height=450,
                            title=f'SOC evolution vehicle {id_ev}',
                            y_range=(0, 100),
-                           toolbar_location=None)
+                           toolbar_location='right')
             figX3 = figure(plot_width=600, plot_height=450,
                            title=f'Payload evolution vehicle {id_ev}',
-                           toolbar_location=None)
+                           toolbar_location='right')
 
             # Iterate each node
             kCustomers = []
