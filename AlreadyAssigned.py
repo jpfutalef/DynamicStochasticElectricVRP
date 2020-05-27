@@ -32,7 +32,7 @@ sys.path.append('..')
 
 # %%
 # 1. Specify file
-file_name = '60C_2CS_1D_6EV_4CAP'
+file_name = '35C_2CS_1D_3EV_1CAP'
 folder_path = './data/GA_implementation_xml/' + file_name + '/'
 path = folder_path + file_name + '_already_assigned.xml'
 print('Opening:', path)
@@ -54,13 +54,15 @@ input('Press enter to continue...')
 
 # %%
 # 7. GA hyperparameters
-CXPB, MUTPB = 0.65, 0.75
+CXPB, MUTPB = 0.45, 0.55
 n_individuals = 120
-generations = 500
-penalization_constant = 650000
+generations = 300
+penalization_constant = 500000
 weights = (0.1, 0.8, 0.9, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
 keep_best = 1  # Keep the 'keep_best' best individuals
-tournament_size = 6
+#tournament_size = int(n_individuals * 0.1)
+tournament_size = 4
+
 
 info = f'''
 Hyper-parameters:
@@ -137,7 +139,7 @@ while g < generations:
     # A new generation
     g = g + 1
     X.append(g)
-    print("-- Generation %i --" % g)
+    print(f"-- Generation {g}/{generations} --")
 
     # Select the best individuals, if given
     if keep_best:
@@ -234,7 +236,7 @@ def text_feasibility(feasible):
 best_fitness, best_is_feasible = toolbox.evaluate(bestOfAll)
 best_routes = toolbox.decode(bestOfAll)
 print(f'The best individual {text_feasibility(best_is_feasible)} feasible and its fitness is {-best_fitness}')
-print('After decoding:\n', best_routes)
+print(f'After decoding:\n{best_routes}')
 
 # %% Save operation if better
 save = True
@@ -274,7 +276,7 @@ optimization_filepath = results_path + '/optimization_info.csv'
 optimization_iterations_filepath = results_path + '/optimization_iterations.csv'
 theta_vector_filepath = results_path + '/nodes_occupation.csv'
 cost_filepath = results_path + '/costs.csv'
-info_filepath = results_path + '/hyper-parameters.csv'
+info_filepath = results_path + '/hyper-parameters.txt'
 
 # optimization info
 
@@ -312,6 +314,7 @@ for id_ev, ev in fleet.vehicles.items():
 
 # save hyper-parameters
 info += f'\nAlgorithm Time: {algo_time}'
+info += f'\nBest individual: {bestOfAll}'
 with open(info_filepath, 'w') as file:
     file.write(info)
 # %% Plot operations

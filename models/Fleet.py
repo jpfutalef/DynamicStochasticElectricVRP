@@ -18,7 +18,7 @@ from bokeh.layouts import gridplot
 from bokeh.models.annotations import Arrow, Label
 from bokeh.models.arrow_heads import VeeHead
 from bokeh.models import Whisker, Span, Range1d
-
+from bokeh.io import export_svgs
 
 # CLASSES
 class InitialCondition(NamedTuple):
@@ -122,9 +122,9 @@ class Fleet:
         if vehicles:
             self.vehicles_to_route = tuple(vehicles)
 
-    def set_routes_of_vehicles(self, routes: RouteDict) -> None:
+    def set_routes_of_vehicles(self, routes: RouteDict, include_ev_weight=True) -> None:
         for id_ev, (route, dep_time, dep_soc, dep_pay) in routes.items():
-            self.vehicles[id_ev].set_route(route, dep_time, dep_soc, dep_pay)
+            self.vehicles[id_ev].set_route(route, dep_time, dep_soc, dep_pay, include_ev_weight=include_ev_weight)
             self.vehicles[id_ev].iterate_space(self.network)
 
     def create_optimization_vector(self) -> ndarray:
@@ -335,7 +335,7 @@ class Fleet:
 
         return tree
 
-    def plot_operation(self):
+    def plot_operation(self, save=False, path=None):
         # Vectors to plot
         colorArrowTravel = 'SteelBlue'
         colorArrowCharging = 'Crimson'
@@ -353,15 +353,15 @@ class Fleet:
             state_leaving = vehicle.state_leaving
 
             # figures
-            figX1 = figure(plot_width=600, plot_height=450,
-                           title=f'Time the vehicle {id_ev} leaves',
+            figX1 = figure(plot_width=480, plot_height=360,
+                           title=f'Vehicle {id_ev}: arrival and departure times',
                            toolbar_location='right')
-            figX2 = figure(plot_width=600, plot_height=450,
-                           title=f'SOC evolution vehicle {id_ev}',
+            figX2 = figure(plot_width=480, plot_height=360,
+                           title=f'Vehicle {id_ev}: SOC evolution',
                            y_range=(0, 100),
                            toolbar_location='right')
-            figX3 = figure(plot_width=600, plot_height=450,
-                           title=f'Payload evolution vehicle {id_ev}',
+            figX3 = figure(plot_width=480, plot_height=360,
+                           title=f'Vehicle {id_ev}: weight evolution',
                            toolbar_location='right')
 
             # Iterate each node
@@ -474,23 +474,35 @@ class Fleet:
             figX3.line(kVehicle, vehicle.state_reaching[2, :], alpha=0)
 
             # Axes
-            figX1.xaxis.axis_label = 'k'
+            figX1.xaxis.axis_label = 'Vehicle stop k'
             figX1.yaxis.axis_label = 'Time of the day (min)'
             figX1.axis.axis_label_text_font_size = '15pt'
             figX1.axis.major_label_text_font_size = '13pt'
             figX1.title.text_font_size = '15pt'
+            figX1.axis.axis_label_text_font = 'times'
+            figX1.axis.major_label_text_font = 'times'
+            figX1.title.text_font = 'times'
+            figX1.title.align = 'center'
 
-            figX2.xaxis.axis_label = 'k'
+            figX2.xaxis.axis_label = 'Vehicle stop k'
             figX2.yaxis.axis_label = 'SOC (%)'
             figX2.axis.axis_label_text_font_size = '15pt'
             figX2.axis.major_label_text_font_size = '13pt'
             figX2.title.text_font_size = '15pt'
+            figX2.axis.axis_label_text_font = 'times'
+            figX2.axis.major_label_text_font = 'times'
+            figX2.title.text_font = 'times'
+            figX2.title.align = 'center'
 
-            figX3.xaxis.axis_label = 'k'
+            figX3.xaxis.axis_label = 'Vehicle stop k'
             figX3.yaxis.axis_label = 'Payload (ton)'
             figX3.axis.axis_label_text_font_size = '15pt'
             figX3.axis.major_label_text_font_size = '13pt'
             figX3.title.text_font_size = '15pt'
+            figX3.axis.axis_label_text_font = 'times'
+            figX3.axis.major_label_text_font = 'times'
+            figX3.title.text_font = 'times'
+            figX3.title.align = 'center'
 
             # Show plots of vehicles
             show(figX1)
@@ -518,6 +530,7 @@ class Fleet:
 
             fig.xaxis.axis_label = 'Event #'
             fig.yaxis.axis_label = 'EVs in charge stations'
+            fig.axis.axis_label_text_font = 'times'
             fig.axis.axis_label_text_font_size = '15pt'
             fig.axis.major_label_text_font_size = '13pt'
             fig.title.text_font_size = '15pt'

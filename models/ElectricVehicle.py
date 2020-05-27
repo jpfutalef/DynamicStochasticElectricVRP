@@ -73,7 +73,7 @@ class ElectricVehicle:
         self.assigned_customers = tuple([node for node in self.route[0] if network.isCustomer(node)])
 
     def set_route(self, new_route: RouteVector, depart_time: float, depart_soc: float, depart_payload: float,
-                  stochastic=False, ev_weight=1.52):
+                  stochastic=False, ev_weight=1.52, include_ev_weight=True):
         self.route = new_route
         self.x1_0 = depart_time
         self.x2_0 = depart_soc
@@ -96,7 +96,10 @@ class ElectricVehicle:
             size_ec = (1, len_route - 1)
             size_c_op = (1, len_route)
 
-            init_state = (self.x1_0, self.x2_0, self.x3_0+ev_weight)
+            if include_ev_weight:
+                init_state = (self.x1_0, self.x2_0, self.x3_0+ev_weight)
+            else:
+                init_state = (self.x1_0, self.x2_0, self.x3_0)
 
         self.state_reaching = np.zeros(size_state_matrix)
         self.state_leaving = np.zeros(size_state_matrix)
@@ -112,3 +115,7 @@ class ElectricVehicle:
         k = len(self.route[0]) - 1
         F_recursive(k, self.route, self.state_reaching, self.state_leaving, self.travel_times, self.energy_consumption,
                     self.charging_times, network)
+
+    def write_xml(self, path=None):
+        return
+

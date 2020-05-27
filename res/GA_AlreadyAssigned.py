@@ -107,7 +107,7 @@ def mutate(individual: IndividualType, indices: IndicesType, starting_points: St
                 # Case customer
                 if i0 <= index < i1:
                     case = random()
-                    if case < 0.5:
+                    if case <= 1.0:
                         i = randint(i0, i1 - 1)
                         j = randint(i0, i1 - 1)
                         while i == j:
@@ -153,7 +153,7 @@ def mutate(individual: IndividualType, indices: IndicesType, starting_points: St
                             # Change amount anyways
                             # amount = uniform(5, 90)
                             # individual[i1 + 3 * j + 2] = amount
-                            amount = uniform(1, 10)
+                            amount = uniform(-10, 10)
                             new_val = abs(individual[i1 + 3 * j + 2] + float(f"{amount:.2f}"))
                             new_val = new_val if new_val <= 90 else 90
                             individual[i1 + 3 * j + 2] = new_val
@@ -282,7 +282,7 @@ def random_individual(indices: IndicesType, starting_points: StartingPointsType,
             charging_sequence[3 * i + 1] = sample(charging_stations, 1)[0]
             amount = uniform(0.0, 90.0)
             charging_sequence[3 * i + 2] = float(f"{amount:.2f}")
-        depart_time = [uniform(60 * 8, 60 * 18)]
+        depart_time = [uniform(60 * 9, 60 * 18)]
         individual += customer_sequence + charging_sequence + depart_time
     return individual
 

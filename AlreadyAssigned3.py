@@ -1,6 +1,6 @@
 # %%
 
-# To work with arguments and script paths
+# Too work with arguments and script paths
 import sys
 
 # scientific libraries and utilities
@@ -15,7 +15,7 @@ from deap import creator
 from deap import tools
 
 # Resources
-from GA_Assignation import *
+from GA_AlreadyAssigned3 import *
 from Fleet import from_xml, InitialCondition
 import res.IOTools
 
@@ -25,7 +25,6 @@ from bokeh.layouts import gridplot
 from bokeh.models.annotations import Arrow, Label
 from bokeh.models.arrow_heads import VeeHead
 from bokeh.models import Whisker, Span, Range1d
-import xml.etree.ElementTree as ET
 
 t0 = time.time()
 
@@ -35,41 +34,54 @@ sys.path.append('..')
 # 1. Specify file
 file_name = '35C_2CS_1D_3EV_1CAP'
 folder_path = './data/GA_implementation_xml/' + file_name + '/'
-path = folder_path + file_name + '.xml'
+path = folder_path + file_name + '_already_assigned.xml'
 print('Opening:', path)
 
 # %% 3. Instance fleet
 init_soc = 82.
 init_node = 0
-all_charging_ops = 4
+all_charging_ops = 3
 
-fleet = from_xml(path, assign_customers=False)
-starting_points = {ev_id: InitialCondition(0, 0, 0, init_soc, 0) for ev_id, ev in fleet.vehicles.items()}
+fleet = from_xml(path, assign_customers=True)
+
+customers_to_visit = {ev_id: ev.assigned_customers for ev_id, ev in fleet.vehicles.items()}
+
+starting_points = {ev_id: InitialCondition(init_node, 0, 0, init_soc, sum([fleet.network.nodes[x].demand
+                                                                           for x in ev.assigned_customers]))
+                   for ev_id, ev in fleet.vehicles.items()}
+
 input('Press enter to continue...')
 
 # %%
 # 7. GA hyperparameters
-CXPB, MUTPB = 0.35, 0.45
-n_individuals = 150
-generations = 650
+CXPB, MUTPB = 0.45, 0.55
+n_individuals = 120
+generations = 300
 penalization_constant = 500000
-weights = (0.2, 0.8, 1.2, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
+weights = (0.1, 0.8, 0.9, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
 keep_best = 1  # Keep the 'keep_best' best individuals
-tournament_size = 4
+#tournament_size = int(n_individuals * 0.1)
+tournament_size = 3
+block_probability = (.6, .2, .2)
+repeat_crossover = 1
+repeat_mutation = 1
 
 info = f'''
 Hyper-parameters:
-CXPB, MUTPB = {CXPB}, {MUTPB}
+CXPB, MUTPB = {CXPB}, f{MUTPB}
 n_individuals = {n_individuals}
 generations = {generations}
 penalization_constant = {penalization_constant}
 weights = {weights}
 keep_best = {keep_best}
 tournament_size = {tournament_size}
+block_probability = {block_probability}]
+repeat_crossover = {repeat_crossover}
+repeat_mutation = {repeat_mutation}
 '''
 
-
-
+# Arguments
+indices = block_indices(customers_to_visit, all_charging_ops)
 # %%
 # Fitness objects
 creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
@@ -78,17 +90,16 @@ creator.create("Individual", list, fitness=creator.FitnessMin, feasible=False)
 # Toolbox
 toolbox = base.Toolbox()
 
-toolbox.register("individual", random_individual, num_customers=len(fleet.network.customers),
-                 num_cs=len(fleet.network.charging_stations), m=len(fleet.vehicles), r=all_charging_ops)
-toolbox.register("evaluate", fitness, fleet=fleet, starting_points=starting_points, weights=weights,
-                 penalization_constant=penalization_constant, r=all_charging_ops)
-toolbox.register("mate", crossover, m=len(fleet.vehicles), r=all_charging_ops, index=None)
-toolbox.register("mutate", mutate, m=len(fleet.vehicles), num_customers=len(fleet.network.customers), num_cs=len(fleet.network.charging_stations),
-                 r=all_charging_ops, index=None)
+toolbox.register("individual", random_individual, customers_per_vehicle=customers_to_visit,
+                 charging_stations=fleet.network.charging_stations, r=all_charging_ops)
+toolbox.register("evaluate", fitness, fleet=fleet, indices=indices, init_state=starting_points, r=all_charging_ops, weights=weights,
+                 penalization_constant=penalization_constant)
+toolbox.register("mate", crossover, indices=indices, repeat=repeat_crossover)
+toolbox.register("mutate", mutate, indices=indices, charging_stations=fleet.network.charging_stations,
+                 repeat=repeat_mutation)
 toolbox.register("select", tools.selTournament, tournsize=tournament_size)
 toolbox.register("select_worst", tools.selWorst)
-toolbox.register("decode", decode, m=len(fleet.vehicles), fleet=fleet, starting_points=starting_points,
-                 r=all_charging_ops)
+toolbox.register("decode", decode, indices=indices, init_state=starting_points, r=all_charging_ops)
 
 # %% the algorithm
 tInitGA = time.time()
@@ -128,7 +139,7 @@ while g < generations:
     # A new generation
     g = g + 1
     X.append(g)
-    print("-- Generation %i --" % g)
+    print(f"-- Generation {g}/{generations} --")
 
     # Select the best individuals, if given
     if keep_best:
@@ -140,21 +151,32 @@ while g < generations:
     # Clone the selected individuals
     offspring = list(map(toolbox.clone, offspring))
 
-    # Apply crossover and mutation on the offspring
+    # blocks probabilities
+    if g < 90:
+        block_probability = (.33, .33, .33)
+    elif g < 150:
+        block_probability = (.2, .6, .2)
+    elif g < 210:
+        block_probability = (.6, .2, .2)
+    else:
+        block_probability = (.33, .33, .33)
+
+    # Crossover
     for child1, child2 in zip(offspring[::2], offspring[1::2]):
         # cross two individuals with probability CXPB
         if random() < CXPB:
-            toolbox.mate(child1, child2)
+            toolbox.mate(child1, child2, block_probability=block_probability)
 
             # fitness values of the children
             # must be recalculated later
             del child1.fitness.values
             del child2.fitness.values
 
+    # Mutation
     for mutant in offspring:
         # mutate an individual with probability MUTPB
         if random() < MUTPB:
-            toolbox.mutate(mutant)
+            toolbox.mutate(mutant, block_probability=block_probability)
             del mutant.fitness.values
 
     # Evaluate the individuals with an invalid fitness
@@ -207,13 +229,13 @@ while g < generations:
     # Save best ind
     if bestInd.fitness.wvalues[0] > bestOfAll.fitness.wvalues[0]:
         bestOfAll = bestInd
-
 # %%
 t_end = time.time()
 print("################  End of (successful) evolution  ################")
 
 algo_time = t_end-t_init
 print('Algorithm time:', algo_time)
+
 # %% Vehicles dynamics
 def text_feasibility(feasible):
     if feasible:
@@ -225,13 +247,10 @@ def text_feasibility(feasible):
 best_fitness, best_is_feasible = toolbox.evaluate(bestOfAll)
 best_routes = toolbox.decode(bestOfAll)
 print(f'The best individual {text_feasibility(best_is_feasible)} feasible and its fitness is {-best_fitness}')
-print('After decoding:\n', best_routes)
+print(f'After decoding:\n{best_routes}')
 
-input('Press ENTER to continue...')
 # %% Save operation if better
-save = False
-
-path = folder_path + file_name + '_already_assigned.xml'
+save = True
 
 prev_op_report = res.IOTools.read_optimization_report(path)
 if not prev_op_report:
@@ -245,7 +264,7 @@ if save:
     critical_points = {id_ev: (0, ev.state_leaving[0, 0], ev.state_leaving[1, 0], ev.state_leaving[2, 0]) for
                        id_ev, ev in fleet.vehicles.items()}
     fleet.save_operation_xml(path, critical_points)
-    report = res.IOTools.OptimizationReport(best_fitness, best_is_feasible, t_end - t_init)
+    report = res.IOTools.OptimizationReport(best_fitness, best_is_feasible, t_end-t_init)
     res.IOTools.save_optimization_report(path, report)
 else:
     print('Current optimization is not better.')
@@ -256,7 +275,7 @@ import pandas as pd
 import os
 
 now = datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S')
-folder_name = f'{now}_FEASIBLE_ASSIGNATION' if best_is_feasible else f'{now}_INFEASIBLE_ASSIGNATION/'
+folder_name = f'{now}_FEASIBLE_ASSIGNED' if best_is_feasible else f'{now}_INFEASIBLE_ASSIGNED/'
 results_path = folder_path + folder_name
 
 try:
@@ -267,6 +286,7 @@ except FileExistsError:
 optimization_filepath = results_path + '/optimization_info.csv'
 optimization_iterations_filepath = results_path + '/optimization_iterations.csv'
 theta_vector_filepath = results_path + '/nodes_occupation.csv'
+cost_filepath = results_path + '/costs.csv'
 info_filepath = results_path + '/hyper-parameters.txt'
 
 # optimization info
@@ -283,17 +303,7 @@ theta_matrix = np.array([theta_vector[i*net_size:net_size*(i+1)] for i in events
 df_nodes_occupation = pd.DataFrame(theta_matrix, index=events)
 df_nodes_occupation.to_csv(theta_vector_filepath)
 
-# fleet operation
-for id_ev, ev in fleet.vehicles.items():
-    ev_filepath = results_path + f'/EV{id_ev}_operation.csv'
-    reaching_data = pd.DataFrame(ev.state_reaching.T, columns=['x1_reaching', 'x2_reaching', 'x3_reaching'])
-    leaving_data = pd.DataFrame(ev.state_leaving.T, columns=['x1_leaving', 'x2_leaving', 'x3_leaving'])
-    route_data = pd.DataFrame({'Sk': ev.route[0], 'Lk': ev.route[1]})
-    data = pd.concat([route_data, reaching_data, leaving_data], axis=1)
-    data.to_csv(ev_filepath)
-
 # costs
-cost_filepath = results_path + '/costs.csv'
 weight_tt, weight_ec, weight_chg_op, weight_chg_cost = weights
 cost_tt, cost_ec, cost_chg_op, cost_chg_cost = fleet.cost_function()
 index = ['weight', 'cost']
@@ -303,30 +313,23 @@ df_costs = pd.DataFrame(data, columns=['Travel Time (min)', 'Energy Consumption 
                                        'Charging Time (min)', 'Charging Cost'], index=index)
 df_costs.to_csv(cost_filepath)
 
-# %% save hyper-parameters
+# fleet operation
+for id_ev, ev in fleet.vehicles.items():
+    ev_filepath = results_path + f'/EV{id_ev}_operation.csv'
+    reaching_data = pd.DataFrame(ev.state_reaching.T, columns=['x1_reaching', 'x2_reaching', 'x3_reaching'])
+    leaving_data = pd.DataFrame(ev.state_leaving.T, columns=['x1_leaving', 'x2_leaving', 'x3_leaving'])
+    route_data = pd.DataFrame({'Sk': ev.route[0], 'Lk': ev.route[1]})
+    data = pd.concat([route_data, reaching_data, leaving_data], axis=1)
+    data.to_csv(ev_filepath)
+
+
+# save hyper-parameters
 info += f'\nAlgorithm Time: {algo_time}'
 info += f'\nBest individual: {bestOfAll}'
 with open(info_filepath, 'w') as file:
     file.write(info)
-
-# %% Edit assignation file
-fleet.assign_customers_in_route()
-
-assigned_path = folder_path + file_name + '_already_assigned.xml'
-tree = ET.parse(assigned_path)
-_fleet = tree.find('fleet')
-
-for _ev, ev in zip(_fleet, fleet.vehicles.values()):
-    while _ev.find('assigned_customers'):
-        _ev.remove(_ev.find('assigned_customers'))
-    _assigned_customers = ET.SubElement(_ev, 'assigned_customers')
-    for node in ev.assigned_customers:
-        _node = ET.SubElement(_assigned_customers, 'node', attrib={'id': str(node)})
-
-tree.write(assigned_path)
-
 # %% Plot operations
-plot_operation = False
+plot_operation = True
 if plot_operation:
     figFitness = figure(plot_width=400, plot_height=300,
                         title='Best fitness evolution')
@@ -347,4 +350,6 @@ if plot_operation:
     show(p)
 
     # %%
-    fleet.plot_operation()
+    #fleet.plot_operation()
+
+
