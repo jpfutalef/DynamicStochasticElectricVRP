@@ -279,8 +279,8 @@ for vehicleID, vehicle in vehicles.items():
         if net.isCustomer(node):
             kCustomers.append(i)
             node_instance = net.nodes[node]['attr']
-            tWindowsCenter = (node_instance.timeWindowUp + node_instance.timeWindowDown) / 2.0
-            tWindowsWidth = (node_instance.timeWindowUp - node_instance.timeWindowDown) / 2.0
+            tWindowsCenter = (node_instance.time_window_upp + node_instance.time_window_low) / 2.0
+            tWindowsWidth = (node_instance.time_window_upp - node_instance.time_window_low) / 2.0
             tWindowsUpper.append(tWindowsCenter + tWindowsWidth)
             tWindowsLower.append(tWindowsCenter - tWindowsWidth)
             # Time windows whiskers

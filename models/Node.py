@@ -1,125 +1,90 @@
-import numpy as np
-import pandas as pd
-import networkx as nx
+from dataclasses import dataclass
+from typing import Tuple, Union
 
-"""
-Classes
-"""
+import xml.etree.ElementTree as ET
 
 
+@dataclass
 class NetworkNode:
     """
-    A general network node which has an associated Id
+    A generic node.
     """
     id: int
-
-    def __init__(self, node_id=0, spent_time=0, demand=0, pos=(0, 0), color='black', *args, **kwargs):
-        """
-        Simplest constructor with Id and a zero spent time
-        :param node_id: an int number with an associated Id
-        """
-        self.id = node_id
-        self.spent_time = spent_time
-        self.demand = demand
-        self.pos = pos
-        self.color = color
+    spent_time: float = 0.0
+    demand: float = 0.0
+    pos_x: float = 0.0
+    pos_y: float = 0.0
 
     def spentTime(self, p, q):
         """
-        A function all subclasses must implement in order to know how much time it was spent at the node
-        :param q: battery SOC of a vehicle reaching the node
-        :param p: battery SOC increment of the vehicle leaving the node
-        :return: the spent time
+        The time an EV in this node.
+        :param q: EV SOC when it arrives to this node
+        :param p: EV SOC increment in this node
+        :return: Time the EV spends here
         """
         return self.spent_time
 
-    def requiredDemand(self):  # TODO add doc
-        return self.demand
-
-    def isChargeStation(self):  # TODO add doc
+    def isChargeStation(self):
         return False
 
-    def isDepot(self):  # TODO add doc
+    def isDepot(self):
         return False
 
-    def isCustomer(self):  # TODO add doc
+    def isCustomer(self):
         return False
 
-    def getTypeAbbreviation(self):  # TODO add doc
-        return 'NN'
+    def xml_element(self):
+        attribs = {str(i): str(j) for i, j in self.__dict__.items()}
+        element = ET.Element('node', attrib=attribs)
+        return element
 
 
-class DepotNode(NetworkNode):  # TODO add documentation
-    def __init__(self, node_id, *args, **kwargs):
-        super().__init__(node_id, color='lightskyblue', *args, **kwargs)
+@dataclass
+class DepotNode(NetworkNode):
+    type: int = 0
 
-    def isDepot(self):  # TODO add doc
+    def isDepot(self):
         return True
 
-    def getTypeAbbreviation(self):  # TODO add doc
-        return 'DEPOT'
 
-
-class CustomerNode(NetworkNode):  # TODO add documentation
-    def __init__(self, node_id, spent_time, demand, time_window_up=None, time_window_down=None, *args, **kwargs):
-        super().__init__(node_id, spent_time=spent_time, demand=demand, color='limegreen', *args, **kwargs)
-        self.timeWindowDown = time_window_down
-        self.timeWindowUp = time_window_up
-
-    def spentTime(self, p, q):
-        return self.spent_time
-
-    def getTypeAbbreviation(self):  # FIXME maybe as an instance parameter?
-        return 'C'
+@dataclass
+class CustomerNode(NetworkNode):
+    time_window_low: float = 0.0
+    time_window_upp: float = 239.0
+    type: int = 1
 
     def isCustomer(self):
         return True
 
 
+@dataclass
 class ChargeStationNode(NetworkNode):
-    # TODO add documentation
-    # TODO unit test
-    def __init__(self, node_id, maximum_parallel_operations=4, time_points=(0.0, 120.0),
-                 soc_points=(0.0, 100.0), *args, **kwargs):
-        super().__init__(node_id, color='goldenrod', *args, **kwargs)
-        self.maximumParallelOperations = maximum_parallel_operations
-        self.timePoints = time_points
-        self.socPoints = soc_points
+    capacity: int = 4
+    time_points: Tuple[float, ...] = (0.0, 50.0, 120.0)
+    soc_points: Tuple[float, ...] = (0.0, 80.0, 100.0)
+    technology: int = 1
+    type: int = 2
 
     def calculateTimeSpent(self, init_soc, end_soc):
-        # FIXME actually, verify it is working properly
-        # TODO verify complexity
-        # TODO add documentation
-        if end_soc > 100:
-            end_soc = 100
+        t_points, soc_points = self.time_points, self.soc_points
 
-        if init_soc > 100:
-            init_soc = 100
+        end_time = t_points[-1] * 10. if end_soc > 100. else 0.
+        init_time = -t_points[-1] * 10. if end_soc < 0. else 0.
 
-        doInit = True
-        doEnd = False
-        initIndex = 0
-        endIndex = 0
-        for i, ai in enumerate(self.socPoints):
-            if doInit and ai >= init_soc:
-                initIndex = i - 1
-                doInit = False
-                doEnd = True
-            if doEnd and ai >= end_soc:
-                endIndex = i - 1
+        for t0, t1, y0, y1 in zip(t_points[:-1], t_points[1:], soc_points[:-1], soc_points[1:]):
+            # find time where operation begins
+            if y0 <= init_soc <= y1:
+                m = (y1 - y0) / (t1 - t0)
+                n = y1 - m * t1
+                init_time = (init_soc - n) / m
+            # find time where operation ends
+            if y0 <= end_soc <= y1:
+                m = (y1 - y0) / (t1 - t0)
+                n = y1 - m * t1
+                end_time = (end_soc - n) / m
                 break
-        # init time
-        m = (self.socPoints[initIndex + 1] - self.socPoints[initIndex]) / (self.timePoints[initIndex + 1] -
-                                                                           self.timePoints[initIndex])
-        n = self.socPoints[initIndex] - m * self.timePoints[initIndex]
-        initTime = (init_soc - n) / m
 
-        # end time
-        m = (self.socPoints[endIndex + 1] - self.socPoints[endIndex]) / (self.timePoints[endIndex + 1] -
-                                                                         self.timePoints[endIndex])
-        n = self.socPoints[endIndex] - m * self.timePoints[endIndex]
-        endTime = (end_soc - n) / m
-        return endTime - initTime
+        return end_time - init_time
 
     def spentTime(self, init_soc, increment):
         return self.calculateTimeSpent(init_soc, init_soc + increment)
@@ -127,5 +92,8 @@ class ChargeStationNode(NetworkNode):
     def isChargeStation(self):
         return True
 
-    def getTypeAbbreviation(self):
-        return 'CS'
+    def xml_element(self):
+        attribs = {str(i): str(j) for i, j in self.__dict__.items()}
+        del attribs['spent_time'], attribs['time_points'], attribs['soc_points']
+        element = ET.Element('node', attrib=attribs)
+        return element

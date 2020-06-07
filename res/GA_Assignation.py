@@ -6,7 +6,7 @@ from random import randint, uniform, sample, random
 
 from models.ElectricVehicle import ElectricVehicle
 from models.Fleet import Fleet, InitialCondition
-from models.Network import Network, DynamicNetwork
+from models.Network import Network
 
 # TYPES
 IndividualType = List
@@ -20,14 +20,43 @@ RouteDict = Dict[int, Tuple[RouteVector, float, float, float]]
 def decode(individual: IndividualType, m: int, fleet: Fleet, starting_points: StartingPointsType, r=2) -> RouteDict:
     """
     Decodes individual to node sequence, charging sequence and initial conditions.
-    :param individual:
-    :param m:
-    :param fleet:
-    :param starting_points:
-    :param r:
-    :return:
+    :param individual: the individual
+    :param m: fleet size
+    :param fleet: fleet instance
+    :param starting_points: dictionary with initial conditions of each EV
+    :param r: maximum charging operations allowed per vehicle
+    :return: the routes encoded by the individual
     """
-    return decode_type1(individual, m, fleet, starting_points, r)
+    idt = len(individual) - m
+    ics = idt - 3 * m * r
+
+    customer_sequences = get_customers(individual, m)
+    charging_sequences = [[0] * len(x) for x in customer_sequences]
+
+    charging_operations = [(individual[ics + 3 * i], individual[ics + 3 * i + 1], individual[ics + 3 * i + 2])
+                           for i in range(r * m)]
+    depart_times = individual[idt:]
+
+    # Insert charging operations
+    for customer, chg_st, amount in charging_operations:
+        if customer == -1:
+            continue
+        for node_sequence, charging_sequence in zip(customer_sequences, charging_sequences):
+            if customer not in node_sequence:
+                continue
+            index = node_sequence.index(customer) + 1
+            node_sequence.insert(index, chg_st)
+            charging_sequence.insert(index, amount)
+
+    # Store routes in dictionary
+    routes = {}
+    for id_ev, (node_sequence, charging_sequence, depart_time) in enumerate(zip(customer_sequences, charging_sequences,
+                                                                                depart_times)):
+        ic = starting_points[id_ev]
+        S = tuple([ic.S0] + node_sequence + [0])
+        L = tuple([ic.L0] + charging_sequence + [0])
+        routes[id_ev] = ((S, L), depart_time, ic.x2_0, sum([fleet.network.demand(x) for x in S]))
+    return routes
 
 
 def fitness(individual: IndividualType, fleet: Fleet, starting_points: StartingPointsType,
@@ -100,7 +129,7 @@ def mutate(individual: IndividualType, m: int, num_customers: int, num_cs: int, 
 
     # Case charging stations
     elif ics <= index < idt:
-        mutate_charging_operation1_type1(individual, index, m, r, num_cs)
+        mutate_charging_operation1(individual, index, m, r, num_cs)
 
     # Case departure time
     else:
@@ -115,7 +144,7 @@ def crossover(ind1: IndividualType, ind2: IndividualType, m: int, r: int, index=
     if index is None:
         index = randint(0, len(ind1))
 
-    return crossover1_type1(ind1, ind2, m, r, index)
+    return crossover1(ind1, ind2, m, r, index)
 
 
 def random_individual(num_customers, num_cs, m, r):
@@ -133,9 +162,10 @@ def random_individual(num_customers, num_cs, m, r):
     # Charging station blocks
     charging_operation_blocks = []
     for i in range(m * r):
-        cust = sample(customers + [-1], 1)[0]
+        #cust = sample(customers + [-1], 1)[0]
+        cust = -1
         cs = sample(charging_stations, 1)[0]
-        amount = uniform(10, 90)
+        amount = uniform(20, 30)
         charging_operation_blocks.append(cust)
         charging_operation_blocks.append(cs)
         charging_operation_blocks.append(amount)
@@ -153,7 +183,7 @@ def random_individual(num_customers, num_cs, m, r):
         assigned_customers = [customers.pop(randint(0, len(customers) - 1)) for _ in range(i1 - i0 + 1)]
         customer_blocks[i0:i1 + 1] = assigned_customers
 
-        departure_time_blocks[i] = uniform(60 * 5, 60 * 19)
+        departure_time_blocks[i] = uniform(60 * 5, 60 * 12)
         index = i1 + 2
 
     individual = customer_blocks + charging_operation_blocks + departure_time_blocks
@@ -162,85 +192,6 @@ def random_individual(num_customers, num_cs, m, r):
 
 
 # FUNCTIONS MAIN FUNCTIONS WILL CALL
-def get_customers_type1(individual, m):
-    customer_sequences = []
-    i0 = 0
-    i1 = 0
-    for i in range(m):
-        i1 += individual[i0:].index('|')
-        customer_sequences.append(individual[i0:i1])
-        i0 = i1 + 1
-        i1 = i0
-    return customer_sequences
-
-
-def customer_block_indices(individual, index):
-    # Find vehicle operation
-    index_end = index - 1 if (individual[index] == '|') else index + individual[index:].index('|') - 1
-    if index:
-        try:
-            index_start = index_end - individual[index_end::-1].index('|') + 1
-        except ValueError:
-            index_start = 0
-    else:
-        index_start = 0
-    return index_start, index_end
-
-
-def move_from_to(l, i, j):
-    """
-    Moves an item in a list by index
-    :param l: the list where the item is
-    :param i: old item index
-    :param j: new item index
-    :return: list with modifications
-    """
-    l.insert(j, l.pop(i))
-    return l
-
-
-def decode_type1(individual: IndividualType, m: int, fleet: Fleet, starting_points: StartingPointsType,
-                 r=2) -> RouteDict:
-    """
-    Decodes individual to node sequence, charging sequence and initial conditions.
-    :param individual: the individual
-    :param m: fleet size
-    :param starting_points: dictionary with initial conditions of each EV
-    :param r: maximum charging operations allowed per vehicle
-    :return:
-    """
-    idt = len(individual) - m
-    ics = idt - 3 * m * r
-
-    customer_sequences = get_customers_type1(individual, m)
-    charging_sequences = [[0] * len(x) for x in customer_sequences]
-
-    charging_operations = [(individual[ics + 3 * i], individual[ics + 3 * i + 1], individual[ics + 3 * i + 2])
-                           for i in range(r * m)]
-    depart_times = individual[idt:]
-
-    # Insert charging operations
-    for customer, chg_st, amount in charging_operations:
-        if customer == -1:
-            continue
-        for node_sequence, charging_sequence in zip(customer_sequences, charging_sequences):
-            if customer not in node_sequence:
-                continue
-            index = node_sequence.index(customer) + 1
-            node_sequence.insert(index, chg_st)
-            charging_sequence.insert(index, amount)
-
-    # Store routes in dictionary
-    routes = {}
-    for id_ev, (node_sequence, charging_sequence, depart_time) in enumerate(zip(customer_sequences, charging_sequences,
-                                                                                depart_times)):
-        ic = starting_points[id_ev]
-        S = tuple([ic.S0] + node_sequence + [0])
-        L = tuple([ic.L0] + charging_sequence + [0])
-        routes[id_ev] = ((S, L), depart_time, ic.x2_0, sum([fleet.network.demand(x) for x in S]))
-    return routes
-
-
 def mutate_customer1(individual: List, index: int, m: int, r: int):
     """Swaps customers of a single vehicle"""
     # If the current and previous values are 0, then the vehicle has no customers assigned
@@ -285,6 +236,7 @@ def mutate_customer2(individual: List, index: int, m: int, r: int):
     # Do swap
     swap_elements(individual, i1, i2)
 
+
 def mutate_customer3(individual: List, index: int, m: int, r: int):
     """
     Takes a customer from a vehicles and gives it to another vehicle
@@ -316,7 +268,7 @@ def mutate_customer3(individual: List, index: int, m: int, r: int):
     individual = c1 + val + c2 + c3
 
 
-def mutate_charging_operation1_type1(individual: List, index: int, m: int, r: int, num_cs: int):
+def mutate_charging_operation1(individual: List, index: int, m: int, r: int, num_cs: int):
     """
     Mutates the charging operation block in the given index
     :param individual:
@@ -341,14 +293,7 @@ def mutate_departure_time1(individual: List, index: int, m: int, r: int):
     individual[index] += uniform(-100, 100)
 
 
-def all_in_block(source, to_check):
-    for i in to_check:
-        if i not in source:
-            return False
-    return True
-
-
-def crossover1_type1(ind1: IndividualType, ind2: IndividualType, m: int, r: int, index) -> Tuple[IndividualType,
+def crossover1(ind1: IndividualType, ind2: IndividualType, m: int, r: int, index) -> Tuple[IndividualType,
                                                                                                  IndividualType]:
     idt = len(ind1) - m
     ics = idt - 3 * m * r
@@ -402,6 +347,7 @@ def crossover1_type1(ind1: IndividualType, ind2: IndividualType, m: int, r: int,
 
     return ind1, ind2
 
+# AUXILIAR FUNCTIONS
 
 def swap_elements(l, i, j):
     """
@@ -447,3 +393,46 @@ def block_indices(customers_to_visit: Dict[int, Tuple[int, ...]], allowed_chargi
         i1 += 3 * allowed_charging_operations
 
     return indices
+
+def get_customers(individual, m):
+    customer_sequences = []
+    i0 = 0
+    i1 = 0
+    for i in range(m):
+        i1 += individual[i0:].index('|')
+        customer_sequences.append(individual[i0:i1])
+        i0 = i1 + 1
+        i1 = i0
+    return customer_sequences
+
+
+def customer_block_indices(individual, index):
+    # Find vehicle operation
+    index_end = index - 1 if (individual[index] == '|') else index + individual[index:].index('|') - 1
+    if index:
+        try:
+            index_start = index_end - individual[index_end::-1].index('|') + 1
+        except ValueError:
+            index_start = 0
+    else:
+        index_start = 0
+    return index_start, index_end
+
+
+def move_from_to(l, i, j):
+    """
+    Moves an item in a list by index
+    :param l: the list where the item is
+    :param i: old item index
+    :param j: new item index
+    :return: list with modifications
+    """
+    l.insert(j, l.pop(i))
+    return l
+
+
+def all_in_block(source, to_check):
+    for i in to_check:
+        if i not in source:
+            return False
+    return True

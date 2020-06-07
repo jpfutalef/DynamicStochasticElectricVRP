@@ -1,24 +1,21 @@
-import xml.etree.ElementTree as ET
-from typing import Dict, List, Tuple, Union, NamedTuple
-from dataclasses import dataclass
-
-import numpy as np
-from numpy import ndarray, zeros
 import time
-
-from models.ElectricVehicle import ElectricVehicle
-import models.Network as net
-from models.Node import DepotNode, CustomerNode, ChargeStationNode
-from models.Edge import Edge, DynamicEdge
-import res.IOTools
+import xml.etree.ElementTree as ET
+import xml.dom.minidom
+from typing import Dict, List, Tuple, Union, NamedTuple
 
 # Visualization tools
-from bokeh.plotting import figure, show
-from bokeh.layouts import gridplot
+from bokeh.models import Whisker, Span, Range1d
 from bokeh.models.annotations import Arrow, Label
 from bokeh.models.arrow_heads import VeeHead
-from bokeh.models import Whisker, Span, Range1d
-from bokeh.io import export_svgs
+from bokeh.plotting import figure, show
+import matplotlib.pyplot as plt
+import networkx as nx
+
+import numpy as np
+import models.Network as net
+import res.IOTools
+from models.ElectricVehicle import ElectricVehicle
+
 
 # CLASSES
 class InitialCondition(NamedTuple):
@@ -29,6 +26,12 @@ class InitialCondition(NamedTuple):
     x3_0: float
 
 
+class TupleIndex(list):
+    def __add__(self, other: int):
+        i = 2 * self[0] + self[1] + other
+        return TupleIndex(integer_to_tuple2(i))
+
+
 # TYPES
 IndividualType = List
 IndicesType = Dict[int, Tuple[int, int]]
@@ -37,7 +40,8 @@ RouteVector = Tuple[Tuple[int, ...], Tuple[float, ...]]
 RouteDict = Dict[int, Tuple[RouteVector, float, float, float]]
 
 
-def distance(results, multi: ndarray, b: ndarray):
+# FUNCTIONS
+def distance(results, multi: np.ndarray, b: np.ndarray):
     return np.sum([dist_fun(multi[i, 0], b[i, 0]) for i, result in enumerate(results) if not result])
 
 
@@ -56,22 +60,15 @@ def integer_to_tuple2(k: int):
 
 
 def theta_vector_in_array(init_state, time_vectors, network_size, events_count, op_vector, theta_index) -> None:
-    iTheta0 = theta_index
-    iTheta1 = theta_index + network_size
+    iTheta0, iTheta1 = theta_index, theta_index + network_size
     op_vector[iTheta0:iTheta1] = init_state
-
     counters = [[TupleIndex([0, 0]), 0] for _ in range(len(time_vectors))]
 
     for k in range(1, events_count):
         iTheta0 += network_size
         iTheta1 += network_size
         min_t, ind_ev = min([(time_vectors[ind][x[0][1]][x[0][0]], ind) for ind, x in enumerate(counters) if not x[1]])
-
-        if counters[ind_ev][0][1]:
-            event = 1
-        else:
-            event = -1
-
+        event = 1 if counters[ind_ev][0][1] else -1
         node = time_vectors[ind_ev][2][counters[ind_ev][0][0] + counters[ind_ev][0][1]]
         op_vector[iTheta0:iTheta1] = op_vector[iTheta0 - network_size:iTheta1 - network_size]
         op_vector[iTheta0 + node] += event
@@ -79,21 +76,14 @@ def theta_vector_in_array(init_state, time_vectors, network_size, events_count, 
         if not counters[ind_ev][0][1] and len(time_vectors[ind_ev][2]) - 1 == counters[ind_ev][0][0] + \
                 counters[ind_ev][0][1]:
             counters[ind_ev][1] = 1
-    return
-
-
-class TupleIndex(list):
-    def __add__(self, other: int):
-        i = 2 * self[0] + self[1] + other
-        return TupleIndex(integer_to_tuple2(i))
 
 
 class Fleet:
     vehicles: Dict[int, ElectricVehicle]
     network: net.Network
     vehicles_to_route: Tuple[int, ...]
-    theta_vector: Union[ndarray, None]
-    optimization_vector: Union[ndarray, None]
+    theta_vector: Union[np.ndarray, None]
+    optimization_vector: Union[np.ndarray, None]
     optimization_vector_indices: Union[Tuple, None]
     starting_points: StartingPointsType
 
@@ -122,18 +112,18 @@ class Fleet:
         if vehicles:
             self.vehicles_to_route = tuple(vehicles)
 
-    def set_routes_of_vehicles(self, routes: RouteDict, include_ev_weight=True) -> None:
+    def set_routes_of_vehicles(self, routes: RouteDict) -> None:
         for id_ev, (route, dep_time, dep_soc, dep_pay) in routes.items():
-            self.vehicles[id_ev].set_route(route, dep_time, dep_soc, dep_pay, include_ev_weight=include_ev_weight)
+            self.vehicles[id_ev].set_route(route, dep_time, dep_soc, dep_pay)
             self.vehicles[id_ev].iterate_space(self.network)
 
-    def create_optimization_vector(self) -> ndarray:
+    def create_optimization_vector(self) -> np.ndarray:
         # It is assumed that each EV has a set route by using the ev.set_rout(...) method
         # 0. Preallocate optimization vector
         sum_si = sum([len(self.vehicles[x].route[0]) for x in self.vehicles_to_route])
         length_op_vector = sum_si * (8 + 2 * len(self.network)) - 2 * len(self.vehicles_to_route) * (
                 len(self.network) + 1) + len(self.network)
-        self.optimization_vector = zeros(length_op_vector)
+        self.optimization_vector = np.zeros(length_op_vector)
 
         # 1. Iterate each ev state to fill their matrices
         iS = 0
@@ -148,7 +138,7 @@ class Fleet:
 
         self.optimization_vector_indices = (iS, iL, ix1, ix2, ix3, iD, iT, iE, iTheta)
 
-        t_list = []
+        time_vectors = []
         for id_ev in self.vehicles_to_route:
             si = len(self.vehicles[id_ev].route[0])
             self.optimization_vector[iS:iS + si] = self.vehicles[id_ev].route[0]
@@ -160,8 +150,8 @@ class Fleet:
             self.optimization_vector[iT:iT + si - 1] = self.vehicles[id_ev].travel_times
             self.optimization_vector[iE:iE + si - 1] = self.vehicles[id_ev].energy_consumption
 
-            t_list.append((self.vehicles[id_ev].state_leaving[0, :-1], self.vehicles[id_ev].state_reaching[0, 1:],
-                           self.vehicles[id_ev].route[0]))
+            time_vectors.append((self.vehicles[id_ev].state_leaving[0, :-1], self.vehicles[id_ev].state_reaching[0, 1:],
+                                 self.vehicles[id_ev].route[0]))
 
             iS += si
             iL += si
@@ -173,9 +163,9 @@ class Fleet:
             iE += si - 1
 
         # 2. Create theta vector
-        init_theta = zeros(len(self.network))
+        init_theta = np.zeros(len(self.network))
         init_theta[0] = len(self.vehicles)
-        theta_vector_in_array(init_theta, t_list, len(self.network), 2 * sum_si - 2 * len(self.vehicles) + 1,
+        theta_vector_in_array(init_theta, time_vectors, len(self.network), 2 * sum_si - 2 * len(self.vehicles) + 1,
                               self.optimization_vector, iTheta)
 
         # 3. Create optimization vector
@@ -191,11 +181,11 @@ class Fleet:
         return cost_tt, cost_ec, cost_chg_op, cost_chg_cost
 
     def feasible(self) -> (bool, Union[int, float]):
-        # Variables to return
+        # 1. Variables to return
         is_feasible = True
         dist = 0
 
-        # Variables from the optimization vector and vehicles
+        # 2. Variables from the optimization vector and vehicles
         n_vehicles = len(self.vehicles)
         n_customers = sum([1 for id_ev in self.vehicles_to_route
                            for node in self.vehicles[id_ev].route[0] if self.network.isCustomer(node)])
@@ -205,26 +195,25 @@ class Fleet:
 
         iS, iL, ix1, ix2, ix3, iD, iT, iE, iTheta = self.optimization_vector_indices
 
-        # Amount of rows
+        # 3. Amount of rows
         rows = 0
 
-        rows += n_vehicles  # 2.16
-        rows += n_customers  # 2.17
-        rows += n_customers  # 2.18
-        rows += sum_si  # 2.25-1
-        rows += sum_si  # 2.25-2
-        rows += sum_si  # 2.26-1
-        rows += sum_si  # 2.26-2
-        rows += (int(len(self.optimization_vector[iTheta:])/len(self.network.nodes)))*len(self.network.charging_stations)
+        rows += n_vehicles  # Constraint 1 - Maximum tour time
+        rows += n_vehicles  # Constraint 2 - Maximum weight
+        rows += 2 * n_customers  # Constraint 3 & 4 - Time window up and time window down
+        rows += 2 * sum_si  # Constraint 5 & 6 - SOH policies when EV arrives
+        rows += 2 * sum_si  # Constraint 7 & 8 - SOH policies when EV leaves
+        rows += (int(len(self.optimization_vector[iTheta:]) / len(self.network.nodes))) * len(
+            self.network.charging_stations)  # Constraint 9 - CS capacities
 
-        # Matrices
+        # 4. Matrices
         A = np.zeros((rows, length_op_vector))
         b = np.zeros((rows, 1))
 
-        # Start filling
+        # 5. Start filling
         row = 0
 
-        # 2.16
+        # Constraint 1 - Maximum tour time
         si = 0
         for j, vehicle in self.vehicles.items():
             A[row, ix1 + si] = -1.0
@@ -233,21 +222,29 @@ class Fleet:
             b[row] = vehicle.max_tour_duration
             row += 1
 
-        # 2.17 & 2.18
+        # Constraint 2 - Maximum weight
+        si = 0
+        for j, vehicle in self.vehicles.items():
+            A[row, ix3 + si] = 1.0
+            b[row] = vehicle.max_payload
+            si += len(vehicle.route[0])
+            row += 1
+
+        # Constraint 3 & 4 - Time window up and time window down
         si = 0
         for _, vehicle in self.vehicles.items():
             for k, (Sk, Lk) in enumerate(zip(vehicle.route[0], vehicle.route[1])):
                 if network.isCustomer(Sk):
                     A[row, ix1 + si + k] = -1.0
-                    b[row] = -network.nodes[Sk].timeWindowDown
+                    b[row] = -network.nodes[Sk].time_window_low
                     row += 1
 
                     A[row, ix1 + si + k] = 1.0
-                    b[row] = network.nodes[Sk].timeWindowUp - network.spent_time(Sk, None, None)
+                    b[row] = network.nodes[Sk].time_window_upp - network.spent_time(Sk, None, None)
                     row += 1
             si += len(vehicle.route[0])
 
-        # 2.25-1 & 2.25-2
+        # Constraint 5 & 6 - SOH policies when EV arrives
         si = 0
         for _, vehicle in self.vehicles.items():
             for k, (Sk, Lk) in enumerate(zip(vehicle.route[0], vehicle.route[1])):
@@ -260,7 +257,7 @@ class Fleet:
                 row += 1
             si += len(vehicle.route[0])
 
-        # 2.26-1 & 2.26-2
+        # Constraint 7 & 8 - SOH policies when EV leaves
         si = 0
         for _, vehicle in self.vehicles.items():
             for k, (Sk, Lk) in enumerate(zip(vehicle.route[0], vehicle.route[1])):
@@ -273,15 +270,15 @@ class Fleet:
                 row += 1
             si += len(vehicle.route[0])
 
-        # constraint CS capacity
+        # Constraint 9 - CS capacities
         num_nodes = len(self.network.nodes)
         for i in self.network.charging_stations:
             for k in range(int(len(self.optimization_vector[iTheta:]) / num_nodes)):
-                A[row, iTheta + num_nodes*(k+1) - i] = 1.0
-                b[row] = self.network.nodes[i].maximumParallelOperations
+                A[row, iTheta + num_nodes * (k + 1) - i] = 1.0
+                b[row] = self.network.nodes[i].capacity
                 row += 1
 
-        # Check
+        # 6. Check
         multi = np.matmul(A, np.vstack(self.optimization_vector.T))
         boolList = multi <= b
         for result in boolList:
@@ -292,7 +289,43 @@ class Fleet:
 
         return is_feasible, dist
 
-    # Realtime tools
+    def save_operation_xml(self, path: str, critical_points: Dict[int, Tuple[int, float, float, float]], pretty=False):
+        # Open XML file
+        tree = ET.parse(path)
+        _info: ET = tree.find('info')
+        _network: ET = tree.find('network')
+        _fleet: ET = tree.find('fleet')
+        _technologies: ET = _network.find('technologies')
+
+        # Fleet data
+        for _vehicle in _fleet:
+            # Just do vehicles with valid critical points
+            ev_id = int(_vehicle.get('id'))
+            if ev_id in self.vehicles_to_route:
+                # Remove all previous routes
+                for _prev_route in _vehicle.findall('previous_route'):
+                    _vehicle.remove(_prev_route)
+
+                # Remove all previous critical points
+                for _crit_point in _vehicle.findall('critical_point'):
+                    _vehicle.remove(_crit_point)
+
+                # Save new route
+                _previous_route = ET.SubElement(_vehicle, 'previous_route')
+                for Sk, Lk in zip(self.vehicles[ev_id].route[0], self.vehicles[ev_id].route[1]):
+                    attrib = {'Sk': str(Sk), 'Lk': str(Lk)}
+                    _node = ET.SubElement(_previous_route, 'node', attrib=attrib)
+
+                critical_point = critical_points[ev_id]
+                attrib_cp = {'k': str(critical_point[0]), 'x1': str(critical_point[1]), 'x2': str(critical_point[2]),
+                             'x3': str(critical_point[3])}
+                _critical_point = ET.SubElement(_vehicle, 'critical_point', attrib=attrib_cp)
+
+        tree.write(path)
+        if pretty:
+            res.IOTools.write_pretty_xml(path)
+        return tree
+
     def update_from_xml(self, path, do_network=False) -> ET:
         # Open XML file
         tree = ET.parse(path)
@@ -334,6 +367,115 @@ class Fleet:
         self.set_vehicles_to_route(vehicles_to_route)
 
         return tree
+
+    def plot_operation_pyplot(self, arrow_colors=('SteelBlue', 'Crimson', 'SeaGreen'), fig_size=(16, 5),
+                              save_to=None):
+        figs = []
+        for id_ev, vehicle in self.vehicles.items():
+            Si, Li = vehicle.route[0], vehicle.route[1]
+            st_reaching, st_leaving = vehicle.state_reaching, vehicle.state_leaving
+            r_time, r_soc, r_payload = st_reaching[0, :], st_reaching[1, :], st_reaching[2, :]
+            l_time, l_soc, l_payload = st_leaving[0, :], st_leaving[1, :], st_leaving[2, :]
+
+            si = len(Si)
+
+            fig = plt.figure(figsize=fig_size)
+
+            ### FIG X1 ###
+            plt.subplot(131)
+            plt.grid()
+            # time windows
+            X_tw = [k for k, Sk in enumerate(Si) if self.network.isCustomer(Sk)]
+            Y_tw = [(self.network.nodes[Sk].time_window_upp + self.network.nodes[Sk].time_window_low) / 2.0
+                    for k, Sk in enumerate(Si) if self.network.isCustomer(Sk)]
+            tw_sigma = [(self.network.nodes[Sk].time_window_upp - self.network.nodes[Sk].time_window_low) / 2.0
+                        for k, Sk in enumerate(Si) if self.network.isCustomer(Sk)]
+            plt.errorbar(X_tw, Y_tw, tw_sigma, ecolor='black', fmt='none', capsize=6, elinewidth=1, zorder=5)
+
+            # time in nodes
+            X_node, Y_node = range(si), r_time
+            U_node, V_node = np.zeros(si), l_time - r_time
+            color_node = [arrow_colors[2] if self.network.isCustomer(i) or self.network.isDepot(i)
+                          else arrow_colors[1] for i in Si]
+            plt.quiver(X_node, Y_node, U_node, V_node, scale=1, angles='xy', scale_units='xy', color=color_node,
+                       width=0.0004 * fig_size[0], headwidth=6, zorder=10)
+
+            # travel time
+            X_edge, Y_edge = range(si - 1), l_time[0:-1]
+            U_edge, V_edge = np.ones(si - 1), r_time[1:] - l_time[0:-1]
+            color_edge = [arrow_colors[0]] * si
+            plt.quiver(X_edge, Y_edge, U_edge, V_edge, scale=1, angles='xy', scale_units='xy', color=color_edge,
+                       width=0.0004 * fig_size[0], zorder=15)
+
+            plt.xlabel('Stop')
+            plt.ylabel('Time of the day (min)')
+            plt.title(f'Arrival and departure times (EV {id_ev})')
+
+            ### FIG X2 ###
+            plt.subplot(132)
+            plt.grid()
+            # SOC in nodes
+            X_node, Y_node = range(si), r_soc
+            U_node, V_node = np.zeros(si), l_soc - r_soc
+            color_node = [arrow_colors[2] if self.network.isCustomer(i) or self.network.isDepot(i)
+                          else arrow_colors[1] for i in Si]
+            plt.quiver(X_node, Y_node, U_node, V_node, scale=1, angles='xy', scale_units='xy', color=color_node,
+                       width=0.0004 * fig_size[0], headwidth=6, zorder=10)
+
+            # travel SOC
+            X_edge, Y_edge = range(si - 1), l_soc[0:-1]
+            U_edge, V_edge = np.ones(si - 1), r_soc[1:] - l_soc[0:-1]
+            color_edge = [arrow_colors[0]] * si
+            plt.quiver(X_edge, Y_edge, U_edge, V_edge, scale=1, angles='xy', scale_units='xy', color=color_edge,
+                       width=0.0004 * fig_size[0], zorder=15)
+
+            # SOH policy
+            plt.axhline(vehicle.alpha_down, color='black')
+            plt.axhline(vehicle.alpha_up, color='black')
+
+            plt.xlabel('Stop')
+            plt.ylabel('State Of Charge (%)')
+            plt.title(f'EV Battery SOC (EV {id_ev})')
+
+            ### FIG X3 ###
+            plt.subplot(133)
+            plt.grid()
+            # payload in nodes
+            X_node, Y_node = range(si), r_payload
+            U_node, V_node = np.zeros(si), l_payload - r_payload
+            color_node = [arrow_colors[2] if self.network.isCustomer(i) or self.network.isDepot(i)
+                          else arrow_colors[1] for i in Si]
+            plt.quiver(X_node, Y_node, U_node, V_node, scale=1, angles='xy', scale_units='xy', color=color_node,
+                       width=0.0004 * fig_size[0], headwidth=6, zorder=10)
+
+            # traveling payload
+            X_edge, Y_edge = range(si - 1), l_payload[0:-1]
+            U_edge, V_edge = np.ones(si - 1), r_payload[1:] - l_payload[0:-1]
+            color_edge = [arrow_colors[0]] * si
+            plt.quiver(X_edge, Y_edge, U_edge, V_edge, scale=1, angles='xy', scale_units='xy', color=color_edge,
+                       width=0.0004 * fig_size[0], zorder=15)
+
+            plt.xlabel('Stop')
+            plt.ylabel('Payload (t)')
+            plt.title(f' (Payload evolution (EV {id_ev})')
+
+            figs.append(fig)
+        return figs
+
+    def draw_operation(self, color_route='red', **kwargs):
+        nodes_id = {i: i for i, node in self.network.nodes.items()}
+        fig, g = self.network.draw(labels=nodes_id, **kwargs)
+        pos = {i: (node.pos_x, node.pos_y) for i, node in self.network.nodes.items()}
+        cc = 0
+        for id_ev, ev in self.vehicles.items():
+            edges = [(Sk0, Sk1) for Sk0, Sk1 in zip(ev.route[0][0:-1], ev.route[0][1:])]
+            if type(color_route) == str:
+                nx.draw_networkx_edges(g, pos, edgelist=edges, ax=fig.get_axes()[0], edge_color=color_route)
+            else:
+                nx.draw_networkx_edges(g, pos, edgelist=edges, ax=fig.get_axes()[0], edge_color=color_route[cc])
+                cc += 1
+        return fig, g
+
 
     def plot_operation(self, save=False, path=None):
         # Vectors to plot
@@ -441,8 +583,8 @@ class Fleet:
                 if self.network.isCustomer(node):
                     kCustomers.append(k)
                     node_instance = self.network.nodes[node]
-                    tWindowsCenter = (node_instance.timeWindowUp + node_instance.timeWindowDown) / 2.0
-                    tWindowsWidth = (node_instance.timeWindowUp - node_instance.timeWindowDown) / 2.0
+                    tWindowsCenter = (node_instance.time_window_upp + node_instance.time_window_low) / 2.0
+                    tWindowsWidth = (node_instance.time_window_upp - node_instance.time_window_low) / 2.0
                     tWindowsUpper.append(tWindowsCenter + tWindowsWidth)
                     tWindowsLower.append(tWindowsCenter - tWindowsWidth)
                     # Time windows whiskers
@@ -538,45 +680,28 @@ class Fleet:
             time.sleep(0.5)
         return
 
-    def save_operation_xml(self, path: str, critical_points: Dict[int, Tuple[int, float, float, float]], pretty=False):
-        # Open XML file
-        tree = ET.parse(path)
-        _info: ET = tree.find('info')
-        _network: ET = tree.find('network')
-        _fleet: ET = tree.find('fleet')
-        _technologies: ET = _network.find('technologies')
+    def xml_tree(self):
+        _fleet = ET.Element('fleet')
+        for vehicle in self.vehicles.values():
+            _fleet.append(vehicle.xml_element())
+        return _fleet
 
-        # Fleet data
-        for _vehicle in _fleet:
-            # Just do vehicles with valid critical points
-            ev_id = int(_vehicle.get('id'))
-            if ev_id in self.vehicles_to_route:
-                # Remove all previous routes
-                for _prev_route in _vehicle.findall('previous_route'):
-                    _vehicle.remove(_prev_route)
+    def write_xml(self, path, network_in_file=False, print_pretty=False):
+        tree = self.xml_tree()
+        if network_in_file:
+            instance_tree = ET.Element('instance')
+            instance_tree.append(self.network.xml_tree())
+            instance_tree.append(tree)
+            tree = instance_tree
 
-                # Remove all previous critical points
-                for _crit_point in _vehicle.findall('critical_point'):
-                    _vehicle.remove(_crit_point)
-
-                # Save new route
-                _previous_route = ET.SubElement(_vehicle, 'previous_route')
-                for Sk, Lk in zip(self.vehicles[ev_id].route[0], self.vehicles[ev_id].route[1]):
-                    attrib = {'Sk': str(Sk), 'Lk': str(Lk)}
-                    _node = ET.SubElement(_previous_route, 'node', attrib=attrib)
-
-                critical_point = critical_points[ev_id]
-                attrib_cp = {'k': str(critical_point[0]), 'x1': str(critical_point[1]), 'x2': str(critical_point[2]),
-                             'x3': str(critical_point[3])}
-                _critical_point = ET.SubElement(_vehicle, 'critical_point', attrib=attrib_cp)
-
-        tree.write(path)
-        if pretty:
-            res.IOTools.write_pretty_xml(path)
-        return tree
+        if print_pretty:
+            xml_pretty = xml.dom.minidom.parseString(ET.tostring(tree, 'utf-8')).toprettyxml()
+            with open(path, 'w') as file:
+                file.write(xml_pretty)
+        else:
+            ET.ElementTree(tree).write(path)
 
 
-# A tool to import a fleet from an XML file
 def from_xml(path, assign_customers=False):
     # Open XML file
     tree = ET.parse(path)
@@ -605,8 +730,9 @@ def from_xml(path, assign_customers=False):
             alpha_down = float(_vehicle.get('alpha_down'))
             battery_capacity = float(_vehicle.get('battery_capacity'))
             max_payload = float(_vehicle.get('max_payload'))
+            weight = float(_vehicle.get('weight'))
 
-            vehicles[ev_id] = ElectricVehicle(ev_id, alpha_up, alpha_down, max_tour_duration, battery_capacity,
+            vehicles[ev_id] = ElectricVehicle(ev_id, weight, battery_capacity, alpha_up, alpha_down, max_tour_duration,
                                               max_payload)
             if assign_customers:
                 _assigned_customers = _vehicle.find('assigned_customers')

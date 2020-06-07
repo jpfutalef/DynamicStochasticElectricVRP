@@ -1,31 +1,20 @@
-# %%
-
-# To work with arguments and script paths
 import sys
-
 # scientific libraries and utilities
-import numpy as np
-import random
 import time
-import copy
+import xml.etree.ElementTree as ET
 
+from bokeh.layouts import gridplot
+# Visualization tools
+from bokeh.plotting import figure, show
 # GA library
 from deap import base
 from deap import creator
 from deap import tools
 
+import res.IOTools
+from Fleet import from_xml, InitialCondition
 # Resources
 from GA_Assignation import *
-from Fleet import from_xml, InitialCondition
-import res.IOTools
-
-# Visualization tools
-from bokeh.plotting import figure, show
-from bokeh.layouts import gridplot
-from bokeh.models.annotations import Arrow, Label
-from bokeh.models.arrow_heads import VeeHead
-from bokeh.models import Whisker, Span, Range1d
-import xml.etree.ElementTree as ET
 
 t0 = time.time()
 
@@ -33,29 +22,33 @@ sys.path.append('..')
 
 # %%
 # 1. Specify file
-file_name = '35C_2CS_1D_3EV_1CAP'
-folder_path = './data/GA_implementation_xml/' + file_name + '/'
+file_name = '10C_2CS_1D_2EV_4CAP_HIGHWEIGHT'
+folder_path = 'data/XML_files/10C_2CS_1D_2EV_4CAP_HIGHWEIGHT/'
 path = folder_path + file_name + '.xml'
 print('Opening:', path)
 
 # %% 3. Instance fleet
-init_soc = 82.
+init_soc = 80.
 init_node = 0
 all_charging_ops = 4
 
 fleet = from_xml(path, assign_customers=False)
+fleet.network.draw(save_to=None, width=0.02,
+                   edge_color='grey', markeredgecolor='black',
+                   markeredgewidth=2.0)
+# %%
 starting_points = {ev_id: InitialCondition(0, 0, 0, init_soc, 0) for ev_id, ev in fleet.vehicles.items()}
 input('Press enter to continue...')
 
 # %%
 # 7. GA hyperparameters
-CXPB, MUTPB = 0.35, 0.45
-n_individuals = 150
-generations = 650
+CXPB, MUTPB = 0.65, 0.75
+n_individuals = 80
+generations = 100
 penalization_constant = 500000
 weights = (0.2, 0.8, 1.2, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
 keep_best = 1  # Keep the 'keep_best' best individuals
-tournament_size = 4
+tournament_size = 5
 
 info = f'''
 Hyper-parameters:
@@ -128,7 +121,7 @@ while g < generations:
     # A new generation
     g = g + 1
     X.append(g)
-    print("-- Generation %i --" % g)
+    print(f"-- Generation {g}/{generations} --")
 
     # Select the best individuals, if given
     if keep_best:
@@ -326,7 +319,7 @@ for _ev, ev in zip(_fleet, fleet.vehicles.values()):
 tree.write(assigned_path)
 
 # %% Plot operations
-plot_operation = False
+plot_operation = True
 if plot_operation:
     figFitness = figure(plot_width=400, plot_height=300,
                         title='Best fitness evolution')
@@ -347,4 +340,6 @@ if plot_operation:
     show(p)
 
     # %%
-    fleet.plot_operation()
+    op_figs = fleet.plot_operation_pyplot()
+    fig, g = fleet.draw_operation()
+    fig.show(edge_color='lightblue')

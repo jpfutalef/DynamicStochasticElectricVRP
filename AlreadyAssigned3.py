@@ -32,8 +32,8 @@ sys.path.append('..')
 
 # %%
 # 1. Specify file
-file_name = '35C_2CS_1D_3EV_1CAP'
-folder_path = './data/GA_implementation_xml/' + file_name + '/'
+file_name = '75C_3CS_1D_5EV_4CAP_HIGHWEIGHT'
+folder_path = './data/XML_files/' + file_name + '/'
 path = folder_path + file_name + '_already_assigned.xml'
 print('Opening:', path)
 

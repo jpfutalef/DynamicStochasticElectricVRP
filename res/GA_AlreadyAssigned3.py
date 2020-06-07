@@ -6,7 +6,7 @@ from random import randint, uniform, sample, random
 
 from models.ElectricVehicle import ElectricVehicle
 from models.Fleet import Fleet, InitialCondition
-from models.Network import Network, DynamicNetwork
+from models.Network import Network
 
 # CLASSES
 

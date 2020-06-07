@@ -1,30 +1,18 @@
 # %%
-
-# Too work with arguments and script paths
 import sys
-
-# scientific libraries and utilities
-import numpy as np
-import random
 import time
-import copy
-
+# Visualization tools
+from bokeh.layouts import gridplot
+from bokeh.plotting import figure, show
 # GA library
 from deap import base
 from deap import creator
 from deap import tools
 
+import res.IOTools
+from Fleet import from_xml, InitialCondition
 # Resources
 from GA_AlreadyAssigned import *
-from Fleet import from_xml, InitialCondition
-import res.IOTools
-
-# Visualization tools
-from bokeh.plotting import figure, show
-from bokeh.layouts import gridplot
-from bokeh.models.annotations import Arrow, Label
-from bokeh.models.arrow_heads import VeeHead
-from bokeh.models import Whisker, Span, Range1d
 
 t0 = time.time()
 
@@ -32,8 +20,8 @@ sys.path.append('..')
 
 # %%
 # 1. Specify file
-file_name = '35C_2CS_1D_3EV_1CAP'
-folder_path = './data/GA_implementation_xml/' + file_name + '/'
+file_name = '75C_3CS_1D_5EV_4CAP_HIGHWEIGHT'
+folder_path = './data/XML_files/' + file_name + '/'
 path = folder_path + file_name + '_already_assigned.xml'
 print('Opening:', path)
 

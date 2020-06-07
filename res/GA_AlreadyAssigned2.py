@@ -1,12 +1,9 @@
-from typing import Dict, List, Tuple, Union, NamedTuple
-import models.routetypes
+from random import randint, uniform, sample, random
+from typing import Dict, List, Tuple
 
 import numpy as np
-from random import randint, uniform, sample, random
 
-from models.ElectricVehicle import ElectricVehicle
 from models.Fleet import Fleet, InitialCondition
-from models.Network import Network, DynamicNetwork
 
 # CLASSES
 
@@ -163,7 +160,8 @@ def random_individual(customers_per_vehicle: Dict[int, Tuple[int, ...]], chargin
         customer_sequence = sample(customers, len(customers))
         charging_operations = []
         for _ in customer_sequence:
-            charging_operations.append(sample(sample_space, 1)[0])
+            #charging_operations.append(sample(sample_space, 1)[0])
+            charging_operations.append(-1)
             charging_operations.append(uniform(5, 80))
         depart_time = [uniform(60 * 9, 60 * 12)]
         individual += customer_sequence + charging_operations + depart_time
