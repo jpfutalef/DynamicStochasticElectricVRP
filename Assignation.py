@@ -22,8 +22,8 @@ sys.path.append('..')
 
 # %%
 # 1. Specify file
-file_name = '10C_2CS_1D_2EV_4CAP_HIGHWEIGHT'
-folder_path = 'data/XML_files/10C_2CS_1D_2EV_4CAP_HIGHWEIGHT/'
+file_name = '10C_2CS_1D_2EV_4CAP_HIGHWEIGHT_ULTRA'
+folder_path = 'data/XML_files/10C_2CS_1D_2EV_4CAP_HIGHWEIGHT_ULTRA/'
 path = folder_path + file_name + '.xml'
 print('Opening:', path)
 
@@ -42,9 +42,9 @@ input('Press enter to continue...')
 
 # %%
 # 7. GA hyperparameters
-CXPB, MUTPB = 0.65, 0.75
-n_individuals = 80
-generations = 100
+CXPB, MUTPB = 0.55, 0.75
+n_individuals = 100
+generations = 180
 penalization_constant = 500000
 weights = (0.2, 0.8, 1.2, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
 keep_best = 1  # Keep the 'keep_best' best individuals
@@ -82,7 +82,6 @@ toolbox.register("select", tools.selTournament, tournsize=tournament_size)
 toolbox.register("select_worst", tools.selWorst)
 toolbox.register("decode", decode, m=len(fleet.vehicles), fleet=fleet, starting_points=starting_points,
                  r=all_charging_ops)
-
 # %% the algorithm
 tInitGA = time.time()
 # Population TODO create function
@@ -123,6 +122,16 @@ while g < generations:
     X.append(g)
     print(f"-- Generation {g}/{generations} --")
 
+    # Block probabilities
+    if g < 50:
+        block_probabilities = (.33, .33, .33)
+    elif g < 100:
+        block_probabilities = (.2, .6, .2)
+    elif g < 150:
+        block_probabilities = (.45, .2, .35)
+    else:
+        block_probabilities = (.33, .33, .33)
+
     # Select the best individuals, if given
     if keep_best:
         best_individuals = list(map(toolbox.clone, tools.selBest(pop, keep_best)))
@@ -133,22 +142,17 @@ while g < generations:
     # Clone the selected individuals
     offspring = list(map(toolbox.clone, offspring))
 
+    for mutant in offspring:
+        if random() < MUTPB:
+            toolbox.mutate(mutant, block_probability=block_probabilities)
+            del mutant.fitness.values
+
     # Apply crossover and mutation on the offspring
     for child1, child2 in zip(offspring[::2], offspring[1::2]):
-        # cross two individuals with probability CXPB
         if random() < CXPB:
             toolbox.mate(child1, child2)
-
-            # fitness values of the children
-            # must be recalculated later
             del child1.fitness.values
             del child2.fitness.values
-
-    for mutant in offspring:
-        # mutate an individual with probability MUTPB
-        if random() < MUTPB:
-            toolbox.mutate(mutant)
-            del mutant.fitness.values
 
     # Evaluate the individuals with an invalid fitness
     invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
@@ -339,7 +343,12 @@ if plot_operation:
     p = gridplot([[figFitness, figFitnessStd]], toolbar_location='right')
     show(p)
 
-    # %%
     op_figs = fleet.plot_operation_pyplot()
-    fig, g = fleet.draw_operation()
-    fig.show(edge_color='lightblue')
+    fig, g = fleet.draw_operation(color_route=('r', 'b', 'g', 'c', 'y'), edge_color='grey')
+    fig.show()
+
+    figs = fleet.plot_operation_pyplot()
+    [i.show() for i in figs]
+
+    fleet.plot_operation()
+

@@ -30,7 +30,7 @@ sys.path.append('..')
 
 # %%
 # 1. Specify file
-file_name = '75C_3CS_1D_5EV_4CAP_HIGHWEIGHT'
+file_name = '10C_2CS_1D_2EV_4CAP_HIGHWEIGHT_ULTRA'
 folder_path = './data/XML_files/' + file_name + '/'
 path = folder_path + file_name + '_already_assigned.xml'
 print('Opening:', path)
@@ -52,9 +52,9 @@ input('Press enter to continue...')
 
 # %%
 # 7. GA hyperparameters
-CXPB, MUTPB = 0.55, 0.65
-n_individuals = 120
-generations = 300
+CXPB, MUTPB = 0.45, 0.55
+n_individuals = 90
+generations = 150
 penalization_constant = 500000
 weights = (0.1, 0.8, 0.9, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
 keep_best = 1  # Keep the 'keep_best' best individuals

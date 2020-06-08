@@ -32,7 +32,7 @@ sys.path.append('..')
 
 # %%
 # 1. Specify file
-file_name = '75C_3CS_1D_5EV_4CAP_HIGHWEIGHT'
+file_name = '10C_2CS_1D_2EV_4CAP_HIGHWEIGHT_ULTRA'
 folder_path = './data/XML_files/' + file_name + '/'
 path = folder_path + file_name + '_already_assigned.xml'
 print('Opening:', path)

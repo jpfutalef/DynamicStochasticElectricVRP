@@ -369,7 +369,7 @@ class Fleet:
         return tree
 
     def plot_operation_pyplot(self, arrow_colors=('SteelBlue', 'Crimson', 'SeaGreen'), fig_size=(16, 5),
-                              save_to=None):
+                              label_offset=(.15, -6), subplots=True, save_to=None):
         figs = []
         for id_ev, vehicle in self.vehicles.items():
             Si, Li = vehicle.route[0], vehicle.route[1]
@@ -392,7 +392,15 @@ class Fleet:
                         for k, Sk in enumerate(Si) if self.network.isCustomer(Sk)]
             plt.errorbar(X_tw, Y_tw, tw_sigma, ecolor='black', fmt='none', capsize=6, elinewidth=1, zorder=5)
 
-            # time in nodes
+            # time in nodes customers
+            X_node, Y_node = range(si), r_time
+            U_node, V_node = np.zeros(si), l_time - r_time
+            color_node = [arrow_colors[2] if self.network.isCustomer(i) or self.network.isDepot(i)
+                          else arrow_colors[1] for i in Si]
+            plt.quiver(X_node, Y_node, U_node, V_node, scale=1, angles='xy', scale_units='xy', color=color_node,
+                       width=0.0004 * fig_size[0], headwidth=6, zorder=10)
+
+            # time in nodes CS
             X_node, Y_node = range(si), r_time
             U_node, V_node = np.zeros(si), l_time - r_time
             color_node = [arrow_colors[2] if self.network.isCustomer(i) or self.network.isDepot(i)
@@ -407,9 +415,16 @@ class Fleet:
             plt.quiver(X_edge, Y_edge, U_edge, V_edge, scale=1, angles='xy', scale_units='xy', color=color_edge,
                        width=0.0004 * fig_size[0], zorder=15)
 
+            # Annotate nodes
+            labels = [str(i) for i in vehicle.route[0]]
+            pos = [(x, y) for x, y in zip(range(si), r_time)]
+            for label, (x, y) in zip(labels, pos):
+                plt.annotate(label, (x + label_offset[0], y + label_offset[1]))
+
             plt.xlabel('Stop')
             plt.ylabel('Time of the day (min)')
             plt.title(f'Arrival and departure times (EV {id_ev})')
+            plt.legend(('uno', 'dos', 'tres'))
 
             ### FIG X2 ###
             plt.subplot(132)
@@ -433,6 +448,15 @@ class Fleet:
             plt.axhline(vehicle.alpha_down, color='black')
             plt.axhline(vehicle.alpha_up, color='black')
 
+            # Scale yaxis from 0 to 100
+            plt.ylim((0, 100))
+
+            # Annotate nodes
+            labels = [str(i) for i in vehicle.route[0]]
+            pos = [(x, y) for x, y in zip(range(si), r_soc)]
+            for label, (x, y) in zip(labels, pos):
+                plt.annotate(label, (x + label_offset[0], y + label_offset[1]))
+
             plt.xlabel('Stop')
             plt.ylabel('State Of Charge (%)')
             plt.title(f'EV Battery SOC (EV {id_ev})')
@@ -454,6 +478,12 @@ class Fleet:
             color_edge = [arrow_colors[0]] * si
             plt.quiver(X_edge, Y_edge, U_edge, V_edge, scale=1, angles='xy', scale_units='xy', color=color_edge,
                        width=0.0004 * fig_size[0], zorder=15)
+
+            # Annotate nodes FIXME not showing??
+            labels = [str(i) for i in vehicle.route[0]]
+            pos = [(x, y) for x, y in zip(range(si), r_payload)]
+            for label, (x, y) in zip(labels, pos):
+                plt.annotate(label, (x + label_offset[0], y + label_offset[1]))
 
             plt.xlabel('Stop')
             plt.ylabel('Payload (t)')

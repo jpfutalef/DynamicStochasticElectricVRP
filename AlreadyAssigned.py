@@ -20,7 +20,7 @@ sys.path.append('..')
 
 # %%
 # 1. Specify file
-file_name = '75C_3CS_1D_5EV_4CAP_HIGHWEIGHT'
+file_name = '10C_2CS_1D_2EV_4CAP_HIGHWEIGHT_ULTRA'
 folder_path = './data/XML_files/' + file_name + '/'
 path = folder_path + file_name + '_already_assigned.xml'
 print('Opening:', path)
@@ -43,10 +43,10 @@ input('Press enter to continue...')
 # %%
 # 7. GA hyperparameters
 CXPB, MUTPB = 0.45, 0.55
-n_individuals = 120
-generations = 300
+n_individuals = 90
+generations = 150
 penalization_constant = 500000
-weights = (0.1, 0.8, 0.9, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
+weights = (0.2, 0.8, 1.2, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
 keep_best = 1  # Keep the 'keep_best' best individuals
 #tournament_size = int(n_individuals * 0.1)
 tournament_size = 4
@@ -326,7 +326,10 @@ if plot_operation:
     p = gridplot([[figFitness, figFitnessStd]], toolbar_location='right')
     show(p)
 
-    # %%
-    #fleet.plot_operation()
+    op_figs = fleet.plot_operation_pyplot()
+    fig, g = fleet.draw_operation(color_route=('r', 'b', 'g', 'c', 'y'), edge_color='grey')
+    fig.show()
+
+    [fleet.plot_operation_pyplot()[i].show() for i in range(len(fleet.vehicles))]
 
 
