@@ -37,7 +37,7 @@ def decode(individual: IndividualType, indices: IndicesType, init_state: Startin
         Sk = tuple([0] + Sk + [0])
         Lk = tuple([0] + Lk + [0])
         x0 = individual[i2]
-        routes[id_ev] = ((Sk, Lk), x0, init_state[id_ev][1], init_state[id_ev][2])
+        routes[id_ev] = ((Sk, Lk), x0, init_state[id_ev].x2_0, init_state[id_ev].x3_0)
     return routes
 
 
@@ -63,7 +63,7 @@ def mutate(individual: IndividualType, indices: IndicesType, charging_stations: 
                 # Case CS
                 elif i1 <= index < i2:
                     i = i1 + 2 * int((index - i1) / 2)
-                    sample_space = [-1] + list(charging_stations)
+                    sample_space = [-1]*len(charging_stations) + list(charging_stations)
                     individual[i] = sample(sample_space, 1)[0]
                     individual[i + 1] = abs(individual[i + 1] + uniform(-10, 10))
 

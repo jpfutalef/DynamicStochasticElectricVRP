@@ -15,7 +15,7 @@ from deap import tools
 
 # Resources
 from GA_RealTime import *
-from res.Tools import *
+from res.GATools import *
 import res.IOTools
 from Fleet import from_xml
 

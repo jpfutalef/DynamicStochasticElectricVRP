@@ -20,21 +20,19 @@ sys.path.append('..')
 
 # %%
 # 1. Specify file
-file_name = '10C_2CS_1D_2EV_4CAP_HIGHWEIGHT_ULTRA'
+file_name = '60C_2CS_1D_4EV_4CAP'
 folder_path = './data/XML_files/' + file_name + '/'
 path = folder_path + file_name + '_already_assigned.xml'
 print('Opening:', path)
 
 # %% 3. Instance fleet
-init_soc = 82.
-init_node = 0
-all_charging_ops = 3
+all_charging_ops = 2
 
 fleet = from_xml(path, assign_customers=True)
 
 customers_to_visit = {ev_id: ev.assigned_customers for ev_id, ev in fleet.vehicles.items()}
 
-starting_points = {ev_id: InitialCondition(init_node, 0, 0, init_soc, sum([fleet.network.nodes[x].demand
+starting_points = {ev_id: InitialCondition(0, 0, 0, ev.alpha_up, sum([fleet.network.nodes[x].demand
                                                                            for x in ev.assigned_customers]))
                    for ev_id, ev in fleet.vehicles.items()}
 
@@ -42,7 +40,7 @@ input('Press enter to continue...')
 
 # %%
 # 7. GA hyperparameters
-CXPB, MUTPB = 0.45, 0.55
+CXPB, MUTPB = 0.65, 0.85
 n_individuals = 90
 generations = 150
 penalization_constant = 500000

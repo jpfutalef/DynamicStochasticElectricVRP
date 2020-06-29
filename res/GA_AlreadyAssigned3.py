@@ -1,12 +1,9 @@
-from typing import Dict, List, Tuple, Union, NamedTuple
-import models.routetypes
+from random import randint, uniform, sample, random
+from typing import Dict, List, Tuple
 
 import numpy as np
-from random import randint, uniform, sample, random
 
-from models.ElectricVehicle import ElectricVehicle
 from models.Fleet import Fleet, InitialCondition
-from models.Network import Network
 
 # CLASSES
 
@@ -37,7 +34,7 @@ def decode(individual: IndividualType, indices: IndicesType, init_state: Startin
         Sk = tuple([0] + Sk + [0])
         Lk = tuple([0] + Lk + [0])
         x0 = individual[i2]
-        routes[id_ev] = ((Sk, Lk), x0, init_state[id_ev][1], init_state[id_ev][2])
+        routes[id_ev] = ((Sk, Lk), x0, init_state[id_ev].x2_0, init_state[id_ev].x3_0)
     return routes
 
 

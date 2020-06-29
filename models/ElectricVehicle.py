@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Union, Tuple, Dict
+from typing import Union, Tuple, Dict, NamedTuple
 
 import numpy as np
 from numpy import ndarray, array
@@ -9,6 +9,14 @@ from models.Network import Network
 
 RouteVector = Tuple[Tuple[int, ...], Tuple[float, ...]]
 RouteDict = Dict[int, Tuple[RouteVector, float, float, float]]
+
+
+class InitialCondition(NamedTuple):
+    S0: int
+    L0: float
+    x1_0: float
+    x2_0: float
+    x3_0: float
 
 
 def F_recursive(k: int, route: RouteVector, state_reaching_matrix: ndarray, state_leaving_matrix: ndarray,
@@ -47,11 +55,12 @@ def F_step(route: RouteVector, state_reaching_matrix: ndarray, state_leaving_mat
     Sk = route[0]
     Lk = route[1]
     for k, (Sk0, Lk0, Sk1, Lk1) in enumerate(zip(Sk[:-1], Lk[:-1], Sk[1:], Lk[1:]), 1):
-        time_of_day = state_leaving_matrix[0, k - 1]
+        # TODO add waiting time
+        departure_time = state_leaving_matrix[0, k - 1]
         payload = state_leaving_matrix[2, k - 1]
 
-        tij = network.t(Sk0, Sk1, time_of_day)
-        eij = network.e(Sk0, Sk1, payload, ev_weight, time_of_day)
+        tij = network.t(Sk0, Sk1, departure_time)
+        eij = network.e(Sk0, Sk1, payload, ev_weight, departure_time)
         tt_array[0, k - 1] = tij
         ec_array[0, k - 1] = eij
 

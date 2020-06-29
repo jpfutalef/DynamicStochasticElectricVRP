@@ -14,30 +14,14 @@ import networkx as nx
 import numpy as np
 import models.Network as net
 import res.IOTools
-from models.ElectricVehicle import ElectricVehicle
+from ElectricVehicle import *
 
 
 # CLASSES
-class InitialCondition(NamedTuple):
-    S0: int
-    L0: float
-    x1_0: float
-    x2_0: float
-    x3_0: float
-
-
 class TupleIndex(list):
     def __add__(self, other: int):
         i = 2 * self[0] + self[1] + other
         return TupleIndex(integer_to_tuple2(i))
-
-
-# TYPES
-IndividualType = List
-IndicesType = Dict[int, Tuple[int, int]]
-StartingPointsType = Dict[int, InitialCondition]
-RouteVector = Tuple[Tuple[int, ...], Tuple[float, ...]]
-RouteDict = Dict[int, Tuple[RouteVector, float, float, float]]
 
 
 # FUNCTIONS
@@ -85,7 +69,7 @@ class Fleet:
     theta_vector: Union[np.ndarray, None]
     optimization_vector: Union[np.ndarray, None]
     optimization_vector_indices: Union[Tuple, None]
-    starting_points: StartingPointsType
+    starting_points: Dict[int, InitialCondition]
 
     def __init__(self, vehicles=None, network=None, vehicles_to_route=None):
         self.set_vehicles(vehicles)
@@ -393,20 +377,20 @@ class Fleet:
             plt.errorbar(X_tw, Y_tw, tw_sigma, ecolor='black', fmt='none', capsize=6, elinewidth=1, zorder=5)
 
             # time in nodes customers
-            X_node, Y_node = range(si), r_time
-            U_node, V_node = np.zeros(si), l_time - r_time
-            color_node = [arrow_colors[2] if self.network.isCustomer(i) or self.network.isDepot(i)
-                          else arrow_colors[1] for i in Si]
-            plt.quiver(X_node, Y_node, U_node, V_node, scale=1, angles='xy', scale_units='xy', color=color_node,
-                       width=0.0004 * fig_size[0], headwidth=6, zorder=10)
+            X_node = [i for i in range(si) if self.network.isCustomer(Si[i])]
+            Y_node = [t for i, t in enumerate(r_time) if self.network.isCustomer(Si[i])]
+            U_node = [0 for i in range(si) if self.network.isCustomer(Si[i])]
+            V_node = [l_time[i] - r_time[i] for i in range(si) if self.network.isCustomer(Si[i])]
+            plt.quiver(X_node, Y_node, U_node, V_node, scale=1, angles='xy', scale_units='xy',
+                       color=arrow_colors[2], width=0.0004 * fig_size[0], headwidth=6, zorder=10)
 
             # time in nodes CS
-            X_node, Y_node = range(si), r_time
-            U_node, V_node = np.zeros(si), l_time - r_time
-            color_node = [arrow_colors[2] if self.network.isCustomer(i) or self.network.isDepot(i)
-                          else arrow_colors[1] for i in Si]
-            plt.quiver(X_node, Y_node, U_node, V_node, scale=1, angles='xy', scale_units='xy', color=color_node,
-                       width=0.0004 * fig_size[0], headwidth=6, zorder=10)
+            X_node = [i for i in range(si) if self.network.isChargingStation(Si[i])]
+            Y_node = [t for i, t in enumerate(r_time) if self.network.isChargingStation(Si[i])]
+            U_node = [0 for i in range(si) if self.network.isChargingStation(Si[i])]
+            V_node = [l_time[i] - r_time[i] for i in range(si) if self.network.isChargingStation(Si[i])]
+            plt.quiver(X_node, Y_node, U_node, V_node, scale=1, angles='xy', scale_units='xy',
+                       color=arrow_colors[1], width=0.0004 * fig_size[0], headwidth=6, zorder=10)
 
             # travel time
             X_edge, Y_edge = range(si - 1), l_time[0:-1]
@@ -421,35 +405,40 @@ class Fleet:
             for label, (x, y) in zip(labels, pos):
                 plt.annotate(label, (x + label_offset[0], y + label_offset[1]))
 
+            plt.legend(('Serving customer', 'Charging operation', 'Travelling', 'Cust. time window'), fontsize='small')
             plt.xlabel('Stop')
             plt.ylabel('Time of the day (min)')
             plt.title(f'Arrival and departure times (EV {id_ev})')
-            plt.legend(('uno', 'dos', 'tres'))
+            plt.xlim(-.5, si - .5)
 
             ### FIG X2 ###
             plt.subplot(132)
             plt.grid()
-            # SOC in nodes
-            X_node, Y_node = range(si), r_soc
-            U_node, V_node = np.zeros(si), l_soc - r_soc
-            color_node = [arrow_colors[2] if self.network.isCustomer(i) or self.network.isDepot(i)
-                          else arrow_colors[1] for i in Si]
-            plt.quiver(X_node, Y_node, U_node, V_node, scale=1, angles='xy', scale_units='xy', color=color_node,
-                       width=0.0004 * fig_size[0], headwidth=6, zorder=10)
+
+            # SOC in Customer
+            X_node = [i for i in range(si) if self.network.isCustomer(Si[i])]
+            Y_node = [t for i, t in enumerate(r_soc) if self.network.isCustomer(Si[i])]
+            U_node = [0 for i in range(si) if self.network.isCustomer(Si[i])]
+            V_node = [l_soc[i] - r_soc[i] for i in range(si) if self.network.isCustomer(Si[i])]
+            plt.quiver(X_node, Y_node, U_node, V_node, scale=1, angles='xy', scale_units='xy',
+                       color=arrow_colors[2], width=0.0004 * fig_size[0], headwidth=6, zorder=10,
+                       label='Serving customer')
+
+            # SOC in CS
+            X_node = [i for i in range(si) if self.network.isChargingStation(Si[i])]
+            Y_node = [t for i, t in enumerate(r_soc) if self.network.isChargingStation(Si[i])]
+            U_node = [0 for i in range(si) if self.network.isChargingStation(Si[i])]
+            V_node = [l_soc[i] - r_soc[i] for i in range(si) if self.network.isChargingStation(Si[i])]
+            plt.quiver(X_node, Y_node, U_node, V_node, scale=1, angles='xy', scale_units='xy',
+                       color=arrow_colors[1], width=0.0004 * fig_size[0], headwidth=6, zorder=10,
+                       label='Charging operation')
 
             # travel SOC
             X_edge, Y_edge = range(si - 1), l_soc[0:-1]
             U_edge, V_edge = np.ones(si - 1), r_soc[1:] - l_soc[0:-1]
             color_edge = [arrow_colors[0]] * si
             plt.quiver(X_edge, Y_edge, U_edge, V_edge, scale=1, angles='xy', scale_units='xy', color=color_edge,
-                       width=0.0004 * fig_size[0], zorder=15)
-
-            # SOH policy
-            plt.axhline(vehicle.alpha_down, color='black')
-            plt.axhline(vehicle.alpha_up, color='black')
-
-            # Scale yaxis from 0 to 100
-            plt.ylim((0, 100))
+                       width=0.0004 * fig_size[0], zorder=15, label='Travelling')
 
             # Annotate nodes
             labels = [str(i) for i in vehicle.route[0]]
@@ -457,6 +446,16 @@ class Fleet:
             for label, (x, y) in zip(labels, pos):
                 plt.annotate(label, (x + label_offset[0], y + label_offset[1]))
 
+            # SOH policy
+            plt.axhline(vehicle.alpha_down, linestyle='--', color='black', label='SOH policy')
+            plt.axhline(vehicle.alpha_up, linestyle='--', color='black', label=None)
+            plt.fill_between([-1, si], vehicle.alpha_down, vehicle.alpha_up, color='lightgrey', alpha=.35)
+
+            plt.legend(fontsize='small')
+
+            # Scale yaxis from 0 to 100
+            plt.ylim((0, 100))
+            plt.xlim(-.5, si - .5)
             plt.xlabel('Stop')
             plt.ylabel('State Of Charge (%)')
             plt.title(f'EV Battery SOC (EV {id_ev})')
@@ -470,14 +469,14 @@ class Fleet:
             color_node = [arrow_colors[2] if self.network.isCustomer(i) or self.network.isDepot(i)
                           else arrow_colors[1] for i in Si]
             plt.quiver(X_node, Y_node, U_node, V_node, scale=1, angles='xy', scale_units='xy', color=color_node,
-                       width=0.0004 * fig_size[0], headwidth=6, zorder=10)
+                       width=0.0004 * fig_size[0], headwidth=6, zorder=10, label='Serving customer')
 
             # traveling payload
             X_edge, Y_edge = range(si - 1), l_payload[0:-1]
             U_edge, V_edge = np.ones(si - 1), r_payload[1:] - l_payload[0:-1]
             color_edge = [arrow_colors[0]] * si
             plt.quiver(X_edge, Y_edge, U_edge, V_edge, scale=1, angles='xy', scale_units='xy', color=color_edge,
-                       width=0.0004 * fig_size[0], zorder=15)
+                       width=0.0004 * fig_size[0], zorder=15, label='Travelling')
 
             # Annotate nodes FIXME not showing??
             labels = [str(i) for i in vehicle.route[0]]
@@ -485,9 +484,16 @@ class Fleet:
             for label, (x, y) in zip(labels, pos):
                 plt.annotate(label, (x + label_offset[0], y + label_offset[1]))
 
+            # Max weight
+            plt.axhline(vehicle.max_payload, linestyle='--', color='black', label='Max. payload')
+
             plt.xlabel('Stop')
             plt.ylabel('Payload (t)')
             plt.title(f' (Payload evolution (EV {id_ev})')
+            plt.legend(fontsize='small')
+
+            if save_to is not None:
+                fig.savefig(f'{save_to}operation_EV{id_ev}_full.pdf', format='pdf')
 
             figs.append(fig)
         return figs
@@ -505,7 +511,6 @@ class Fleet:
                 nx.draw_networkx_edges(g, pos, edgelist=edges, ax=fig.get_axes()[0], edge_color=color_route[cc])
                 cc += 1
         return fig, g
-
 
     def plot_operation(self, save=False, path=None):
         # Vectors to plot
@@ -761,7 +766,6 @@ def from_xml(path, assign_customers=False):
             battery_capacity = float(_vehicle.get('battery_capacity'))
             max_payload = float(_vehicle.get('max_payload'))
             weight = float(_vehicle.get('weight'))
-
             vehicles[ev_id] = ElectricVehicle(ev_id, weight, battery_capacity, alpha_up, alpha_down, max_tour_duration,
                                               max_payload)
             if assign_customers:

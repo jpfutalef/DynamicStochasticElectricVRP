@@ -1,134 +1,114 @@
 import sys
-# scientific libraries and utilities
 import time
 import xml.etree.ElementTree as ET
 
 from bokeh.layouts import gridplot
-# Visualization tools
 from bokeh.plotting import figure, show
-# GA library
-from deap import base
-from deap import creator
-from deap import tools
+from deap import base, creator, tools
+import matplotlib.pyplot as plt
 
-import res.IOTools
-from Fleet import from_xml, InitialCondition
 # Resources
+from Fleet import from_xml
 from GA_Assignation import *
+from GATools import *
 
-t0 = time.time()
+# %% 1. Specify instance location
+#data_folder = 'data/real_data/'
+data_folder = 'data/XML_files/50C_2CS_1D_3EV_3CAP/'
+#instance_filename = data_folder.split('/')[-2]
+instance_filename = '50C_2CS_1D_3EV_3CAP'
+path = f'{data_folder}{instance_filename}.xml'
 
-sys.path.append('..')
+print(f'Opening:\n {path}')
 
-# %%
-# 1. Specify file
-file_name = '10C_2CS_1D_2EV_4CAP_HIGHWEIGHT_ULTRA'
-folder_path = 'data/XML_files/10C_2CS_1D_2EV_4CAP_HIGHWEIGHT_ULTRA/'
-path = folder_path + file_name + '.xml'
-print('Opening:', path)
-
-# %% 3. Instance fleet
-init_soc = 80.
-init_node = 0
-all_charging_ops = 4
-
+# %% 2. Instance fleet
 fleet = from_xml(path, assign_customers=False)
 fleet.network.draw(save_to=None, width=0.02,
                    edge_color='grey', markeredgecolor='black',
                    markeredgewidth=2.0)
-# %%
-starting_points = {ev_id: InitialCondition(0, 0, 0, init_soc, 0) for ev_id, ev in fleet.vehicles.items()}
-input('Press enter to continue...')
 
-# %%
-# 7. GA hyperparameters
-CXPB, MUTPB = 0.55, 0.75
-n_individuals = 100
-generations = 180
+starting_points = {ev_id: InitialCondition(0, 0, 0, ev.alpha_up, 0) for ev_id, ev in fleet.vehicles.items()}
+input('Ready! Press ENTER to continue...')
+
+# %% 3. GA hyper-parameters
+CXPB = 0.65
+MUTPB = 0.85
+num_individuals = 150
+max_generations = 450
 penalization_constant = 500000
 weights = (0.2, 0.8, 1.2, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
 keep_best = 1  # Keep the 'keep_best' best individuals
-tournament_size = 5
+tournament_size = 3
+allowed_charging_ops = 4
 
-info = f'''
-Hyper-parameters:
-CXPB, MUTPB = {CXPB}, {MUTPB}
-n_individuals = {n_individuals}
-generations = {generations}
-penalization_constant = {penalization_constant}
-weights = {weights}
-keep_best = {keep_best}
-tournament_size = {tournament_size}
-'''
+hyper_parameters = HyperParameters(num_individuals, max_generations, CXPB, MUTPB,
+                                   tournament_size=tournament_size,
+                                   penalization_constant=penalization_constant,
+                                   keep_best=keep_best,
+                                   weights=weights,
+                                   allowed_charging_operations=allowed_charging_ops)
+print(hyper_parameters)
 
-
-
-# %%
-# Fitness objects
+# %% 4. GA toolbox
 creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
 creator.create("Individual", list, fitness=creator.FitnessMin, feasible=False)
 
-# Toolbox
 toolbox = base.Toolbox()
 
 toolbox.register("individual", random_individual, num_customers=len(fleet.network.customers),
-                 num_cs=len(fleet.network.charging_stations), m=len(fleet.vehicles), r=all_charging_ops)
+                 num_cs=len(fleet.network.charging_stations), m=len(fleet.vehicles), r=allowed_charging_ops)
 toolbox.register("evaluate", fitness, fleet=fleet, starting_points=starting_points, weights=weights,
-                 penalization_constant=penalization_constant, r=all_charging_ops)
-toolbox.register("mate", crossover, m=len(fleet.vehicles), r=all_charging_ops, index=None)
-toolbox.register("mutate", mutate, m=len(fleet.vehicles), num_customers=len(fleet.network.customers), num_cs=len(fleet.network.charging_stations),
-                 r=all_charging_ops, index=None)
+                 penalization_constant=penalization_constant, r=allowed_charging_ops)
+toolbox.register("mate", crossover, m=len(fleet.vehicles), r=allowed_charging_ops, index=None)
+toolbox.register("mutate", mutate, m=len(fleet.vehicles), num_customers=len(fleet.network.customers),
+                 num_cs=len(fleet.network.charging_stations),
+                 r=allowed_charging_ops, index=None)
 toolbox.register("select", tools.selTournament, tournsize=tournament_size)
 toolbox.register("select_worst", tools.selWorst)
 toolbox.register("decode", decode, m=len(fleet.vehicles), fleet=fleet, starting_points=starting_points,
-                 r=all_charging_ops)
-# %% the algorithm
-tInitGA = time.time()
-# Population TODO create function
+                 r=allowed_charging_ops)
 
-pop = []
-for i in range(0, n_individuals):
-    pop.append(creator.Individual(toolbox.individual()))
+input('Press ENTER to begin optimization...')
 
-# Evaluate the entire population
-# fitnesses = list(map(toolbox.evaluate, pop))
+# %% 5. The algorithm
+t_init = time.time()
 
+# Random population
+pop = [creator.Individual(toolbox.individual()) for i in range(num_individuals)]
+
+# Evaluate the initial population and get fitness of each individual
 for ind in pop:
     fit, feasible = toolbox.evaluate(ind)
     ind.fitness.values = (fit,)
     ind.feasible = feasible
 
-print("  Evaluated %i individuals" % len(pop))
-
-# Extracting all the fitnesses of
+print(f'  Evaluated {len(pop)} individuals')
 fits = [ind.fitness.values for ind in pop]
-
-# Variable keeping track of the number of generations
-g = 0
-Ymax = []
-Ymin = []
-Yavg = []
-Ystd = []
-X = []
-
 bestOfAll = tools.selBest(pop, 1)[0]
 
-print("################  Start of evolution  ################")
-t_init = time.time()
-# Begin the evolution
-while g < generations:
-    # A new generation
-    g = g + 1
-    X.append(g)
-    print(f"-- Generation {g}/{generations} --")
+# These will save statistics
+X, Ymax, Ymin, Yavg, Ystd = [], [], [], [], []
 
-    # Block probabilities
+print("################  Start of evolution  ################")
+# Begin the evolution
+for g in range(max_generations):
+    # A new generation
+    print(f"-- Generation {g}/{max_generations} --")
+    X.append(g)
+
+    # Update block probabilities
     if g < 50:
         block_probabilities = (.33, .33, .33)
     elif g < 100:
         block_probabilities = (.2, .6, .2)
     elif g < 150:
-        block_probabilities = (.45, .2, .35)
+        block_probabilities = (.6, .2, .2)
+    elif g < 200:
+        block_probabilities = (.33, .33, .33)
+    elif g < 250:
+        block_probabilities = (.2, .6, .2)
+    elif g < 300:
+        block_probabilities = (.6, .2, .33)
     else:
         block_probabilities = (.33, .33, .33)
 
@@ -136,81 +116,77 @@ while g < generations:
     if keep_best:
         best_individuals = list(map(toolbox.clone, tools.selBest(pop, keep_best)))
 
-    # Select the next generation individuals
+    # Select and clone the next generation individuals
     offspring = toolbox.select(pop, len(pop))
-
-    # Clone the selected individuals
     offspring = list(map(toolbox.clone, offspring))
 
+    # Mutation
     for mutant in offspring:
         if random() < MUTPB:
             toolbox.mutate(mutant, block_probability=block_probabilities)
             del mutant.fitness.values
 
-    # Apply crossover and mutation on the offspring
+    # Crossover
     for child1, child2 in zip(offspring[::2], offspring[1::2]):
         if random() < CXPB:
             toolbox.mate(child1, child2)
             del child1.fitness.values
             del child2.fitness.values
 
-    # Evaluate the individuals with an invalid fitness
+    # Evaluate the individuals with invalid fitness
     invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
     for ind in invalid_ind:
         fit, feasible = toolbox.evaluate(ind)
         ind.fitness.values = (fit,)
         ind.feasible = feasible
 
-    print("  Evaluated %i individuals" % len(invalid_ind))
+    print(f'  Evaluated {len(invalid_ind)} individuals')
 
     # The population is entirely replaced by a sorted offspring
     pop[:] = offspring
     pop[:] = tools.selBest(pop, len(pop))
 
-    # Remove worst individuals, if keeping the best of them
+    # Insert best individuals from previous generation
     if keep_best:
-        pop[keep_best:] = pop[:-keep_best]
-        pop[:keep_best] = best_individuals
+        pop[:] = best_individuals + pop[:-keep_best]
 
-    # Show worst and best
+    # Update best individual
     bestInd = tools.selBest(pop, 1)[0]
-    print(f"Best individual: {bestInd} \n        Fitness: {bestInd.fitness.wvalues[0]}  Feasible: {bestInd.feasible}")
+    if bestInd.fitness.wvalues[0] > bestOfAll.fitness.wvalues[0]:
+        bestOfAll = bestInd
+
+    # Real-time info
+    print(f"Best individual  : {bestInd}\n Fitness: {bestInd.fitness.wvalues[0]} Feasible: {bestInd.feasible}")
 
     worstInd = tools.selWorst(pop, 1)[0]
-    print(
-        f"Worst individual: {worstInd} \n        Fitness: {worstInd.fitness.wvalues[0]}  Feasible: {worstInd.feasible}")
+    print(f"Worst individual : {worstInd}\n Fitness: {worstInd.fitness.wvalues[0]} Feasible: {worstInd.feasible}")
 
-    print(
-        f"Best of all individuals: {bestOfAll} \n        Fitness: {bestOfAll.fitness.wvalues[0]}  Feasible: {bestOfAll.feasible}")
+    print(f"Curr. best-of-all: {bestOfAll}\n Fitness: {bestOfAll.fitness.wvalues[0]} Feasible: {bestOfAll.feasible}")
 
     # Statistics
     fits = [sum(ind.fitness.wvalues) for ind in pop]
+    mean = np.average(fits)
+    std = np.std(fits)
 
-    length = len(pop)
-    mean = sum(fits) / length
-    sum2 = sum(x * x for x in fits)
-    std = abs(sum2 / length - mean ** 2) ** 0.5
-
-    print("  Max %s" % max(fits))
-    print("  Min %s" % min(fits))
-    print("  Avg %s" % mean)
-    print("  Std %s" % std)
+    print(f"Max {max(fits)}")
+    print(f"Min {min(fits)}")
+    print(f"Avg {mean}")
+    print(f"Std {std}")
 
     Ymax.append(-max(fits))
     Ymin.append(-min(fits))
     Yavg.append(mean)
     Ystd.append(std)
 
-    # Save best ind
-    if bestInd.fitness.wvalues[0] > bestOfAll.fitness.wvalues[0]:
-        bestOfAll = bestInd
+    print()
 
-# %%
 t_end = time.time()
 print("################  End of (successful) evolution  ################")
 
-algo_time = t_end-t_init
+algo_time = t_end - t_init
 print('Algorithm time:', algo_time)
+
+
 # %% Vehicles dynamics
 def text_feasibility(feasible):
     if feasible:
@@ -226,6 +202,7 @@ print('After decoding:\n', best_routes)
 
 input('Press ENTER to continue...')
 # %% Save operation if better
+'''
 save = False
 
 path = folder_path + file_name + '_already_assigned.xml'
@@ -246,15 +223,16 @@ if save:
     res.IOTools.save_optimization_report(path, report)
 else:
     print('Current optimization is not better.')
-
+'''
 # %% Save optimization results
 import datetime
 import pandas as pd
+
 import os
 
 now = datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S')
 folder_name = f'{now}_FEASIBLE_ASSIGNATION' if best_is_feasible else f'{now}_INFEASIBLE_ASSIGNATION/'
-results_path = folder_path + folder_name
+results_path = data_folder + folder_name
 
 try:
     os.mkdir(results_path)
@@ -275,8 +253,8 @@ df_op_gens.to_csv(optimization_iterations_filepath)
 # theta vector
 theta_vector = fleet.optimization_vector[fleet.optimization_vector_indices[8]:]
 net_size = len(fleet.network.nodes)
-events = list(range(int(len(theta_vector)/net_size)))
-theta_matrix = np.array([theta_vector[i*net_size:net_size*(i+1)] for i in events])
+events = list(range(int(len(theta_vector) / net_size)))
+theta_matrix = np.array([theta_vector[i * net_size:net_size * (i + 1)] for i in events])
 df_nodes_occupation = pd.DataFrame(theta_matrix, index=events)
 df_nodes_occupation.to_csv(theta_vector_filepath)
 
@@ -301,7 +279,8 @@ df_costs = pd.DataFrame(data, columns=['Travel Time (min)', 'Energy Consumption 
 df_costs.to_csv(cost_filepath)
 
 # %% save hyper-parameters
-info += f'\nAlgorithm Time: {algo_time}'
+info = hyper_parameters.__str__()
+info += f'Algorithm Time: {algo_time}'
 info += f'\nBest individual: {bestOfAll}'
 with open(info_filepath, 'w') as file:
     file.write(info)
@@ -309,7 +288,7 @@ with open(info_filepath, 'w') as file:
 # %% Edit assignation file
 fleet.assign_customers_in_route()
 
-assigned_path = folder_path + file_name + '_already_assigned.xml'
+assigned_path = f'{data_folder}{instance_filename}_already_assigned.xml'
 tree = ET.parse(assigned_path)
 _fleet = tree.find('fleet')
 
@@ -340,15 +319,19 @@ if plot_operation:
     figFitnessStd.left[0].formatter.use_scientific = False
 
     # Grid
-    p = gridplot([[figFitness, figFitnessStd]], toolbar_location='right')
-    show(p)
+    # p = gridplot([[figFitness, figFitnessStd]], toolbar_location='right')
+    # show(p)
 
-    op_figs = fleet.plot_operation_pyplot()
-    fig, g = fleet.draw_operation(color_route=('r', 'b', 'g', 'c', 'y'), edge_color='grey')
+    fig, g = fleet.draw_operation(color_route=('r', 'b', 'g', 'c', 'y', 'r', 'b', 'g', 'c', 'y','r', 'b', 'g', 'c', 'y'),
+                                  save_to=None, width=0.02,
+                                  edge_color='grey', alpha=.1, markeredgecolor='black', markeredgewidth=2.0)
     fig.show()
 
     figs = fleet.plot_operation_pyplot()
-    [i.show() for i in figs]
-
+    for k, i in enumerate(figs):
+        plt.figure()
+        i.tight_layout()
+        i.show()
     fleet.plot_operation()
+
 

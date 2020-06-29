@@ -1,28 +1,20 @@
 # %% Imports
 import sys
-
 # scientific libraries and utilities
-import numpy as np
-import random
 import time
-import copy
+import matplotlib.pyplot as plt
 
+# Visualization tools
+from bokeh.plotting import figure
 # GA library
 from deap import base
 from deap import creator
 from deap import tools
 
+import res.IOTools
+from Fleet import from_xml, InitialCondition
 # Resources
 from GA_AlreadyAssigned2 import *
-from Fleet import from_xml, InitialCondition
-import res.IOTools
-
-# Visualization tools
-from bokeh.plotting import figure, show
-from bokeh.layouts import gridplot
-from bokeh.models.annotations import Arrow, Label
-from bokeh.models.arrow_heads import VeeHead
-from bokeh.models import Whisker, Span, Range1d
 
 t0 = time.time()
 
@@ -30,21 +22,17 @@ sys.path.append('..')
 
 # %%
 # 1. Specify file
-file_name = '10C_2CS_1D_2EV_4CAP_HIGHWEIGHT_ULTRA'
+file_name = '60C_2CS_1D_4EV_4CAP'
 folder_path = './data/XML_files/' + file_name + '/'
 path = folder_path + file_name + '_already_assigned.xml'
 print('Opening:', path)
 
 # %% 3. Instance fleet
-init_soc = 82.
-init_node = 0
-all_charging_ops = 3
-
 fleet = from_xml(path, assign_customers=True)
 
 customers_to_visit = {ev_id: ev.assigned_customers for ev_id, ev in fleet.vehicles.items()}
 
-starting_points = {ev_id: InitialCondition(init_node, 0, 0, init_soc, sum([fleet.network.nodes[x].demand
+starting_points = {ev_id: InitialCondition(0, 0, 0, ev.alpha_up, sum([fleet.network.nodes[x].demand
                                                                            for x in ev.assigned_customers]))
                    for ev_id, ev in fleet.vehicles.items()}
 
@@ -52,14 +40,14 @@ input('Press enter to continue...')
 
 # %%
 # 7. GA hyperparameters
-CXPB, MUTPB = 0.45, 0.55
-n_individuals = 90
-generations = 150
+CXPB, MUTPB = 0.65, 0.75
+n_individuals = 100
+generations = 300
 penalization_constant = 500000
 weights = (0.1, 0.8, 0.9, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
 keep_best = 1  # Keep the 'keep_best' best individuals
 tournament_size = 4
-crossover_repeat = 1
+crossover_repeat = 3
 mutation_repeat = 1
 
 info = f'''
@@ -77,7 +65,6 @@ mutation_repeat = {mutation_repeat}
 
 # Arguments
 indices = block_indices(customers_to_visit)
-common_args = {'allowed_charging_operations': all_charging_ops, 'indices': indices}
 # %%
 # Fitness objects
 creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
@@ -313,6 +300,7 @@ info += f'\nAlgorithm Time: {algo_time}'
 info += f'\nBest individual: {bestOfAll}'
 with open(info_filepath, 'w') as file:
     file.write(info)
+
 # %% Plot operations
 plot_operation = True
 if plot_operation:
@@ -331,10 +319,19 @@ if plot_operation:
     figFitnessStd.left[0].formatter.use_scientific = False
 
     # Grid
-    p = gridplot([[figFitness, figFitnessStd]], toolbar_location='right')
-    show(p)
+    # p = gridplot([[figFitness, figFitnessStd]], toolbar_location='right')
+    # show(p)
 
-    # %%
+    fig, g = fleet.draw_operation(color_route=('r', 'b', 'g', 'c', 'y'), save_to=None, width=0.02,
+                                  edge_color='grey', markeredgecolor='black', markeredgewidth=2.0)
+    fig.show()
+
+    figs = fleet.plot_operation_pyplot()
+    for k, i in enumerate(figs):
+        plt.figure()
+        i.tight_layout()
+        i.show()
     #fleet.plot_operation()
+
 
 
