@@ -148,7 +148,7 @@ class ElectricVehicle:
         F_step(self.route, self.state_reaching, self.state_leaving, self.travel_times, self.energy_consumption,
                self.charging_times, self.weight, network)
 
-    def xml_element(self, assign_customers=False, include_operation=False):
+    def xml_element(self, assign_customers=False, with_routes=False):
         attribs = {'id': str(self.id),
                    'weight': str(self.weight),
                    'battery_capacity': str(self.battery_capacity),
@@ -159,9 +159,13 @@ class ElectricVehicle:
         element = ET.Element('electric_vehicle', attrib=attribs)
 
         if assign_customers:
-            pass
+            _assigned_customers = ET.SubElement(element, 'assigned_customers')
+            for customer in self.assigned_customers:
+                _customer = ET.SubElement(_assigned_customers, 'node', attrib={'id': str(customer)})
 
-        if include_operation:
-            pass
+        if with_routes:
+            _previous_route = ET.SubElement(element, 'previous_route')
+            for Sk, Lk in self.route[0], self.route[1]:
+                _point = ET.SubElement(_previous_route, 'node', attrib={'Sk': str(Sk), 'Lk': str(Lk)})
 
         return element

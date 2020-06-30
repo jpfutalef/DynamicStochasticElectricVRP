@@ -13,8 +13,8 @@ import networkx as nx
 
 import numpy as np
 import models.Network as net
+from models.ElectricVehicle import *
 import res.IOTools
-from ElectricVehicle import *
 
 
 # CLASSES
@@ -26,14 +26,14 @@ class TupleIndex(list):
 
 # FUNCTIONS
 def distance(results, multi: np.ndarray, b: np.ndarray):
-    return np.sum([dist_fun(multi[i, 0], b[i, 0]) for i, result in enumerate(results) if not result])
+    return sum([dist_fun(multi[i], b[i]) for i, result in enumerate(results) if not result])
 
 
-def dist_fun(x, y):
+def dist_fun(x: ndarray, y: ndarray):
     # return np.abs(x - y)
     # return np.sqrt(np.power(x - y, 2))
     # return np.abs(np.power(x - y, 2))
-    return (x - y) ** 2
+    return (x - y)**2
 
 
 def integer_to_tuple2(k: int):
@@ -192,7 +192,7 @@ class Fleet:
 
         # 4. Matrices
         A = np.zeros((rows, length_op_vector))
-        b = np.zeros((rows, 1))
+        b = np.zeros(rows)
 
         # 5. Start filling
         row = 0
@@ -263,7 +263,7 @@ class Fleet:
                 row += 1
 
         # 6. Check
-        multi = np.matmul(A, np.vstack(self.optimization_vector.T))
+        multi = np.matmul(A, self.optimization_vector)
         boolList = multi <= b
         for result in boolList:
             if not result:
@@ -715,14 +715,15 @@ class Fleet:
             time.sleep(0.5)
         return
 
-    def xml_tree(self):
+    def xml_tree(self, assign_customers=False, with_routes=False):
         _fleet = ET.Element('fleet')
         for vehicle in self.vehicles.values():
-            _fleet.append(vehicle.xml_element())
+            _fleet.append(vehicle.xml_element(assign_customers, with_routes))
         return _fleet
 
-    def write_xml(self, path, network_in_file=False, print_pretty=False):
-        tree = self.xml_tree()
+    def write_xml(self, path, network_in_file=False, assign_customers=False, with_routes=False,
+                  print_pretty=False):
+        tree = self.xml_tree(assign_customers, with_routes)
         if network_in_file:
             instance_tree = ET.Element('instance')
             instance_tree.append(self.network.xml_tree())

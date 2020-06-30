@@ -1,9 +1,9 @@
+import datetime
+import os
 from random import randint, uniform, sample, random
-from typing import Dict, List, Tuple
 
-import numpy as np
+import pandas as pd
 
-from Fleet import *
 from GATools import *
 
 # TYPES
@@ -365,7 +365,8 @@ def random_block_index(m, ics, idt, block_probability):
         return randint(idt, idt + m - 1)
 
 
-def optimal_route_assignation(fleet: Fleet, hp: HyperParameters):
+# THE ALGORITHM
+def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, data_folder: str):
     # TOOLBOX
     creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
     creator.create("Individual", list, fitness=creator.FitnessMin, feasible=False)
@@ -402,14 +403,14 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters):
     bestOfAll = tools.selBest(pop, 1)[0]
 
     # These will save statistics
-    X, Ymax, Ymin, Yavg, Ystd, YbestInd = [], [], [], [], [], []
+    opt_data = OptimizationIterationsData([], [], [], [], [], [])
 
     print("################  Start of evolution  ################")
     # Begin the evolution
     for g in range(hp.max_generations):
         # A new generation
         print(f"-- Generation {g}/{hp.max_generations} --")
-        X.append(g)
+        opt_data.generations.append(g)
 
         # Update block probabilities
         if g < 50:
@@ -489,10 +490,11 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters):
         print(f"Avg {mean}")
         print(f"Std {std}")
 
-        Ymax.append(-max(fits))
-        Ymin.append(-min(fits))
-        Yavg.append(mean)
-        Ystd.append(std)
+        opt_data.best_fitness.append(-max(fits))
+        opt_data.worst_fitness.append(-min(fits))
+        opt_data.average_fitness.append(mean)
+        opt_data.std_fitness.append(std)
+        opt_data.best_individuals.append(bestInd)
 
         print()
 
@@ -502,5 +504,7 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters):
     algo_time = t_end - t_init
     print('Algorithm time:', algo_time)
 
+    fit, feasible = toolbox.evaluate(bestOfAll)
     routes = toolbox.decode(bestOfAll)
-    return routes, bestOfAll, toolbox
+    opt_data.save_opt_data(data_folder, hp, fleet, bestOfAll, feasible, algo_time)
+    return routes, fleet, bestOfAll, toolbox, opt_data
