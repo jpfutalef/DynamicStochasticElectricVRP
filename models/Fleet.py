@@ -101,6 +101,10 @@ class Fleet:
             self.vehicles[id_ev].set_route(route, dep_time, dep_soc, dep_pay)
             self.vehicles[id_ev].iterate_space(self.network)
 
+    def set_eta(self, etas: Dict[int, float]):
+        for id_ev, ev in self.vehicles.items():
+            ev.eta0 = etas[id_ev]
+
     def create_optimization_vector(self) -> np.ndarray:
         # It is assumed that each EV has a set route by using the ev.set_rout(...) method
         # 0. Preallocate optimization vector

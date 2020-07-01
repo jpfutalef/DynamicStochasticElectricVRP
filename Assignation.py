@@ -3,9 +3,9 @@ from GATools import *
 
 # %% 1. Specify instance location
 # data_folder = 'data/real_data/'
-data_folder = 'data/XML_files/75C_2CS_1D_4EV_4CAP/'
+data_folder = 'data/real_data/instances/'
 # instance_filename = data_folder.split('/')[-2]
-instance_filename = '75C_2CS_1D_4EV_4CAP'
+instance_filename = '21nodes_NOPOLICY_1EV'
 path = f'{data_folder}{instance_filename}.xml'
 
 print(f'Opening:\n {path}')
@@ -18,15 +18,15 @@ fleet.network.draw(save_to=None, width=0.02,
 #input('Ready! Press ENTER to continue...')
 
 # %% 3. GA hyper-parameters
-CXPB = 0.55
-MUTPB = 0.65
-num_individuals = 90
-max_generations = 150
+CXPB = 0.75
+MUTPB = 0.85
+num_individuals = 100
+max_generations = 250
 penalization_constant = 500000
 weights = (0.2, 0.8, 1.2, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
 keep_best = 1  # Keep the 'keep_best' best individuals
-tournament_size = 5
-r = 4
+tournament_size = 3
+r = 3
 starting_points = {ev_id: InitialCondition(0, 0, 0, ev.alpha_up, 0) for ev_id, ev in fleet.vehicles.items()}
 
 hyper_parameters = HyperParameters(num_individuals, max_generations, CXPB, MUTPB,
@@ -51,7 +51,7 @@ print('After decoding:\n', best_routes)
 #input('Press ENTER to continue...')
 
 # %% Plot operations
-plot_operation = False
+plot_operation = True
 if plot_operation:
     figFitness = figure(plot_width=400, plot_height=300,
                         title='Best fitness evolution')
@@ -82,4 +82,4 @@ if plot_operation:
         plt.figure()
         i.tight_layout()
         i.show()
-    fleet.plot_operation()
+    #fleet.plot_operation()

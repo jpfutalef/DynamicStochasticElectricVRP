@@ -15,7 +15,7 @@ class Edge:
         return self.travel_time
 
     def get_energy_consumption(self, payload: float, vehicle_weight: float, time_of_day=None) -> Union[float, int]:
-        return self.energy_consumption*(payload + vehicle_weight)
+        return self.energy_consumption*(payload + vehicle_weight)/1.52
 
     def xml_element(self):
         attribs = {str(i): str(j) for i, j in self.__dict__.items()}
@@ -41,7 +41,7 @@ class DynamicEdge:
     def get_energy_consumption(self, payload: float, vehicle_weight: float, time_of_day: float) -> Union[float, int]:
         while time_of_day > 1440:
             time_of_day -= 1440
-        return self.energy_consumption[int(time_of_day/self.sample_time)]*(payload + vehicle_weight)
+        return self.energy_consumption[int(time_of_day/self.sample_time)]*(payload + vehicle_weight)/1.52
 
     def xml_element(self):
         attribs = {'id': str(self.node_to)}
