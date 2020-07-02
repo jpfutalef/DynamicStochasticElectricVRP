@@ -52,7 +52,8 @@ def F_recursive(k: int, route: RouteVector, state_reaching_matrix: ndarray, stat
 
 
 def F_step(route: RouteVector, state_reaching_matrix: ndarray, state_leaving_matrix: ndarray,
-           tt_array: ndarray, ec_array: ndarray, c_op_array: ndarray, ev_weight: float, eta: list, network: Network):
+           tt_array: ndarray, ec_array: ndarray, c_op_array: ndarray, ev_weight: float, eta: list, eta0: float,
+           network: Network):
     Sk, Lk = route[0], route[1]
     eta_init_index = 0
     for k, (Sk0, Lk0, Sk1, Lk1) in enumerate(zip(Sk[:-1], Lk[:-1], Sk[1:], Lk[1:]), 1):
@@ -61,9 +62,9 @@ def F_step(route: RouteVector, state_reaching_matrix: ndarray, state_leaving_mat
         payload = state_leaving_matrix[2, k - 1]
 
         coef = np.prod(eta)
-        coef = 1. if -.01 < coef <.01 else coef
+        coef = 1. if -.01 < coef < .01 else coef
         tij = network.t(Sk0, Sk1, departure_time)
-        eij = network.e(Sk0, Sk1, payload, ev_weight, departure_time)/coef
+        eij = network.e(Sk0, Sk1, payload, ev_weight, departure_time) / (coef*eta0)
         tt_array[0, k - 1] = tij
         ec_array[0, k - 1] = eij
 
@@ -77,7 +78,7 @@ def F_step(route: RouteVector, state_reaching_matrix: ndarray, state_leaving_mat
         if network.isChargingStation(Sk1):
             c_op_array[0, k] = tj
             soch, socl = state_leaving_matrix[1, eta_init_index], state_reaching_matrix[1, k]
-            eta.append(eta_fun(socl, soch, 2500))
+            eta.append(eta_fun(socl, soch, 2000))
             eta_init_index = k
 
     soch, socl = state_leaving_matrix[1, eta_init_index], state_reaching_matrix[1, -1]
@@ -150,14 +151,14 @@ class ElectricVehicle:
         self.energy_consumption = np.zeros(size_ec)
         self.charging_times = np.zeros(size_c_op)
         self.charging_times[0, 0] = route[1][0]
-        self.eta = [self.eta0]
+        self.eta = [1.0]
 
     def iterate_space(self, network: Network):
         # k = len(self.route[0]) - 1
         # F_recursive(k, self.route, self.state_reaching, self.state_leaving, self.travel_times, self.energy_consumption,
         #            self.charging_times, self.weight, network)
         F_step(self.route, self.state_reaching, self.state_leaving, self.travel_times, self.energy_consumption,
-               self.charging_times, self.weight, self.eta, network)
+               self.charging_times, self.weight, self.eta, self.eta0, network)
 
     def xml_element(self, assign_customers=False, with_routes=False):
         attribs = {'id': str(self.id),

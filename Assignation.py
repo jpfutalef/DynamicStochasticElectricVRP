@@ -5,7 +5,7 @@ from GATools import *
 # data_folder = 'data/real_data/'
 data_folder = 'data/real_data/instances/'
 # instance_filename = data_folder.split('/')[-2]
-instance_filename = '21nodes_NOPOLICY_1EV'
+instance_filename = '21nodes_0_100_1EV'
 path = f'{data_folder}{instance_filename}.xml'
 
 print(f'Opening:\n {path}')
@@ -20,7 +20,7 @@ fleet.network.draw(save_to=None, width=0.02,
 # %% 3. GA hyper-parameters
 CXPB = 0.75
 MUTPB = 0.85
-num_individuals = 100
+num_individuals = 200
 max_generations = 250
 penalization_constant = 500000
 weights = (0.2, 0.8, 1.2, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
@@ -41,7 +41,8 @@ print(hyper_parameters)
 #input('Press ENTER to continue...')
 
 # %% 4. Run algorithm
-routes, fleet, bestOfAll, toolbox, optData = optimal_route_assignation(fleet, hyper_parameters, data_folder)
+routes, fleet, bestOfAll, toolbox, optData = optimal_route_assignation(fleet, hyper_parameters, data_folder,
+                                                                       best_ind=None)
 
 best_fitness, best_is_feasible = toolbox.evaluate(bestOfAll)
 best_routes = toolbox.decode(bestOfAll)

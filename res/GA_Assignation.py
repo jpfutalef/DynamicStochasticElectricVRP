@@ -366,13 +366,12 @@ def random_block_index(m, ics, idt, block_probability):
 
 
 # THE ALGORITHM
-def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, data_folder: str):
+def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind=None):
     # TOOLBOX
     creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
     creator.create("Individual", list, fitness=creator.FitnessMin, feasible=False)
 
     toolbox = base.Toolbox()
-
     toolbox.register("individual", random_individual, num_customers=len(fleet.network.customers),
                      num_cs=len(fleet.network.charging_stations), m=len(fleet.vehicles), r=hp.r)
     toolbox.register("evaluate", fitness, fleet=fleet, starting_points=hp.starting_points, weights=hp.weights,
@@ -390,7 +389,11 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, data_folder: st
     t_init = time.time()
 
     # Random population
-    pop = [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals)]
+    if best_ind is None:
+        pop = [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals)]
+    else:
+        pop = [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals - 1)]
+        pop.append(creator.Individual(best_ind))
 
     # Evaluate the initial population and get fitness of each individual
     for ind in pop:
@@ -403,7 +406,7 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, data_folder: st
     bestOfAll = tools.selBest(pop, 1)[0]
 
     # These will save statistics
-    opt_data = OptimizationIterationsData([], [], [], [], [], [])
+    opt_data = OptimizationIterationsData([], [], [], [], [], [], fleet, hp, bestOfAll, bestOfAll.feasible)
 
     print("################  Start of evolution  ################")
     # Begin the evolution
@@ -506,5 +509,15 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, data_folder: st
 
     fit, feasible = toolbox.evaluate(bestOfAll)
     routes = toolbox.decode(bestOfAll)
-    opt_data.save_opt_data(data_folder, hp, fleet, bestOfAll, feasible, algo_time)
-    return routes, fleet, bestOfAll, toolbox, opt_data
+
+    opt_data.bestOfAll = bestOfAll
+    opt_data.feasible = feasible
+    opt_data.algo_time = algo_time
+
+    if save_to:
+        try:
+            os.mkdir(save_to)
+        except FileExistsError:
+            pass
+        opt_data.save_opt_data(save_to)
+    return routes, fleet, bestOfAll, feasible, toolbox, opt_data
