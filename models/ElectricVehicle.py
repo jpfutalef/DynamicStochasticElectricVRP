@@ -52,19 +52,15 @@ def F_recursive(k: int, route: RouteVector, state_reaching_matrix: ndarray, stat
 
 
 def F_step(route: RouteVector, state_reaching_matrix: ndarray, state_leaving_matrix: ndarray,
-           tt_array: ndarray, ec_array: ndarray, c_op_array: ndarray, ev_weight: float, eta: list, eta0: float,
-           network: Network):
+           tt_array: ndarray, ec_array: ndarray, c_op_array: ndarray, ev_weight: float, eta0: float, network: Network):
     Sk, Lk = route[0], route[1]
-    eta_init_index = 0
     for k, (Sk0, Lk0, Sk1, Lk1) in enumerate(zip(Sk[:-1], Lk[:-1], Sk[1:], Lk[1:]), 1):
         # TODO add waiting time
         departure_time = state_leaving_matrix[0, k - 1]
         payload = state_leaving_matrix[2, k - 1]
 
-        coef = np.prod(eta)
-        coef = 1. if -.01 < coef < .01 else coef
         tij = network.t(Sk0, Sk1, departure_time)
-        eij = network.e(Sk0, Sk1, payload, ev_weight, departure_time) / (coef*eta0)
+        eij = network.e(Sk0, Sk1, payload, ev_weight, departure_time) / eta0
         tt_array[0, k - 1] = tij
         ec_array[0, k - 1] = eij
 
@@ -77,12 +73,9 @@ def F_step(route: RouteVector, state_reaching_matrix: ndarray, state_leaving_mat
 
         if network.isChargingStation(Sk1):
             c_op_array[0, k] = tj
-            soch, socl = state_leaving_matrix[1, eta_init_index], state_reaching_matrix[1, k]
-            eta.append(eta_fun(socl, soch, 2000))
-            eta_init_index = k
 
-    soch, socl = state_leaving_matrix[1, eta_init_index], state_reaching_matrix[1, -1]
-    eta.append(eta_fun(socl, soch, 2500))
+    socl, soch = min(state_reaching_matrix[1, :]), max(state_leaving_matrix[1, :])
+    return eta_fun(socl, soch, 2000)
 
 
 @dataclass
@@ -108,7 +101,7 @@ class ElectricVehicle:
     charging_times: ndarray = None
     state_reaching: ndarray = None
     state_leaving: ndarray = None
-    eta: List[float] = None
+    eta: float = None
 
     def set_customers_to_visit(self, new_customers: Tuple[int, ...]):
         self.assigned_customers = new_customers
@@ -151,14 +144,36 @@ class ElectricVehicle:
         self.energy_consumption = np.zeros(size_ec)
         self.charging_times = np.zeros(size_c_op)
         self.charging_times[0, 0] = route[1][0]
-        self.eta = [1.0]
+        self.eta = 1.0
 
     def iterate_space(self, network: Network):
-        # k = len(self.route[0]) - 1
-        # F_recursive(k, self.route, self.state_reaching, self.state_leaving, self.travel_times, self.energy_consumption,
-        #            self.charging_times, self.weight, network)
-        F_step(self.route, self.state_reaching, self.state_leaving, self.travel_times, self.energy_consumption,
-               self.charging_times, self.weight, self.eta, self.eta0, network)
+        self.eta = F_step(self.route, self.state_reaching, self.state_leaving, self.travel_times,
+                          self.energy_consumption, self.charging_times, self.weight, self.eta0, network)
+        '''
+        Sk, Lk = self.route[0], self.route[1]
+        for k, (Sk0, Lk0, Sk1, Lk1) in enumerate(zip(Sk[:-1], Lk[:-1], Sk[1:], Lk[1:]), 1):
+            # TODO add waiting time
+            departure_time = self.state_leaving[0, k - 1]
+            payload = self.state_leaving[2, k - 1]
+
+            tij = network.t(Sk0, Sk1, departure_time)
+            eij = network.e(Sk0, Sk1, payload, self.weight, departure_time) / self.eta0
+            self.travel_times[0, k - 1] = tij
+            self.energy_consumption[0, k - 1] = eij
+
+            self.state_reaching[:, k] = self.state_reaching[:, k - 1] + np.array([tij, -eij, 0])
+
+            tj = network.spent_time(Sk1, self.state_reaching[1, k], Lk1)
+            dj = network.demand(Sk1)
+
+            self.state_leaving[:, k] = self.state_reaching[:, k] + np.array([tj, Lk1, -dj])
+
+            if network.isChargingStation(Sk1):
+                self.charging_times[0, k] = tj
+
+        socl, soch = min(self.state_reaching[1, :]), max(self.state_leaving[1, :])
+        self.eta = eta_fun(socl, soch, 2000)
+        '''
 
     def xml_element(self, assign_customers=False, with_routes=False):
         attribs = {'id': str(self.id),

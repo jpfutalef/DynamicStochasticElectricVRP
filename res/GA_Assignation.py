@@ -4,7 +4,7 @@ from random import randint, uniform, sample, random
 
 import pandas as pd
 
-from GATools import *
+from res.GATools import *
 
 # TYPES
 IndividualType = List
