@@ -5,8 +5,13 @@ import pandas as pd
 import os
 
 # %% 1. Specify instance location
-data_folder = 'data/real_data/instances/'
-instance_filename = '21nodes_20_95_1EV'
+data_folder = 'data/real_data/instances_london_bat/'
+#instance_filename = '21nodes_0_100_1EV'
+#instance_filename = '21nodes_20_95_1EV'
+#instance_filename = '21nodes_25_75_1EV'
+#instance_filename = '21nodes_25_100_1EV'
+#instance_filename = '21nodes_30_70_1EV'
+instance_filename = '21nodes_50_100_1EV'
 path = f'{data_folder}{instance_filename}.xml'
 
 print(f'Opening:\n {path}')
@@ -16,12 +21,11 @@ fleet = from_xml(path, assign_customers=False)
 fleet.network.draw(save_to=None, width=0.02,
                    edge_color='grey', markeredgecolor='black',
                    markeredgewidth=2.0)
-# input('Ready! Press ENTER to continue...')
 
 # %% 3. GA hyper-parameters for first routing
 CXPB = 0.75
-MUTPB = 0.85
-num_individuals = 300
+MUTPB = 0.88
+num_individuals = 350
 max_generations = 450
 penalization_constant = 500000
 weights = (0.2, 0.8, 1.2, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
@@ -39,14 +43,12 @@ hyper_parameters = HyperParameters(num_individuals, max_generations, CXPB, MUTPB
                                    starting_points=starting_points)
 print(hyper_parameters)
 
-# input('Press ENTER to continue...')
-
-# %% 4. Initialize
+# %% 4. Initialize variables
 degraded = False
 day = 0
-route_every = 25
+route_every = 25    # days
 
-# these will store data
+# These store data
 stored_eta: Dict[int, list] = {ev_id: [] for ev_id, ev in fleet.vehicles.items()}
 cum_eta: Dict[int, float] = {ev_id: 1. for ev_id, ev in fleet.vehicles.items()}
 
@@ -67,22 +69,28 @@ save_to = f'{opt_folder}day{day}/'
 routes, fleet, bestOfAll, feasible, toolbox, optData = optimal_route_assignation(fleet, hyper_parameters, save_to,
                                                                                  best_ind=bestOfAll)
 
-# %% 6. Procedure with new hyper-parameters
-hyper_parameters = HyperParameters(150, 350, CXPB, MUTPB,
-                                   tournament_size=tournament_size,
-                                   penalization_constant=penalization_constant,
-                                   keep_best=keep_best,
-                                   weights=weights,
-                                   r=r,
-                                   starting_points=starting_points)
+# %% 6. Procedure
 while not degraded:
-    # New routes
     if day > 0 and day % route_every == 0:
         save_to = f'{opt_folder}day{day}/'
+        if optData.feasible:
+            hyper_parameters = HyperParameters(120, 360, CXPB, MUTPB,
+                                               tournament_size=tournament_size,
+                                               penalization_constant=penalization_constant,
+                                               keep_best=keep_best,
+                                               weights=weights,
+                                               r=r,
+                                               starting_points=starting_points)
+        else:
+            hyper_parameters = HyperParameters(300, 400, CXPB, MUTPB,
+                                               tournament_size=tournament_size,
+                                               penalization_constant=penalization_constant,
+                                               keep_best=keep_best,
+                                               weights=weights,
+                                               r=r,
+                                               starting_points=starting_points)
         routes, fleet, bestOfAll, feasible, toolbox, optData = optimal_route_assignation(fleet, hyper_parameters,
                                                                                          save_to, best_ind=bestOfAll)
-        if not optData.feasible:
-            fleet.plot_operation()
     # Set routes
     fleet.set_routes_of_vehicles(routes)
 
@@ -96,11 +104,8 @@ while not degraded:
     fleet.set_eta(cum_eta)
     day += 1
 
-days = list(range(day))
-
-# %%
-# input('Press ENTER to continue...')
-
-# save data
+# %% Save data and show how long the battery lasted
 df_eta = pd.DataFrame(stored_eta)
 df_eta.to_csv(f'{opt_folder}eta.csv')
+
+print(f'The battery lasted {day/365.} years.')

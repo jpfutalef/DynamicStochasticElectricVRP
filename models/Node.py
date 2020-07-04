@@ -65,7 +65,7 @@ class ChargeStationNode(NetworkNode):
     technology: int = 1
     type: int = 2
 
-    def calculateTimeSpent(self, init_soc, end_soc):
+    def calculateTimeSpent(self, init_soc, end_soc, eta=1.0):
         t_points, soc_points = self.time_points, self.soc_points
 
         end_time = t_points[-1] * 10. if end_soc > 100. else 0.
