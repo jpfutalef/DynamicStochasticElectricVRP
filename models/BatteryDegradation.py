@@ -1,5 +1,7 @@
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
+import pandas as pd
+import matplotlib.pyplot as plt
 
 
 def eta(socl, soch, N, tabla: np.ndarray, model: NearestNeighbors):
@@ -22,7 +24,7 @@ def eta(socl, soch, N, tabla: np.ndarray, model: NearestNeighbors):
             W2 = 1 / (1 + (D[0, 1] / D[0, 0]) + (D[0, 1] / D[0, 2])) if D[0, 0] != 0.0 and D[0, 2] != 0 else 0.0
             W3 = 1 / (1 + (D[0, 2] / D[0, 0]) + (D[0, 2] / D[0, 1])) if D[0, 0] != 0.0 and D[0, 1] != 0 else 0.0
 
-            eta_f = W1*(tabla[IDX[0, 0], 2]) + W2*(tabla[IDX[0, 1], 2]) + W3*(tabla[IDX[0, 2], 2])
+            eta_f = W1 * (tabla[IDX[0, 0], 2]) + W2 * (tabla[IDX[0, 1], 2]) + W3 * (tabla[IDX[0, 2], 2])
             eta_bat = (0.8 ** (1 / N)) * eta_f
         else:
             eta_bat = 1
@@ -33,4 +35,32 @@ def eta(socl, soch, N, tabla: np.ndarray, model: NearestNeighbors):
 
 
 if __name__ == '__main__':
-    print(eta(40, 80, 1000))
+    df1 = pd.read_csv('data/real_data/instances_london_bat/21nodes_0_100_1EV/capacity_pu.csv', index_col=0)
+    df2 = pd.read_csv('data/real_data/instances_london_bat/21nodes_20_95_1EV/capacity_pu.csv', index_col=0)
+    df3 = pd.read_csv('data/real_data/instances_london_bat/21nodes_25_75_1EV/capacity_pu.csv', index_col=0)
+    df4 = pd.read_csv('data/real_data/instances_london_bat/21nodes_25_100_1EV/capacity_pu.csv', index_col=0)
+    df5 = pd.read_csv('data/real_data/instances_london_bat/21nodes_30_70_1EV/capacity_pu.csv', index_col=0)
+    df6 = pd.read_csv('data/real_data/instances_london_bat/21nodes_50_100_1EV/capacity_pu.csv', index_col=0)
+    df = pd.concat([df1, df2, df3, df4, df5, df6], axis=1, ignore_index=True)
+    df.columns = ['0-100', '20-95', '25,75', '25-100', '30-70', '50-100']
+    df.plot()
+    plt.show()
+    df.plot()
+    plt.xlabel('Time (cycles)')
+    plt.ylabel('Capacity (p.u.)')
+    plt.show()
+
+    df1 = pd.read_csv('data/real_data/instances_london_bat/21nodes_0_100_1EV/capacity_pu_end_day.csv', index_col=0)
+    df2 = pd.read_csv('data/real_data/instances_london_bat/21nodes_20_95_1EV/capacity_pu_end_day.csv', index_col=0)
+    df3 = pd.read_csv('data/real_data/instances_london_bat/21nodes_25_75_1EV/capacity_pu_end_day.csv', index_col=0)
+    df4 = pd.read_csv('data/real_data/instances_london_bat/21nodes_25_100_1EV/capacity_pu_end_day.csv', index_col=0)
+    df5 = pd.read_csv('data/real_data/instances_london_bat/21nodes_30_70_1EV/capacity_pu_end_day.csv', index_col=0)
+    df6 = pd.read_csv('data/real_data/instances_london_bat/21nodes_50_100_1EV/capacity_pu_end_day.csv', index_col=0)
+    df = pd.concat([df1, df2, df3, df4, df5, df6], axis=1, ignore_index=True)
+    df.columns = ['0-100', '20-95', '25,75', '25-100', '30-70', '50-100']
+    df.plot()
+    plt.show()
+    df.plot()
+    plt.xlabel('Time (days)')
+    plt.ylabel('Capacity (p.u.)')
+    plt.show()
