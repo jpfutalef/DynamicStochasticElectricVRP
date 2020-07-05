@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Union, Tuple, Dict, NamedTuple, List
 
 import numpy as np
+from sklearn.neighbors import NearestNeighbors
 from numpy import ndarray, array
 import xml.etree.ElementTree as ET
 
@@ -20,53 +21,38 @@ class InitialCondition(NamedTuple):
     x3_0: float
 
 
-def F_recursive(k: int, route: RouteVector, state_reaching_matrix: ndarray, state_leaving_matrix: ndarray,
-                tt_array: ndarray, ec_array: ndarray, c_op_array: ndarray, ev_weight: float, network: Network):
-    if k == 0:
-        return state_reaching_matrix[:, 0]
-    else:
-        D = network.demand(route[0][k])
-        state_leaving_matrix[2, k - 1] = state_leaving_matrix[2, k] + D
-
-        time_of_day = state_leaving_matrix[2, k - 1]
-        payload_weight = state_leaving_matrix[2, k - 1]
-        t_ij = network.t(route[0][k - 1], route[0][k], time_of_day)
-        e_ij = network.e(route[0][k - 1], route[0][k], payload_weight, ev_weight, time_of_day)
-        u1 = array((t_ij, -e_ij, 0))
-
-        state_reaching_matrix[:, k] = F_recursive(k - 1, route, state_reaching_matrix, state_leaving_matrix,
-                                                  tt_array, ec_array, c_op_array, ev_weight, network) + u1
-
-        time_in_node = network.spent_time(route[0][k], state_reaching_matrix[1, k], route[1][k])
-        Lk = route[1][k]
-        u2 = array((time_in_node, Lk))
-        state_leaving_matrix[0:2, k] = state_reaching_matrix[0:2, k] + u2
-
-        tt_array[0, k - 1] = t_ij
-        ec_array[0, k - 1] = e_ij
-
-        if network.isChargingStation(route[0][k]):
-            c_op_array[0, k] = time_in_node
-
-        return state_leaving_matrix[:, k]
+def saturate(val, min_val, max_val):
+    if val > max_val:
+        return max_val
+    elif val < min_val:
+        return min_val
+    return val
 
 
 def F_step(route: RouteVector, state_reaching_matrix: ndarray, state_leaving_matrix: ndarray,
-           tt_array: ndarray, ec_array: ndarray, c_op_array: ndarray, ev_weight: float, eta0: float, network: Network):
+           tt_array: ndarray, ec_array: ndarray, c_op_array: ndarray, ev_weight: float, eta: List[float],
+           network: Network, eta_table: np.ndarray, eta_model: NearestNeighbors):
     Sk, Lk = route[0], route[1]
+    eta_init_index = 0
     for k, (Sk0, Lk0, Sk1, Lk1) in enumerate(zip(Sk[:-1], Lk[:-1], Sk[1:], Lk[1:]), 1):
         # TODO add waiting time
         departure_time = state_leaving_matrix[0, k - 1]
         payload = state_leaving_matrix[2, k - 1]
 
         tij = network.t(Sk0, Sk1, departure_time)
-        eij = network.e(Sk0, Sk1, payload, ev_weight, departure_time) / eta0
+        eij = network.e(Sk0, Sk1, payload, ev_weight, departure_time) / eta[-1]
         tt_array[0, k - 1] = tij
         ec_array[0, k - 1] = eij
 
         state_reaching_matrix[:, k] = state_leaving_matrix[:, k - 1] + np.array([tij, -eij, 0])
 
-        tj = network.spent_time(Sk1, state_reaching_matrix[1, k], Lk1)
+        if network.isChargingStation(Sk1):
+            soch = saturate(state_leaving_matrix[1, eta_init_index], 0., 100.)
+            socl = saturate(state_reaching_matrix[1, k], 0., 100.)
+            eta.append(eta[-1] * eta_fun(socl, soch, 2000, eta_table, eta_model))
+            eta_init_index = k
+
+        tj = network.spent_time(Sk1, state_reaching_matrix[1, k], Lk1, eta[-1])
         dj = network.demand(Sk1)
 
         state_leaving_matrix[:, k] = state_reaching_matrix[:, k] + np.array([tj, Lk1, -dj])
@@ -74,8 +60,9 @@ def F_step(route: RouteVector, state_reaching_matrix: ndarray, state_leaving_mat
         if network.isChargingStation(Sk1):
             c_op_array[0, k] = tj
 
-    socl, soch = min(state_reaching_matrix[1, :]), max(state_leaving_matrix[1, :])
-    return eta_fun(socl, soch, 2000)
+    soch = saturate(state_leaving_matrix[1, eta_init_index], 0., 100.)
+    socl = saturate(state_reaching_matrix[1, -1], 0., 100.)
+    eta.append(eta[-1] * eta_fun(socl, soch, 2000, eta_table, eta_model))
 
 
 @dataclass
@@ -101,7 +88,7 @@ class ElectricVehicle:
     charging_times: ndarray = None
     state_reaching: ndarray = None
     state_leaving: ndarray = None
-    eta: float = None
+    eta: List[float] = None
 
     def set_customers_to_visit(self, new_customers: Tuple[int, ...]):
         self.assigned_customers = new_customers
@@ -144,11 +131,11 @@ class ElectricVehicle:
         self.energy_consumption = np.zeros(size_ec)
         self.charging_times = np.zeros(size_c_op)
         self.charging_times[0, 0] = route[1][0]
-        self.eta = 1.0
+        self.eta = [self.eta0]
 
-    def iterate_space(self, network: Network):
-        self.eta = F_step(self.route, self.state_reaching, self.state_leaving, self.travel_times,
-                          self.energy_consumption, self.charging_times, self.weight, self.eta0, network)
+    def iterate_space(self, network: Network, eta_table: np.ndarray, eta_model: NearestNeighbors):
+        F_step(self.route, self.state_reaching, self.state_leaving, self.travel_times, self.energy_consumption,
+               self.charging_times, self.weight, self.eta, network, eta_table, eta_model)
         '''
         Sk, Lk = self.route[0], self.route[1]
         for k, (Sk0, Lk0, Sk1, Lk1) in enumerate(zip(Sk[:-1], Lk[:-1], Sk[1:], Lk[1:]), 1):

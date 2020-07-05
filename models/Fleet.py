@@ -15,6 +15,7 @@ import numpy as np
 import models.Network as net
 from models.ElectricVehicle import *
 import res.IOTools
+from sklearn.neighbors import NearestNeighbors
 
 
 # CLASSES
@@ -33,7 +34,7 @@ def dist_fun(x: ndarray, y: ndarray):
     # return np.abs(x - y)
     # return np.sqrt(np.power(x - y, 2))
     # return np.abs(np.power(x - y, 2))
-    return (x - y)**2
+    return (x - y) ** 2
 
 
 def integer_to_tuple2(k: int):
@@ -70,6 +71,8 @@ class Fleet:
     optimization_vector: Union[np.ndarray, None]
     optimization_vector_indices: Union[Tuple, None]
     starting_points: Dict[int, InitialCondition]
+    eta_table: np.ndarray
+    eta_model: NearestNeighbors
 
     def __init__(self, vehicles=None, network=None, vehicles_to_route=None):
         self.set_vehicles(vehicles)
@@ -81,6 +84,19 @@ class Fleet:
         self.optimization_vector_indices = None
 
         self.starting_points = {}
+
+        self.eta_table = np.array([[0.500, 1.00, 0.999930],
+                                   [0.625, 0.75, 0.999963],
+                                   [0.375, 0.75, 0.999972],
+                                   [0.750, 0.50, 0.999981],
+                                   [0.500, 0.50, 0.999987],
+                                   [0.250, 0.50, 0.999991],
+                                   [0.875, 0.25, 0.999997],
+                                   [0.625, 0.25, 0.999996],
+                                   [0.500, 0.25, 0.999996],
+                                   [0.375, 0.25, 0.999981],
+                                   [0.125, 0.25, 0.999987]])
+        self.eta_model = NearestNeighbors(n_neighbors=3).fit(self.eta_table[:, 0:2])
 
     def set_vehicles(self, vehicles: Dict[int, ElectricVehicle]) -> None:
         self.vehicles = vehicles
@@ -99,7 +115,7 @@ class Fleet:
     def set_routes_of_vehicles(self, routes: RouteDict) -> None:
         for id_ev, (route, dep_time, dep_soc, dep_pay) in routes.items():
             self.vehicles[id_ev].set_route(route, dep_time, dep_soc, dep_pay)
-            self.vehicles[id_ev].iterate_space(self.network)
+            self.vehicles[id_ev].iterate_space(self.network, self.eta_table, self.eta_model)
 
     def set_eta(self, etas: Dict[int, float]):
         for id_ev, ev in self.vehicles.items():

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Tuple, Union
+import numpy as np
 
 import xml.etree.ElementTree as ET
 
@@ -15,11 +16,12 @@ class NetworkNode:
     pos_x: float = 0.0
     pos_y: float = 0.0
 
-    def spentTime(self, p, q):
+    def spentTime(self, p, q, eta=1.0):
         """
         The time an EV in this node.
         :param q: EV SOC when it arrives to this node
         :param p: EV SOC increment in this node
+        :param eta: percentage of the original battery capacity
         :return: Time the EV spends here
         """
         return self.spent_time
@@ -65,8 +67,9 @@ class ChargeStationNode(NetworkNode):
     technology: int = 1
     type: int = 2
 
-    def calculateTimeSpent(self, init_soc, end_soc, eta=1.0):
-        t_points, soc_points = self.time_points, self.soc_points
+    def calculate_charging_time(self, init_soc, end_soc, eta=1.0):
+        t_points, soc_points = self.time_points, np.array(self.soc_points)
+        soc_points[1:-1] = eta * soc_points[1:-1]   # This includes degradation
 
         end_time = t_points[-1] * 10. if end_soc > 100. else 0.
         init_time = -t_points[-1] * 10. if end_soc < 0. else 0.
@@ -86,8 +89,8 @@ class ChargeStationNode(NetworkNode):
 
         return end_time - init_time
 
-    def spentTime(self, init_soc, increment):
-        return self.calculateTimeSpent(init_soc, init_soc + increment)
+    def spentTime(self, init_soc, increment, eta=1.0):
+        return self.calculate_charging_time(init_soc, init_soc + increment, eta)
 
     def isChargeStation(self):
         return True

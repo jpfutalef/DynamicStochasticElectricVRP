@@ -4,7 +4,7 @@ from models.BatteryDegradation import *
 import pandas as pd
 import os
 
-# %% 1. Specify instance location
+# %% 1. Specify instance location, routing frequency, and degradation threshold
 data_folder = 'data/real_data/instances_london_bat/'
 #instance_filename = '21nodes_0_100_1EV'
 #instance_filename = '21nodes_20_95_1EV'
@@ -13,8 +13,10 @@ data_folder = 'data/real_data/instances_london_bat/'
 #instance_filename = '21nodes_30_70_1EV'
 instance_filename = '21nodes_50_100_1EV'
 path = f'{data_folder}{instance_filename}.xml'
-
 print(f'Opening:\n {path}')
+
+route_every = 20    # days
+degradation_at = 0.8    # between 0 and 1
 
 # %% 2. Instance fleet
 fleet = from_xml(path, assign_customers=False)
@@ -25,7 +27,7 @@ fleet.network.draw(save_to=None, width=0.02,
 # %% 3. GA hyper-parameters for first routing
 CXPB = 0.75
 MUTPB = 0.88
-num_individuals = 350
+num_individuals = 300
 max_generations = 450
 penalization_constant = 500000
 weights = (0.2, 0.8, 1.2, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
@@ -41,16 +43,14 @@ hyper_parameters = HyperParameters(num_individuals, max_generations, CXPB, MUTPB
                                    weights=weights,
                                    r=r,
                                    starting_points=starting_points)
-print(hyper_parameters)
 
 # %% 4. Initialize variables
 degraded = False
 day = 0
-route_every = 25    # days
 
 # These store data
-stored_eta: Dict[int, list] = {ev_id: [] for ev_id, ev in fleet.vehicles.items()}
-cum_eta: Dict[int, float] = {ev_id: 1. for ev_id, ev in fleet.vehicles.items()}
+capacity_pu: Dict[int, List[float]] = {ev_id: [1.] for ev_id, ev in fleet.vehicles.items()}
+capacity_pu_end_day: Dict[int, List[float]] = {ev_id: [1.] for ev_id, ev in fleet.vehicles.items()}
 
 # The folder where all results will be saved
 opt_folder = f'{data_folder}{instance_filename}/'
@@ -74,7 +74,7 @@ while not degraded:
     if day > 0 and day % route_every == 0:
         save_to = f'{opt_folder}day{day}/'
         if optData.feasible:
-            hyper_parameters = HyperParameters(120, 360, CXPB, MUTPB,
+            hyper_parameters = HyperParameters(120, 300, CXPB, MUTPB,
                                                tournament_size=tournament_size,
                                                penalization_constant=penalization_constant,
                                                keep_best=keep_best,
@@ -96,16 +96,20 @@ while not degraded:
 
     # Check degradation after the operation finishes
     for ev_id, ev in fleet.vehicles.items():
-        cum_eta[ev_id] = cum_eta[ev_id] * ev.eta
-        stored_eta[ev_id].append(cum_eta[ev_id])
-        print(f'day: {day}  cum_eta:{cum_eta[ev_id]}')
-        if cum_eta[ev_id] <= .8:
+        capacity_pu[ev_id] = capacity_pu[ev_id] + ev.eta[1:]
+        c = capacity_pu[ev_id][-1]
+        print(f'day: {day}  en_capacity:{c}')
+        if c <= degradation_at:
             degraded = True
-    fleet.set_eta(cum_eta)
+        ev.eta0 = c
+        capacity_pu_end_day[ev_id].append(c)
     day += 1
 
 # %% Save data and show how long the battery lasted
-df_eta = pd.DataFrame(stored_eta)
-df_eta.to_csv(f'{opt_folder}eta.csv')
+df_capacity = pd.DataFrame(capacity_pu)
+df_capacity.to_csv(f'{opt_folder}capacity_pu.csv')
 
-print(f'The battery lasted {day/365.} years.')
+df_capacity_end_day = pd.DataFrame(capacity_pu_end_day)
+df_capacity_end_day.to_csv(f'{opt_folder}capacity_pu_end_day.csv')
+
+print(f'The battery lasted {len(capacity_pu[0])} cycles.')
