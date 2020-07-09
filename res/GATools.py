@@ -1,8 +1,15 @@
-from models.Fleet import *
-from typing import Tuple
 from deap import base, creator, tools
 import datetime, os
 import pandas as pd
+from models.Fleet import *
+from res.IOTools import write_pretty_xml
+
+# TYPES
+IndividualType = List
+IndicesType = Dict[int, Tuple[int, int]]
+StartingPointsType = Dict[int, InitialCondition]
+RouteVector = Tuple[Tuple[int, ...], Tuple[float, ...]]
+RouteDict = Dict[int, Tuple[RouteVector, float, float, float]]
 
 
 class HyperParameters:
@@ -99,7 +106,7 @@ class OptimizationIterationsData:
         # Edit assignation file
         self.fleet.assign_customers_in_route()
         assigned_path = f'{opt_path}/assigned.xml'
-        self.fleet.write_xml(assigned_path, True, True, False, True)
+        self.fleet.write_xml(assigned_path, True, True, True, True)
 
         '''
         tree = ET.parse(assigned_path)
@@ -166,12 +173,6 @@ def read_optimization_report(path, tree=None) -> Union[OptimizationReport, None]
                                     float(_report.get('execution_time')))
         return report
     return None
-
-
-def write_pretty_xml(path):
-    xml_pretty = xml.dom.minidom.parse(path).toprettyxml()
-    with open(path, 'w') as file:
-        file.write(xml_pretty)
 
 
 def fitness(routes: RouteDict, fleet: Fleet, hyper_parameters: HyperParameters):

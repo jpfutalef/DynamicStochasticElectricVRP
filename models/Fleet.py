@@ -1,21 +1,19 @@
 import time
-import xml.etree.ElementTree as ET
+
+import matplotlib.pyplot as plt
+import networkx as nx
+import pandas as pd
 import xml.dom.minidom
-from typing import Dict, List, Tuple, Union, NamedTuple
 
 # Visualization tools
 from bokeh.models import Whisker, Span, Range1d
 from bokeh.models.annotations import Arrow, Label
 from bokeh.models.arrow_heads import VeeHead
 from bokeh.plotting import figure, show
-import matplotlib.pyplot as plt
-import networkx as nx
 
-import numpy as np
 import models.Network as net
 from models.ElectricVehicle import *
-import res.IOTools
-from sklearn.neighbors import NearestNeighbors
+from res.IOTools import write_pretty_xml
 
 
 # CLASSES
@@ -112,10 +110,13 @@ class Fleet:
         if vehicles:
             self.vehicles_to_route = tuple(vehicles)
 
-    def set_routes_of_vehicles(self, routes: RouteDict) -> None:
+    def set_routes_of_vehicles(self, routes: RouteDict, with_degradation=False) -> None:
         for id_ev, (route, dep_time, dep_soc, dep_pay) in routes.items():
             self.vehicles[id_ev].set_route(route, dep_time, dep_soc, dep_pay)
-            self.vehicles[id_ev].iterate_space(self.network, self.eta_table, self.eta_model)
+            if with_degradation:
+                self.vehicles[id_ev].step_degradation(self.network, self.eta_table, self.eta_model)
+            else:
+                self.vehicles[id_ev].step(self.network)
 
     def set_eta(self, etas: Dict[int, float]):
         for id_ev, ev in self.vehicles.items():
@@ -290,7 +291,6 @@ class Fleet:
                 dist = distance(boolList, multi, b)
                 is_feasible = False
                 break
-
         return is_feasible, dist
 
     def save_operation_xml(self, path: str, critical_points: Dict[int, Tuple[int, float, float, float]], pretty=False):
@@ -327,7 +327,7 @@ class Fleet:
 
         tree.write(path)
         if pretty:
-            res.IOTools.write_pretty_xml(path)
+            write_pretty_xml(path)
         return tree
 
     def update_from_xml(self, path, do_network=False) -> ET:
@@ -737,8 +737,11 @@ class Fleet:
 
     def xml_tree(self, assign_customers=False, with_routes=False):
         _fleet = ET.Element('fleet')
+        ev_id = 0
         for vehicle in self.vehicles.values():
-            _fleet.append(vehicle.xml_element(assign_customers, with_routes))
+            if len(vehicle.assigned_customers) > 0:
+                _fleet.append(vehicle.xml_element(assign_customers, with_routes, ev_id))
+                ev_id += 1
         return _fleet
 
     def write_xml(self, path, network_in_file=False, assign_customers=False, with_routes=False,
@@ -799,3 +802,29 @@ def from_xml(path, assign_customers=False):
     fleet = Fleet(vehicles, network, tuple(vehicles_to_route))
 
     return fleet
+
+
+def routes_from_csv_folder(folder_path: str, fleet: Fleet) -> RouteDict:
+    routes: RouteDict = {}
+    for ev in fleet.vehicles.values():
+        path = f'{folder_path}EV{ev.id}_operation.csv'
+        df = pd.read_csv(path, index_col=0)
+        Sk, Lk = tuple(df.Sk.values), tuple(df.Lk.values)
+        x10, x20, x30 = df.x1_leaving.iloc[0], df.x2_leaving.iloc[0], df.x3_leaving.iloc[0]
+        routes[ev.id] = ((Sk, Lk), x10, x20, x30)
+    return routes
+
+
+def routes_from_xml(path: str, fleet: Fleet) -> RouteDict:
+    # Open XML file
+    tree = ET.parse(path)
+    _fleet: ET = tree.find('fleet')
+
+    routes: RouteDict = {}
+    for _ev in _fleet:
+        _pr = _ev.find('previous_route')
+        _cp = _ev.find('critical_point')
+        Sk, Lk = tuple(int(node.get('Sk')) for node in _pr), tuple(float(node.get('Lk')) for node in _pr)
+        x10, x20, x30 = float(_cp.get('x1')), float(_cp.get('x2')), float(_cp.get('x3'))
+        routes[int(_ev.get('id'))] = ((Sk, Lk), x10, x20, x30)
+    return routes

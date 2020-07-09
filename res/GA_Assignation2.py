@@ -1,5 +1,17 @@
+import datetime
+import os
 from random import randint, uniform, sample, random
+
+import pandas as pd
+
 from res.GATools import *
+
+# TYPES
+IndividualType = List
+IndicesType = Dict[int, Tuple[int, int]]
+StartingPointsType = Dict[int, InitialCondition]
+RouteVector = Tuple[Tuple[int, ...], Tuple[float, ...]]
+RouteDict = Dict[int, Tuple[RouteVector, float, float, float]]
 
 
 # MAIN FUNCTIONS
@@ -13,8 +25,6 @@ def decode(individual: IndividualType, m: int, fleet: Fleet, starting_points: St
     :param r: maximum charging operations allowed per vehicle
     :return: the routes encoded by the individual
     """
-    idt = len(individual) - m
-    ics = idt - 3 * m * r
 
     customer_sequences = get_customers(individual, m)
     charging_sequences = [[0] * len(x) for x in customer_sequences]
@@ -390,8 +400,8 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
         ind.feasible = feasible
 
     print(f'  Evaluated {len(pop)} individuals')
+    fits = [ind.fitness.values for ind in pop]
     bestOfAll = tools.selBest(pop, 1)[0]
-    print(f"Best individual  : {bestOfAll}\n Fitness: {bestOfAll.fitness.wvalues[0]} Feasible: {bestOfAll.feasible}")
 
     # These will save statistics
     opt_data = OptimizationIterationsData([], [], [], [], [], [], fleet, hp, bestOfAll, bestOfAll.feasible)

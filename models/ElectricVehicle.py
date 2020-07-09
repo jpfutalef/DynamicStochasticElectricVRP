@@ -29,42 +29,6 @@ def saturate(val, min_val, max_val):
     return val
 
 
-def F_step(route: RouteVector, state_reaching_matrix: ndarray, state_leaving_matrix: ndarray,
-           tt_array: ndarray, ec_array: ndarray, c_op_array: ndarray, ev_weight: float, eta: List[float],
-           network: Network, eta_table: np.ndarray, eta_model: NearestNeighbors):
-    Sk, Lk = route[0], route[1]
-    eta_init_index = 0
-    for k, (Sk0, Lk0, Sk1, Lk1) in enumerate(zip(Sk[:-1], Lk[:-1], Sk[1:], Lk[1:]), 1):
-        # TODO add waiting time
-        departure_time = state_leaving_matrix[0, k - 1]
-        payload = state_leaving_matrix[2, k - 1]
-
-        tij = network.t(Sk0, Sk1, departure_time)
-        eij = network.e(Sk0, Sk1, payload, ev_weight, departure_time) / eta[-1]
-        tt_array[0, k - 1] = tij
-        ec_array[0, k - 1] = eij
-
-        state_reaching_matrix[:, k] = state_leaving_matrix[:, k - 1] + np.array([tij, -eij, 0])
-
-        if network.isChargingStation(Sk1):
-            soch = saturate(state_leaving_matrix[1, eta_init_index], 0., 100.)
-            socl = saturate(state_reaching_matrix[1, k], 0., 100.)
-            eta.append(eta[-1] * eta_fun(socl, soch, 2000, eta_table, eta_model))
-            eta_init_index = k
-
-        tj = network.spent_time(Sk1, state_reaching_matrix[1, k], Lk1, eta[-1])
-        dj = network.demand(Sk1)
-
-        state_leaving_matrix[:, k] = state_reaching_matrix[:, k] + np.array([tj, Lk1, -dj])
-
-        if network.isChargingStation(Sk1):
-            c_op_array[0, k] = tj
-
-    soch = saturate(state_leaving_matrix[1, eta_init_index], 0., 100.)
-    socl = saturate(state_reaching_matrix[1, -1], 0., 100.)
-    eta.append(eta[-1] * eta_fun(socl, soch, 2000, eta_table, eta_model))
-
-
 @dataclass
 class ElectricVehicle:
     # Mandatory attributes
@@ -130,25 +94,20 @@ class ElectricVehicle:
         self.travel_times = np.zeros(size_tt)
         self.energy_consumption = np.zeros(size_ec)
         self.charging_times = np.zeros(size_c_op)
-        self.charging_times[0, 0] = route[1][0]
+        self.charging_times[0, 0] = route[1][0]  # TODO what's this?
         self.eta = [self.eta0]
 
-    def iterate_space(self, network: Network, eta_table: np.ndarray, eta_model: NearestNeighbors):
-        F_step(self.route, self.state_reaching, self.state_leaving, self.travel_times, self.energy_consumption,
-               self.charging_times, self.weight, self.eta, network, eta_table, eta_model)
-        '''
+    def step(self, network: Network):
         Sk, Lk = self.route[0], self.route[1]
         for k, (Sk0, Lk0, Sk1, Lk1) in enumerate(zip(Sk[:-1], Lk[:-1], Sk[1:], Lk[1:]), 1):
             # TODO add waiting time
             departure_time = self.state_leaving[0, k - 1]
             payload = self.state_leaving[2, k - 1]
 
-            tij = network.t(Sk0, Sk1, departure_time)
-            eij = network.e(Sk0, Sk1, payload, self.weight, departure_time) / self.eta0
-            self.travel_times[0, k - 1] = tij
-            self.energy_consumption[0, k - 1] = eij
+            self.travel_times[0, k - 1] = tij = network.t(Sk0, Sk1, departure_time)
+            self.energy_consumption[0, k - 1] = eij = network.e(Sk0, Sk1, payload, self.weight, departure_time)
 
-            self.state_reaching[:, k] = self.state_reaching[:, k - 1] + np.array([tij, -eij, 0])
+            self.state_reaching[:, k] = self.state_leaving[:, k - 1] + np.array([tij, -eij, 0])
 
             tj = network.spent_time(Sk1, self.state_reaching[1, k], Lk1)
             dj = network.demand(Sk1)
@@ -158,12 +117,41 @@ class ElectricVehicle:
             if network.isChargingStation(Sk1):
                 self.charging_times[0, k] = tj
 
-        socl, soch = min(self.state_reaching[1, :]), max(self.state_leaving[1, :])
-        self.eta = eta_fun(socl, soch, 2000)
-        '''
+    def step_degradation(self, network: Network, eta_table: np.ndarray = None, eta_model: NearestNeighbors = None):
+        Sk, Lk = self.route[0], self.route[1]
+        eta_init_index = 0
+        for k, (Sk0, Lk0, Sk1, Lk1) in enumerate(zip(Sk[:-1], Lk[:-1], Sk[1:], Lk[1:]), 1):
+            # TODO add waiting time
+            departure_time = self.state_leaving[0, k - 1]
+            payload = self.state_leaving[2, k - 1]
 
-    def xml_element(self, assign_customers=False, with_routes=False):
-        attribs = {'id': str(self.id),
+            self.travel_times[0, k - 1] = tij = network.t(Sk0, Sk1, departure_time)
+            self.energy_consumption[0, k - 1] = eij = network.e(Sk0, Sk1, payload, self.weight,
+                                                                departure_time) / self.eta[-1]
+
+            self.state_reaching[:, k] = self.state_leaving[:, k - 1] + np.array([tij, -eij, 0])
+
+            if network.isChargingStation(Sk1):
+                soch = saturate(self.state_leaving[1, eta_init_index], 0., 100.)
+                socl = saturate(self.state_reaching[1, k], 0., 100.)
+                self.eta.append(self.eta[-1] * eta_fun(socl, soch, 2000, eta_table, eta_model))
+                eta_init_index = k
+
+            tj = network.spent_time(Sk1, self.state_reaching[1, k], Lk1, self.eta[-1])
+            dj = network.demand(Sk1)
+
+            self.state_leaving[:, k] = self.state_reaching[:, k] + np.array([tj, Lk1, -dj])
+
+            if network.isChargingStation(Sk1):
+                self.charging_times[0, k] = tj
+
+        soch = saturate(self.state_leaving[1, eta_init_index], 0., 100.)
+        socl = saturate(self.state_reaching[1, -1], 0., 100.)
+        self.eta.append(self.eta[-1] * eta_fun(socl, soch, 2000, eta_table, eta_model))
+
+    def xml_element(self, assign_customers=False, with_routes=False, this_id=None):
+        the_id = this_id if this_id is not None else self.id
+        attribs = {'id': str(the_id),
                    'weight': str(self.weight),
                    'battery_capacity': str(self.battery_capacity),
                    'alpha_up': str(self.alpha_up),
@@ -179,7 +167,7 @@ class ElectricVehicle:
 
         if with_routes:
             _previous_route = ET.SubElement(element, 'previous_route')
-            for Sk, Lk in self.route[0], self.route[1]:
+            for Sk, Lk in zip(self.route[0], self.route[1]):
                 _point = ET.SubElement(_previous_route, 'node', attrib={'Sk': str(Sk), 'Lk': str(Lk)})
 
         return element

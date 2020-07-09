@@ -1,24 +1,8 @@
 from random import randint, uniform, sample, random
-from typing import Dict, List, Tuple
-
-import numpy as np
-
-from models.Fleet import Fleet, InitialCondition
-
-# CLASSES
-
-
-# TYPES
-IndividualType = List
-IndicesType = Dict[int, Tuple[int, int, int]]
-StartingPointsType = Dict[int, InitialCondition]
-RouteVector = Tuple[Tuple[int, ...], Tuple[float, ...]]
-RouteDict = Dict[int, Tuple[RouteVector, float, float, float]]
+from res.GATools import *
 
 
 # FUNCTIONS
-
-
 def decode(individual: IndividualType, indices: IndicesType, init_state: StartingPointsType) -> RouteDict:
     """
     """
@@ -31,8 +15,8 @@ def decode(individual: IndividualType, indices: IndicesType, init_state: Startin
         for i, _ in enumerate(Sk):
             charging_station, amount = chg_ops[2 * i], chg_ops[2 * i + 1]
             if charging_station != -1:
-                Sk = Sk[:i+offset] + [charging_station] + Sk[i+offset:]
-                Lk = Lk[:i+offset] + [amount] + Lk[i+offset:]
+                Sk = Sk[:i + offset] + [charging_station] + Sk[i + offset:]
+                Lk = Lk[:i + offset] + [amount] + Lk[i + offset:]
                 offset += 1
         Sk = tuple([0] + Sk + [0])
         Lk = tuple([0] + Lk + [0])
@@ -63,7 +47,7 @@ def mutate(individual: IndividualType, indices: IndicesType, charging_stations: 
                 # Case CS
                 elif i1 <= index < i2:
                     i = i1 + 2 * int((index - i1) / 2)
-                    sample_space = [-1]*len(charging_stations) + list(charging_stations)
+                    sample_space = [-1] * len(charging_stations) + list(charging_stations)
                     individual[i] = sample(sample_space, 1)[0]
                     individual[i + 1] = abs(individual[i + 1] + uniform(-10, 10))
 
@@ -143,7 +127,7 @@ def block_indices(customers_to_visit: Dict[int, Tuple[int, ...]]) -> IndicesType
     for id_vehicle, customers in customers_to_visit.items():
         ni = len(customers)
         i1 += ni
-        i2 = i1 + 2*ni
+        i2 = i1 + 2 * ni
         indices[id_vehicle] = (i0, i1, i2)
         i0 = i2 + 1
         i1, i2 = i0, i0
@@ -160,7 +144,7 @@ def random_individual(customers_per_vehicle: Dict[int, Tuple[int, ...]], chargin
         customer_sequence = sample(customers, len(customers))
         charging_operations = []
         for _ in customer_sequence:
-            #charging_operations.append(sample(sample_space, 1)[0])
+            # charging_operations.append(sample(sample_space, 1)[0])
             charging_operations.append(-1)
             charging_operations.append(uniform(5, 80))
         depart_time = [uniform(60 * 9, 60 * 12)]
@@ -204,3 +188,185 @@ def fitness(individual: IndividualType, fleet: Fleet, indices: IndicesType, init
     fit = np.dot(costs, np.asarray(weights)) + penalization
 
     return fit, feasible
+
+
+def individual_from_routes(routes: RouteDict) -> IndividualType:
+    ind = []
+    for (Sk, Lk), x10, x20, x3 in routes.values():
+        cust, chg_ops = [], []
+        for node, chg_amount in zip(Sk[1:-1], Lk[1:-1]):
+            if chg_amount > 0:
+                if chg_ops:
+                    chg_ops[-2:] = [node, chg_amount]
+                else:
+                    chg_ops = [node, chg_amount]
+            else:
+                cust.append(node)
+                chg_ops += [-1, 40.]
+        ind += cust + chg_ops + [x10]
+    return ind
+
+# THE ALGORITHM
+def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind: IndividualType = None):
+    customers_to_visit = {ev_id: ev.assigned_customers for ev_id, ev in fleet.vehicles.items()}
+    starting_points = {ev_id: InitialCondition(0, 0, 0, ev.alpha_up, sum([fleet.network.demand(x)
+                                                                          for x in ev.assigned_customers]))
+                       for ev_id, ev in fleet.vehicles.items()}
+    indices = block_indices(customers_to_visit)
+
+    # Fitness objects
+    creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
+    creator.create("Individual", list, fitness=creator.FitnessMin, feasible=False)
+
+    # Toolbox
+    toolbox = base.Toolbox()
+
+    toolbox.register("individual", random_individual, customers_per_vehicle=customers_to_visit,
+                     charging_stations=fleet.network.charging_stations)
+    toolbox.register("evaluate", fitness, fleet=fleet, indices=indices, init_state=starting_points, weights=hp.weights,
+                     penalization_constant=hp.penalization_constant)
+    toolbox.register("mate", crossover, indices=indices, repeat=hp.crossover_repeat)
+    toolbox.register("mutate", mutate, indices=indices, charging_stations=fleet.network.charging_stations,
+                     repeat=hp.mutation_repeat)
+    toolbox.register("select", tools.selTournament, tournsize=hp.tournament_size)
+    toolbox.register("select_worst", tools.selWorst)
+    toolbox.register("decode", decode, indices=indices, init_state=starting_points)
+
+    # BEGIN ALGORITHM
+    t_init = time.time()
+
+    # Random population
+    if best_ind is None:
+        pop = [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals)]
+    else:
+        pop = [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals - 1)]
+        pop.append(creator.Individual(best_ind))
+
+    routes = toolbox.decode(best_ind)
+
+    # Evaluate the initial population and get fitness of each individual
+    for ind in pop:
+        fit, feasible = toolbox.evaluate(ind)
+        ind.fitness.values = (fit,)
+        ind.feasible = feasible
+
+    print(f'  Evaluated {len(pop)} individuals')
+    bestOfAll = tools.selBest(pop, 1)[0]
+    print(f"Best individual  : {bestOfAll}\n Fitness: {bestOfAll.fitness.wvalues[0]} Feasible: {bestOfAll.feasible}")
+
+    # These will save statistics
+    opt_data = OptimizationIterationsData([], [], [], [], [], [], fleet, hp, bestOfAll, bestOfAll.feasible)
+
+    print("################  Start of evolution  ################")
+    # Begin the evolution
+    for g in range(hp.max_generations):
+        # A new generation
+        print(f"-- Generation {g}/{hp.max_generations} --")
+        opt_data.generations.append(g)
+
+        # Update block probabilities
+        if g < 50:
+            block_probabilities = (.33, .33, .33)
+        elif g < 100:
+            block_probabilities = (.2, .6, .2)
+        elif g < 150:
+            block_probabilities = (.6, .2, .2)
+        elif g < 200:
+            block_probabilities = (.33, .33, .33)
+        elif g < 250:
+            block_probabilities = (.2, .6, .2)
+        elif g < 300:
+            block_probabilities = (.6, .2, .33)
+        else:
+            block_probabilities = (.33, .33, .33)
+
+        # Select the best individuals, if given
+        if hp.keep_best:
+            best_individuals = list(map(toolbox.clone, tools.selBest(pop, hp.keep_best)))
+
+        # Select and clone the next generation individuals
+        offspring = toolbox.select(pop, len(pop))
+        offspring = list(map(toolbox.clone, offspring))
+
+        # Mutation
+        for mutant in offspring:
+            if random() < hp.MUTPB:
+                toolbox.mutate(mutant)
+                del mutant.fitness.values
+
+        # Crossover
+        for child1, child2 in zip(offspring[::2], offspring[1::2]):
+            if random() < hp.MUTPB:
+                toolbox.mate(child1, child2)
+                del child1.fitness.values
+                del child2.fitness.values
+
+        # Evaluate the individuals with invalid fitness
+        invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+        for ind in invalid_ind:
+            fit, feasible = toolbox.evaluate(ind)
+            ind.fitness.values = (fit,)
+            ind.feasible = feasible
+
+        print(f'  Evaluated {len(invalid_ind)} individuals')
+
+        # The population is entirely replaced by a sorted offspring
+        pop[:] = offspring
+        pop[:] = tools.selBest(pop, len(pop))
+
+        # Insert best individuals from previous generation
+        if hp.keep_best:
+            pop[:] = best_individuals + pop[:-hp.keep_best]
+
+        # Update best individual
+        bestInd = tools.selBest(pop, 1)[0]
+        if bestInd.fitness.wvalues[0] > bestOfAll.fitness.wvalues[0]:
+            bestOfAll = bestInd
+
+        # Real-time info
+        print(f"Best individual  : {bestInd}\n Fitness: {bestInd.fitness.wvalues[0]} Feasible: {bestInd.feasible}")
+
+        worstInd = tools.selWorst(pop, 1)[0]
+        print(f"Worst individual : {worstInd}\n Fitness: {worstInd.fitness.wvalues[0]} Feasible: {worstInd.feasible}")
+
+        print(
+            f"Curr. best-of-all: {bestOfAll}\n Fitness: {bestOfAll.fitness.wvalues[0]} Feasible: {bestOfAll.feasible}")
+
+        # Statistics
+        fits = [sum(ind.fitness.wvalues) for ind in pop]
+        mean = np.average(fits)
+        std = np.std(fits)
+
+        print(f"Max {max(fits)}")
+        print(f"Min {min(fits)}")
+        print(f"Avg {mean}")
+        print(f"Std {std}")
+
+        opt_data.best_fitness.append(-max(fits))
+        opt_data.worst_fitness.append(-min(fits))
+        opt_data.average_fitness.append(mean)
+        opt_data.std_fitness.append(std)
+        opt_data.best_individuals.append(bestInd)
+
+        print()
+
+    t_end = time.time()
+    print("################  End of (successful) evolution  ################")
+
+    algo_time = t_end - t_init
+    print('Algorithm time:', algo_time)
+
+    fit, feasible = toolbox.evaluate(bestOfAll)
+    routes = toolbox.decode(bestOfAll)
+
+    opt_data.bestOfAll = bestOfAll
+    opt_data.feasible = feasible
+    opt_data.algo_time = algo_time
+
+    if save_to:
+        try:
+            os.mkdir(save_to)
+        except FileExistsError:
+            pass
+        opt_data.save_opt_data(save_to)
+    return routes, fleet, bestOfAll, feasible, toolbox, opt_data

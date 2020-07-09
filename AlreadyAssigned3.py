@@ -30,30 +30,34 @@ t0 = time.time()
 
 sys.path.append('..')
 
-# %%
-# 1. Specify file
-file_name = '60C_2CS_1D_4EV_4CAP'
-folder_path = './data/XML_files/' + file_name + '/'
-path = folder_path + file_name + '_already_assigned.xml'
-print('Opening:', path)
+# %% 1. Specify instance location
+# data_folder = 'data/real_data/'
+data_folder = 'data/XML_files/35C_2CS_1D_3EV_4CAP_HIGHWEIGHT/08-07-2020_13-25-11_FEASIBLE_ASSIGNATION/'
+# instance_filename = data_folder.split('/')[-2]
+instance_filename = 'assigned'
+path = f'{data_folder}{instance_filename}.xml'
 
-# %% 3. Instance fleet
-all_charging_ops = 2
+print(f'Opening:\n {path}')
+
+# %% 2. Instance fleet
 fleet = from_xml(path, assign_customers=True)
+fleet.network.draw(save_to=None, width=0.02,
+                   edge_color='grey', markeredgecolor='black',
+                   markeredgewidth=2.0)
+input('Press enter to continue...')
+
+# %% 3. GA hyperparameters
+all_charging_ops = 2
 customers_to_visit = {ev_id: ev.assigned_customers for ev_id, ev in fleet.vehicles.items()}
+
 starting_points = {ev_id: InitialCondition(0, 0, 0, ev.alpha_up, sum([fleet.network.nodes[x].demand
                                                                            for x in ev.assigned_customers]))
                    for ev_id, ev in fleet.vehicles.items()}
-
-input('Press enter to continue...')
-
-# %%
-# 7. GA hyperparameters
-CXPB, MUTPB = 0.65, 0.75
+CXPB, MUTPB = 0.65, 0.85
 n_individuals = 90
 generations = 150
 penalization_constant = 500000
-weights = (0.1, 0.8, 0.9, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
+weights = (0.2, 0.8, 1.2, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
 keep_best = 1  # Keep the 'keep_best' best individuals
 #tournament_size = int(n_individuals * 0.1)
 tournament_size = 3

@@ -16,7 +16,7 @@ class NetworkNode:
     pos_x: float = 0.0
     pos_y: float = 0.0
 
-    def spentTime(self, p, q, eta=1.0):
+    def spentTime(self, p, q, eta=None):
         """
         The time an EV in this node.
         :param q: EV SOC when it arrives to this node
@@ -67,12 +67,15 @@ class ChargeStationNode(NetworkNode):
     technology: int = 1
     type: int = 2
 
-    def calculate_charging_time(self, init_soc, end_soc, eta=1.0):
-        t_points, soc_points = self.time_points, np.array(self.soc_points)
-        soc_points[1:-1] = eta * soc_points[1:-1]   # This includes degradation
-
-        end_time = t_points[-1] * 10. if end_soc > 100. else 0.
+    def spentTime(self, init_soc, increment, eta: float = None):
+        if eta:
+            t_points, soc_points = self.time_points, np.array(self.soc_points)
+            soc_points[1:-1] = eta * soc_points[1:-1]
+        else:
+            t_points, soc_points = self.time_points, self.soc_points
+        end_soc = init_soc + increment
         init_time = -t_points[-1] * 10. if end_soc < 0. else 0.
+        end_time = t_points[-1] * 10. if end_soc > 100. else 0.
 
         for t0, t1, y0, y1 in zip(t_points[:-1], t_points[1:], soc_points[:-1], soc_points[1:]):
             # find time where operation begins
@@ -88,9 +91,6 @@ class ChargeStationNode(NetworkNode):
                 break
 
         return end_time - init_time
-
-    def spentTime(self, init_soc, increment, eta=1.0):
-        return self.calculate_charging_time(init_soc, init_soc + increment, eta)
 
     def isChargeStation(self):
         return True

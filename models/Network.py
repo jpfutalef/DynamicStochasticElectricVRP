@@ -76,7 +76,7 @@ class Network:
           time_of_day: float) -> Union[float, int]:
         return self.edges[node_from][node_to].get_energy_consumption(payload, vehicle_weight, time_of_day)
 
-    def spent_time(self, node: int, p, q, eta=1.0):
+    def spent_time(self, node: int, p, q, eta=None):
         return self.nodes[node].spentTime(p, q, eta)
 
     def demand(self, node: int):

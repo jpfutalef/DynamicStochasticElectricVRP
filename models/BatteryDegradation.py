@@ -2,6 +2,12 @@ import numpy as np
 from sklearn.neighbors import NearestNeighbors
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib import rcParams
+
+rcParams['font.family'] = 'Times New Roman'
+rcParams['font.size'] = '14'
+rcParams['pdf.fonttype'] = 42
+rcParams['ps.fonttype'] = 42
 
 
 def eta(socl, soch, N, tabla: np.ndarray, model: NearestNeighbors):
@@ -43,11 +49,13 @@ if __name__ == '__main__':
     df6 = pd.read_csv('data/real_data/instances_london_bat/21nodes_50_100_1EV/capacity_pu.csv', index_col=0)
     df = pd.concat([df1, df2, df3, df4, df5, df6], axis=1, ignore_index=True)
     df.columns = ['0-100', '20-95', '25,75', '25-100', '30-70', '50-100']
-    df.plot()
-    plt.show()
-    df.plot()
-    plt.xlabel('Time (cycles)')
-    plt.ylabel('Capacity (p.u.)')
+
+    df.plot(linewidth=1., legend=False)
+    plt.axhline(0.8, linestyle='--', color='red', label='Degradación')
+    plt.xlabel('Ciclo')
+    plt.ylabel('Capacidad [p.u.]')
+    plt.legend()
+    plt.grid()
     plt.show()
 
     df1 = pd.read_csv('data/real_data/instances_london_bat/21nodes_0_100_1EV/capacity_pu_end_day.csv', index_col=0)
@@ -58,9 +66,11 @@ if __name__ == '__main__':
     df6 = pd.read_csv('data/real_data/instances_london_bat/21nodes_50_100_1EV/capacity_pu_end_day.csv', index_col=0)
     df = pd.concat([df1, df2, df3, df4, df5, df6], axis=1, ignore_index=True)
     df.columns = ['0-100', '20-95', '25,75', '25-100', '30-70', '50-100']
-    df.plot()
-    plt.show()
-    df.plot()
-    plt.xlabel('Time (days)')
-    plt.ylabel('Capacity (p.u.)')
+
+    df.plot(linewidth=1., legend=False)
+    plt.axhline(0.8, linestyle='--', color='red', label='Degradación')
+    plt.xlabel('Tiempo [día]')
+    plt.ylabel('Capacidad [p.u.]')
+    plt.legend()
+    plt.grid()
     plt.show()

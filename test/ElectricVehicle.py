@@ -46,6 +46,6 @@ if __name__ == '__main__':
     x2_0 = 80
     x3_0 = sum([n.nodes[i].requiredDemand() for i in ev.assigned_customers])
     ev.set_route(route_without_cs, 10 * 60, 80, x3_0)
-    ev.iterate_space(n)
+    ev.step(n)
 
     a = 1

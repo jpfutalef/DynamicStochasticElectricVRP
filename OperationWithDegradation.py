@@ -9,9 +9,9 @@ data_folder = 'data/real_data/instances_london_bat/'
 #instance_filename = '21nodes_0_100_1EV'
 #instance_filename = '21nodes_20_95_1EV'
 #instance_filename = '21nodes_25_75_1EV'
-#instance_filename = '21nodes_25_100_1EV'
+instance_filename = '21nodes_25_100_1EV'
 #instance_filename = '21nodes_30_70_1EV'
-instance_filename = '21nodes_50_100_1EV'
+#instance_filename = '21nodes_50_100_1EV'
 path = f'{data_folder}{instance_filename}.xml'
 print(f'Opening:\n {path}')
 
@@ -61,7 +61,7 @@ except FileExistsError:
 
 # %% 5. First routes
 bestOfAll = None
-#bestOfAll = [18, 15, 10, 9, 14, 17, 19, 20, 16, 4, 1, 3, 2, 6, 7, 5, 8, 13, 12, 11, '|', -1, 21, 10.03621240411417, -1, 21, 3.3093834433210967, -1, 21, 11.178597501344296, 629.6532388963317] # 0-100
+#bestOfAll = [15, 14, 17, 18, 19, 20, 16, 10, 9, 7, 6, 2, 1, 3, 4, 5, 8, 13, 12, 11, '|', -1, 21, 5.664558477457513, -1, 21, 10.561698891104808, -1, 21, 43.06264480070523, 700.8821086801553] # 0-100
 #bestOfAll = [14, 15, 9, 17, 18, 19, 20, 10, 7, 4, 3, 16, 13, 12, 6, 2, 1, 5, 8, 11, '|', 3, 21, 13.151243351255353, -1, 21, 0.2574423237339296, 3, 21, 25.420445559401614, 699.9828181578997] # 25-95
 #bestOfAll = [9, 15, 14, 17, 18, 19, 16, 20, 10, 7, 6, 5, 3, 2, 4, 13, 12, 11, 8, 1, '|', -1, 21, 19.700170398095803, 4, 21, 33.87054347634128, 10, 21, 34.92683392101684, 683.9210182855405] # 25-75
 #bestOfAll = [9, 15, 14, 18, 19, 17, 6, 4, 3, 2, 10, 5, 16, 20, 8, 7, 1, 12, 13, 11, '|', 17, 21, 28.57100983787813, 20, 21, 25.8966077594467, 10, 21, 38.88255709711892, 636.4233151111349] # 30-70
@@ -92,7 +92,7 @@ while not degraded:
         routes, fleet, bestOfAll, feasible, toolbox, optData = optimal_route_assignation(fleet, hyper_parameters,
                                                                                          save_to, best_ind=bestOfAll)
     # Set routes
-    fleet.set_routes_of_vehicles(routes)
+    fleet.set_routes_of_vehicles(routes, with_degradation=True)
 
     # Check degradation after the operation finishes
     for ev_id, ev in fleet.vehicles.items():

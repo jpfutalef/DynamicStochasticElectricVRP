@@ -1,9 +1,6 @@
 from random import randint, uniform, sample, random
-from typing import Dict, List, Tuple
 
-import numpy as np
-
-from models.Fleet import Fleet, InitialCondition
+from GATools import *
 
 # CLASSES
 
