@@ -99,8 +99,11 @@ class Fleet:
     def set_vehicles(self, vehicles: Dict[int, ElectricVehicle]) -> None:
         self.vehicles = vehicles
 
-    def set_network(self, net: net.Network) -> None:
-        self.network = net
+    def set_network(self, network: Network) -> None:
+        self.network = network
+
+    def drop_vehicle(self, ev_id: int) -> None:
+        del self.vehicles[ev_id]
 
     def assign_customers_in_route(self):
         for ev in self.vehicles.values():
@@ -110,12 +113,10 @@ class Fleet:
         if vehicles:
             self.vehicles_to_route = tuple(vehicles)
 
-    def set_routes_of_vehicles(self, routes: RouteDict, with_degradation=False) -> None:
+    def set_routes_of_vehicles(self, routes: RouteDict, iterate=True) -> None:
         for id_ev, (route, dep_time, dep_soc, dep_pay) in routes.items():
             self.vehicles[id_ev].set_route(route, dep_time, dep_soc, dep_pay)
-            if with_degradation:
-                self.vehicles[id_ev].step_degradation(self.network, self.eta_table, self.eta_model)
-            else:
+            if iterate:
                 self.vehicles[id_ev].step(self.network)
 
     def set_eta(self, etas: Dict[int, float]):

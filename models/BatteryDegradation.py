@@ -50,7 +50,7 @@ if __name__ == '__main__':
     df = pd.concat([df1, df2, df3, df4, df5, df6], axis=1, ignore_index=True)
     df.columns = ['0-100', '20-95', '25,75', '25-100', '30-70', '50-100']
 
-    df.plot(linewidth=1., legend=False)
+    df.plot(linewidth=1., legend=False, figsize=(16,9))
     plt.axhline(0.8, linestyle='--', color='red', label='Degradación')
     plt.xlabel('Ciclo')
     plt.ylabel('Capacidad [p.u.]')
@@ -67,7 +67,7 @@ if __name__ == '__main__':
     df = pd.concat([df1, df2, df3, df4, df5, df6], axis=1, ignore_index=True)
     df.columns = ['0-100', '20-95', '25,75', '25-100', '30-70', '50-100']
 
-    df.plot(linewidth=1., legend=False)
+    df.plot(linewidth=1., legend=False, figsize=(16,9))
     plt.axhline(0.8, linestyle='--', color='red', label='Degradación')
     plt.xlabel('Tiempo [día]')
     plt.ylabel('Capacidad [p.u.]')

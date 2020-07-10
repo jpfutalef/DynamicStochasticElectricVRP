@@ -41,18 +41,16 @@ class ElectricVehicle:
     max_payload: Union[int, float]
 
     # Dynamic-related variables
-    assigned_customers: Tuple[int, ...] = None
+    assigned_customers: Tuple[int, ...] = ()
     x1_0: float = 0.0
     x2_0: float = 100.0
     x3_0: float = 0.0
-    eta0: float = 1.0
     route: RouteVector = None
     travel_times: ndarray = None
     energy_consumption: ndarray = None
     charging_times: ndarray = None
     state_reaching: ndarray = None
     state_leaving: ndarray = None
-    eta: List[float] = None
 
     def set_customers_to_visit(self, new_customers: Tuple[int, ...]):
         self.assigned_customers = new_customers
@@ -60,26 +58,18 @@ class ElectricVehicle:
     def assign_customers_in_route(self, network: Network):
         self.assigned_customers = tuple([node for node in self.route[0] if network.isCustomer(node)])
 
-    def set_route(self, route: RouteVector, x1_0: float, x2_0: float, x3_0: float, stochastic=False):
+    def set_route(self, route: RouteVector, x1_0: float, x2_0: float, x3_0: float):
         self.route = route
         self.x1_0 = x1_0
         self.x2_0 = x2_0
         self.x3_0 = x3_0
         len_route = len(route[0])
 
-        if stochastic:
-            # TODO define sizes properly for the stochastic case
-            size_state_matrix = (3, len_route)
-            size_tt = (1, len_route - 1)
-            size_ec = (1, len_route - 1)
-            size_c_op = (1, len_route)
-            init_state = (self.x1_0, self.x2_0, self.x3_0)
-        else:
-            size_state_matrix = (3, len_route)
-            size_tt = (1, len_route - 1)
-            size_ec = (1, len_route - 1)
-            size_c_op = (1, len_route)
-            init_state = (self.x1_0, self.x2_0, self.x3_0)
+        size_state_matrix = (3, len_route)
+        size_tt = (1, len_route - 1)
+        size_ec = (1, len_route - 1)
+        size_c_op = (1, len_route)
+        init_state = (self.x1_0, self.x2_0, self.x3_0)
 
         # Matrices
         self.state_reaching = np.zeros(size_state_matrix)
@@ -95,7 +85,6 @@ class ElectricVehicle:
         self.energy_consumption = np.zeros(size_ec)
         self.charging_times = np.zeros(size_c_op)
         self.charging_times[0, 0] = route[1][0]  # TODO what's this?
-        self.eta = [self.eta0]
 
     def step(self, network: Network):
         Sk, Lk = self.route[0], self.route[1]
@@ -117,9 +106,11 @@ class ElectricVehicle:
             if network.isChargingStation(Sk1):
                 self.charging_times[0, k] = tj
 
-    def step_degradation(self, network: Network, eta_table: np.ndarray = None, eta_model: NearestNeighbors = None):
+    def step_degradation_eta(self, network: Network, eta0: float, eta_table: np.ndarray,
+                             eta_model: NearestNeighbors) -> List[float]:
         Sk, Lk = self.route[0], self.route[1]
         eta_init_index = 0
+        eta = [eta0]
         for k, (Sk0, Lk0, Sk1, Lk1) in enumerate(zip(Sk[:-1], Lk[:-1], Sk[1:], Lk[1:]), 1):
             # TODO add waiting time
             departure_time = self.state_leaving[0, k - 1]
@@ -127,17 +118,17 @@ class ElectricVehicle:
 
             self.travel_times[0, k - 1] = tij = network.t(Sk0, Sk1, departure_time)
             self.energy_consumption[0, k - 1] = eij = network.e(Sk0, Sk1, payload, self.weight,
-                                                                departure_time) / self.eta[-1]
+                                                                departure_time) / eta[-1]
 
             self.state_reaching[:, k] = self.state_leaving[:, k - 1] + np.array([tij, -eij, 0])
 
             if network.isChargingStation(Sk1):
                 soch = saturate(self.state_leaving[1, eta_init_index], 0., 100.)
                 socl = saturate(self.state_reaching[1, k], 0., 100.)
-                self.eta.append(self.eta[-1] * eta_fun(socl, soch, 2000, eta_table, eta_model))
+                eta.append(eta[-1] * eta_fun(socl, soch, 2000, eta_table, eta_model))
                 eta_init_index = k
 
-            tj = network.spent_time(Sk1, self.state_reaching[1, k], Lk1, self.eta[-1])
+            tj = network.spent_time(Sk1, self.state_reaching[1, k], Lk1, eta[-1])
             dj = network.demand(Sk1)
 
             self.state_leaving[:, k] = self.state_reaching[:, k] + np.array([tj, Lk1, -dj])
@@ -147,7 +138,39 @@ class ElectricVehicle:
 
         soch = saturate(self.state_leaving[1, eta_init_index], 0., 100.)
         socl = saturate(self.state_reaching[1, -1], 0., 100.)
-        self.eta.append(self.eta[-1] * eta_fun(socl, soch, 2000, eta_table, eta_model))
+        eta.append(eta[-1] * eta_fun(socl, soch, 2000, eta_table, eta_model))
+        return eta[1:]
+
+    def step_degradation_eta_capacity(self, network: Network, eta0: float, used_capacity: float, eta_table: np.ndarray,
+                                      eta_model: NearestNeighbors) -> Tuple[List[float], float]:
+        Sk, Lk = self.route[0], self.route[1]
+        eta = [eta0]
+        for k, (Sk0, Lk0, Sk1, Lk1) in enumerate(zip(Sk[:-1], Lk[:-1], Sk[1:], Lk[1:]), 1):
+            # TODO add waiting time
+            departure_time = self.state_leaving[0, k - 1]
+            payload = self.state_leaving[2, k - 1]
+
+            self.travel_times[0, k - 1] = tij = network.t(Sk0, Sk1, departure_time)
+            self.energy_consumption[0, k - 1] = eij = network.e(Sk0, Sk1, payload, self.weight,
+                                                                departure_time) / eta[-1]
+
+            self.state_reaching[:, k] = self.state_leaving[:, k - 1] + np.array([tij, -eij, 0])
+
+            Eij = eij * eta[-1] * 20000 / 100.
+            used_capacity += Eij
+            if used_capacity >= self.battery_capacity:
+                used_capacity -= self.battery_capacity
+                eta.append(eta[-1] * eta_fun(self.alpha_down, self.alpha_up, 2000, eta_table, eta_model))
+
+            tj = network.spent_time(Sk1, self.state_reaching[1, k], Lk1, eta[-1])
+            dj = network.demand(Sk1)
+
+            self.state_leaving[:, k] = self.state_reaching[:, k] + np.array([tj, Lk1, -dj])
+
+            if network.isChargingStation(Sk1):
+                self.charging_times[0, k] = tj
+
+        return eta[1:], used_capacity
 
     def xml_element(self, assign_customers=False, with_routes=False, this_id=None):
         the_id = this_id if this_id is not None else self.id
