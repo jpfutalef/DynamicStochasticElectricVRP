@@ -116,6 +116,11 @@ class Fleet:
 
         self.vehicles_to_route = tuple(i for i in range(new_size))
 
+    def new_soc_policy(self, alpha_down, alpha_upp):
+        for ev in self.vehicles.values():
+            ev.alpha_down = alpha_down
+            ev.alpha_up = alpha_upp
+
     def drop_vehicle(self, ev_id: int) -> None:
         del self.vehicles[ev_id]
 
