@@ -80,6 +80,10 @@ class Network:
         return self.nodes[node].demand
 
     def waiting_time(self, i, j, done_time, payload_after, vehicle_weight):
+        if self.nodes[j].isDepot() or self.nodes[j].isChargeStation():
+            tt = self.t(i, j, done_time)
+            ec = self.e(i, j, payload_after, vehicle_weight, done_time, tt)
+            return tt, ec, 0.0
         return self.edges[i][j].waiting_time(done_time, self.nodes[j].time_window_low, payload_after, vehicle_weight)
 
     def isDepot(self, node: int):

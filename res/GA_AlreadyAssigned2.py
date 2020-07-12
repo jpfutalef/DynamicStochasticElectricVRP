@@ -146,7 +146,7 @@ def random_individual(customers_per_vehicle: Dict[int, Tuple[int, ...]], chargin
         for _ in customer_sequence:
             # charging_operations.append(sample(sample_space, 1)[0])
             charging_operations.append(-1)
-            charging_operations.append(uniform(5, 80))
+            charging_operations.append(uniform(5, 20))
         depart_time = [uniform(60 * 9, 60 * 12)]
         individual += customer_sequence + charging_operations + depart_time
     return individual
@@ -175,7 +175,7 @@ def fitness(individual: IndividualType, fleet: Fleet, indices: IndicesType, init
     fleet.create_optimization_vector()
 
     # Cost
-    cost_tt, cost_ec, cost_chg_op, cost_chg_cost = fleet.cost_function()
+    costs = np.array(fleet.cost_function())
 
     # Check if the solution is feasible
     feasible, penalization = fleet.feasible()
@@ -184,7 +184,6 @@ def fitness(individual: IndividualType, fleet: Fleet, indices: IndicesType, init
     if not feasible:
         penalization += penalization_constant
 
-    costs = np.array([cost_tt, cost_ec, cost_chg_op, cost_chg_cost])
     fit = np.dot(costs, np.asarray(weights)) + penalization
 
     return fit, feasible
@@ -202,7 +201,7 @@ def individual_from_routes(routes: RouteDict) -> IndividualType:
                     chg_ops = [node, chg_amount]
             else:
                 cust.append(node)
-                chg_ops += [-1, 40.]
+                chg_ops += [-1, uniform(5, 20)]
         ind += cust + chg_ops + [x10]
     return ind
 

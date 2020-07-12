@@ -46,7 +46,7 @@ def decode(individual: IndividualType, m: int, fleet: Fleet, starting_points: St
 
 
 def fitness(individual: IndividualType, fleet: Fleet, starting_points: StartingPointsType,
-            weights=(1.0, 1.0, 1.0, 1.0), penalization_constant=500000, r=2):
+            weights=(1.0, 1.0, 1.0, 1.0, 1.0), penalization_constant=500000, r=2):
     """
     Positive fitness of the individual.
     :param individual:
@@ -69,7 +69,7 @@ def fitness(individual: IndividualType, fleet: Fleet, starting_points: StartingP
     fleet.create_optimization_vector()
 
     # Cost
-    cost_tt, cost_ec, cost_chg_op, cost_chg_cost = fleet.cost_function()
+    cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_wait_time = fleet.cost_function()
 
     # Check if the solution is feasible
     feasible, penalization = fleet.feasible()
@@ -78,7 +78,7 @@ def fitness(individual: IndividualType, fleet: Fleet, starting_points: StartingP
     if not feasible:
         penalization += penalization_constant
 
-    costs = np.array([cost_tt, cost_ec, cost_chg_op, cost_chg_cost])
+    costs = np.array([cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_wait_time])
     fit = np.dot(costs, np.asarray(weights)) + penalization
 
     return fit, feasible

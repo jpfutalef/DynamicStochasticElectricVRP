@@ -1,5 +1,7 @@
 from res.GA_Assignation import *
 from res.GATools import *
+from res.GA_AlreadyAssigned2 import individual_from_routes
+from res.GA_AlreadyAssigned2 import optimal_route_assignation as assigned_routing
 import pandas as pd
 import os
 
@@ -27,9 +29,9 @@ fleet.network.draw(save_to=None, width=0.02,
 CXPB = 0.75
 MUTPB = 0.88
 num_individuals = 120
-max_generations = 1
+max_generations = 300
 penalization_constant = 500000
-weights = (0.2, 0.8, 1.2, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
+weights = (0.2, 0.8, 1.2, 0.0, 3.5)  # travel_time, charging_time, energy_consumption, charging_cost
 keep_best = 1  # Keep the 'keep_best' best individuals
 tournament_size = 3
 r = 3
@@ -62,7 +64,7 @@ except FileExistsError:
 
 # %% 5. First routes
 bestOfAll = None
-# bestOfAll = [16, 17, 15, 6, 7, 3, 13, 12, 10, 9, 14, 20, 19, 18, 11, 8, 5, 4, 1, 2, '|', -1, 21, 17.477861132679163, -1, 21, 9.043715167470314, -1, 21, 27.099585092313035, 694.5059771561039]
+bestOfAll = [19, 16, 17, 15, 10, 4, 2, 6, 9, 13, 12, 11, 14, 5, 1, 3, 7, 8, 18, 20, '|', -1, 21, 24.438099388831795, -1, 21, 5.328472569332202, -1, 21, 20.983670251289247, 704.680288022835]
 # bestOfAll = [15, 14, 17, 18, 19, 20, 16, 10, 9, 7, 6, 2, 1, 3, 4, 5, 8, 13, 12, 11, '|', -1, 21, 5.664558477457513, -1, 21, 10.561698891104808, -1, 21, 43.06264480070523, 700.8821086801553]  # 0-100 cambiar 13 por -1
 # bestOfAll = [14, 15, 9, 17, 18, 19, 20, 10, 7, 4, 3, 16, 13, 12, 6, 2, 1, 5, 8, 11, '|', 3, 21, 13.151243351255353, -1, 21, 0.2574423237339296, 3, 21, 25.420445559401614, 699.9828181578997] # 25-95
 # bestOfAll = [9, 15, 14, 17, 18, 19, 16, 20, 10, 7, 6, 5, 3, 2, 4, 13, 12, 11, 8, 1, '|', -1, 21, 19.700170398095803, 4, 21, 33.87054347634128, 10, 21, 34.92683392101684, 683.9210182855405] # 25-75
@@ -98,6 +100,7 @@ while not all_degraded:
         route = False
 
     # Set routes
+    fit, feasi = toolbox.evaluate(bestOfAll)
     fleet.set_routes_of_vehicles(routes, iterate=False)
 
     # Degrade

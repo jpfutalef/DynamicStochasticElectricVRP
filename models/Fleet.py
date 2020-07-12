@@ -127,7 +127,7 @@ class Fleet:
         # It is assumed that each EV has a set route by using the ev.set_rout(...) method
         # 0. Preallocate optimization vector
         sum_si = sum([len(self.vehicles[x].route[0]) for x in self.vehicles_to_route])
-        length_op_vector = sum_si * (8 + 2 * len(self.network)) - 2 * len(self.vehicles_to_route) * (
+        length_op_vector = sum_si * (10 + 2 * len(self.network)) - 2 * len(self.vehicles_to_route) * (
                 len(self.network) + 1) + len(self.network)
         self.optimization_vector = np.zeros(length_op_vector)
 
@@ -137,12 +137,14 @@ class Fleet:
         ix1 = iL + sum_si
         ix2 = ix1 + sum_si
         ix3 = ix2 + sum_si
-        iD = ix3 + sum_si
+        ix1L = ix3 + sum_si
+        iWT = ix1L + sum_si
+        iD = iWT + sum_si
         iT = iD + sum_si
         iE = iT + sum_si - len(self.vehicles_to_route)
         iTheta = iE + sum_si - len(self.vehicles_to_route)
 
-        self.optimization_vector_indices = (iS, iL, ix1, ix2, ix3, iD, iT, iE, iTheta)
+        self.optimization_vector_indices = (iS, iL, ix1, ix2, ix3, ix1L, iWT, iD, iT, iE, iTheta)
 
         time_vectors = []
         for id_ev in self.vehicles_to_route:
@@ -152,6 +154,8 @@ class Fleet:
             self.optimization_vector[ix1:ix1 + si] = self.vehicles[id_ev].state_reaching[0, :]
             self.optimization_vector[ix2:ix2 + si] = self.vehicles[id_ev].state_reaching[1, :]
             self.optimization_vector[ix3:ix3 + si] = self.vehicles[id_ev].state_reaching[2, :]
+            self.optimization_vector[ix1L:ix1L + si] = self.vehicles[id_ev].state_leaving[0, :]
+            self.optimization_vector[iWT:iWT + si] = self.vehicles[id_ev].waiting_times
             self.optimization_vector[iD:iD + si] = self.vehicles[id_ev].charging_times
             self.optimization_vector[iT:iT + si - 1] = self.vehicles[id_ev].travel_times
             self.optimization_vector[iE:iE + si - 1] = self.vehicles[id_ev].energy_consumption
@@ -164,6 +168,8 @@ class Fleet:
             ix1 += si
             ix2 += si
             ix3 += si
+            ix1L += si
+            iWT += si
             iD += si
             iT += si - 1
             iE += si - 1
@@ -178,13 +184,14 @@ class Fleet:
         return self.optimization_vector
 
     def cost_function(self) -> Tuple:
-        iS, iL, ix1, ix2, ix3, iD, iT, iE, iTheta = self.optimization_vector_indices
+        iS, iL, ix1, ix2, ix3, ix1L, iWT, iD, iT, iE, iTheta = self.optimization_vector_indices
         op_vector = self.optimization_vector
         cost_tt = np.sum(op_vector[iT:iE])
         cost_ec = np.sum(op_vector[iE:iTheta])
         cost_chg_op = np.sum(op_vector[iD:iT])
         cost_chg_cost = np.sum(op_vector[iL:ix1])
-        return cost_tt, cost_ec, cost_chg_op, cost_chg_cost
+        cost_wait_time = np.sum(op_vector[iWT:iD])
+        return cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_wait_time
 
     def feasible(self) -> (bool, Union[int, float]):
         # 1. Variables to return
@@ -199,7 +206,7 @@ class Fleet:
         sum_si = np.sum(len(vehicle.route[0]) for _, vehicle in self.vehicles.items())
         length_op_vector = len(self.optimization_vector)
 
-        iS, iL, ix1, ix2, ix3, iD, iT, iE, iTheta = self.optimization_vector_indices
+        iS, iL, ix1, ix2, ix3, ix1L, iWT, iD, iT, iE, iTheta = self.optimization_vector_indices
 
         # 3. Amount of rows
         rows = 0
@@ -245,8 +252,8 @@ class Fleet:
                     b[row] = -network.nodes[Sk].time_window_low
                     row += 1
 
-                    A[row, ix1 + si + k] = 1.0
-                    b[row] = network.nodes[Sk].time_window_upp - network.spent_time(Sk, None, None)
+                    A[row, ix1L + si + k] = 1.0
+                    b[row] = network.nodes[Sk].time_window_upp
                     row += 1
             si += len(vehicle.route[0])
 
@@ -712,7 +719,7 @@ class Fleet:
 
         # Now, charging stations
         network_size = len(self.network)
-        full_operation_theta_vector = self.optimization_vector[self.optimization_vector_indices[8]:]
+        full_operation_theta_vector = self.optimization_vector[self.optimization_vector_indices[10]:]
         triggers = int(len(full_operation_theta_vector) / network_size)
         occupations = {x: [] for x in self.network.charging_stations}
         for i in range(triggers):

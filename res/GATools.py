@@ -87,13 +87,14 @@ class OptimizationIterationsData:
 
         # costs
         cost_filepath = opt_path + '/costs.csv'
-        weight_tt, weight_ec, weight_chg_op, weight_chg_cost = self.hyper_parameters.weights
-        cost_tt, cost_ec, cost_chg_op, cost_chg_cost = self.fleet.cost_function()
+        weight_tt, weight_ec, weight_chg_op, weight_chg_cost, weight_wait_time = self.hyper_parameters.weights
+        cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_weight_time = self.fleet.cost_function()
         index = ['weight', 'cost']
-        data = [[weight_tt, weight_ec, weight_chg_op, weight_chg_cost],
-                [cost_tt, cost_ec, cost_chg_op, cost_chg_cost]]
+        data = [[weight_tt, weight_ec, weight_chg_op, weight_chg_cost, weight_wait_time],
+                [cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_weight_time]]
         df_costs = pd.DataFrame(data, columns=['Travel Time (min)', 'Energy Consumption (SOC)',
-                                               'Charging Time (min)', 'Charging Cost'], index=index)
+                                               'Charging Time (min)', 'Charging Cost', 'Waiting Time (min)'],
+                                index=index)
         df_costs.to_csv(cost_filepath)
 
         # save hyper-parameters
