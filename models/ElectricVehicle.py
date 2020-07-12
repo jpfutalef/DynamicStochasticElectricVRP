@@ -92,7 +92,8 @@ class ElectricVehicle:
     def step(self, network: Network):
         Sk, Lk = self.route[0], self.route[1]
         tij = network.t(Sk[0], Sk[1], self.state_leaving[0, 0])
-        eij = network.e(Sk[0], Sk[1], self.state_leaving[2, 0], self.weight, self.state_leaving[0, 0], tij)
+        Eij = network.e(Sk[0], Sk[1], self.state_leaving[2, 0], self.weight, self.state_leaving[0, 0], tij)
+        eij = Eij * 100 / self.battery_capacity
         for k, (Sk0, Lk0, Sk1, Lk1) in enumerate(zip(Sk[1:-1], Lk[1:-1], Sk[2:], Lk[2:]), 1):
             self.state_reaching[:, k] = self.state_leaving[:, k - 1] + np.array([tij, -eij, 0])
 
@@ -100,8 +101,8 @@ class ElectricVehicle:
             di = network.demand(Sk0)
             done_time = self.state_reaching[0, k] + ti
             payload_after = self.state_reaching[2, k] - di
-            tij, eij, wti = network.waiting_time(Sk0, Sk1, done_time, payload_after, self.weight)
-            eij = eij * 100 / self.battery_capacity
+            tij, Eij, wti = network.waiting_time(Sk0, Sk1, done_time, payload_after, self.weight)
+            eij = Eij * 100 / self.battery_capacity
 
             self.state_leaving[:, k] = self.state_reaching[:, k] + np.array([ti + wti, Lk0, -di])
 
@@ -121,7 +122,8 @@ class ElectricVehicle:
         eta = [eta0]
         Sk, Lk = self.route[0], self.route[1]
         tij = network.t(Sk[0], Sk[1], self.state_leaving[0, 0])
-        eij = network.e(Sk[0], Sk[1], self.state_leaving[2, 0], self.weight, self.state_leaving[0, 0], tij)
+        Eij = network.e(Sk[0], Sk[1], self.state_leaving[2, 0], self.weight, self.state_leaving[0, 0], tij)
+        eij = Eij * 100 / self.battery_capacity
         for k, (Sk0, Lk0, Sk1, Lk1) in enumerate(zip(Sk[1:-1], Lk[1:-1], Sk[2:], Lk[2:]), 1):
             self.state_reaching[:, k] = self.state_leaving[:, k - 1] + np.array([tij, -eij, 0])
 
@@ -135,8 +137,8 @@ class ElectricVehicle:
             di = network.demand(Sk0)
             done_time = self.state_reaching[0, k] + ti
             payload_after = self.state_reaching[2, k] - di
-            tij, eij, wti = network.waiting_time(Sk0, Sk1, done_time, payload_after, self.weight)
-            eij = eij * 100 / (eta[-1] * self.battery_capacity)
+            tij, Eij, wti = network.waiting_time(Sk0, Sk1, done_time, payload_after, self.weight)
+            eij = Eij * 100 / self.battery_capacity
 
             self.state_leaving[:, k] = self.state_reaching[:, k] + np.array([ti + wti, Lk0, -di])
 
@@ -160,11 +162,12 @@ class ElectricVehicle:
         Sk, Lk = self.route[0], self.route[1]
         eta = [eta0]
         tij = network.t(Sk[0], Sk[1], self.state_leaving[0, 0])
-        eij = network.e(Sk[0], Sk[1], self.state_leaving[2, 0], self.weight, self.state_leaving[0, 0], tij)
+        Eij = network.e(Sk[0], Sk[1], self.state_leaving[2, 0], self.weight, self.state_leaving[0, 0], tij)
+        eij = Eij * 100 / self.battery_capacity
         for k, (Sk0, Lk0, Sk1, Lk1) in enumerate(zip(Sk[1:-1], Lk[1:-1], Sk[2:], Lk[2:]), 1):
             self.state_reaching[:, k] = self.state_leaving[:, k - 1] + np.array([tij, -eij, 0])
 
-            used_capacity += eij
+            used_capacity += Eij
             if used_capacity >= self.battery_capacity:
                 used_capacity -= self.battery_capacity
                 eta.append(eta[-1] * eta_fun(self.alpha_down, self.alpha_up, 2000, eta_table, eta_model))
@@ -173,8 +176,8 @@ class ElectricVehicle:
             di = network.demand(Sk0)
             done_time = self.state_reaching[0, k] + ti
             payload_after = self.state_reaching[2, k] - di
-            tij, eij, wti = network.waiting_time(Sk0, Sk1, done_time, payload_after, self.weight)
-            eij = eij * 100 / self.battery_capacity
+            tij, Eij, wti = network.waiting_time(Sk0, Sk1, done_time, payload_after, self.weight)
+            eij = Eij * 100 / self.battery_capacity
 
             self.state_leaving[:, k] = self.state_reaching[:, k] + np.array([ti + wti, Lk0, -di])
 

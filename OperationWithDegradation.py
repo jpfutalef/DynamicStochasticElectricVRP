@@ -17,7 +17,7 @@ path = f'{data_folder}{instance_filename}.xml'
 print(f'Opening:\n {path}')
 
 route_every = 20  # days
-degradation_at = 0.99  # between 0 and 1
+degradation_at = 0.8  # between 0 and 1
 
 # %% 2. Instance fleet
 fleet = from_xml(path, assign_customers=False)
@@ -28,8 +28,8 @@ fleet.network.draw(save_to=None, width=0.02,
 # %% 3. GA hyper-parameters for first routing
 CXPB = 0.75
 MUTPB = 0.88
-num_individuals = 120
-max_generations = 300
+num_individuals = 12
+max_generations = 30
 penalization_constant = 500000
 weights = (0.2, 0.8, 1.2, 0.0, 3.5)  # travel_time, charging_time, energy_consumption, charging_cost
 keep_best = 1  # Keep the 'keep_best' best individuals
@@ -80,7 +80,7 @@ while not all_degraded:
     #if False:
         save_to = f'{opt_folder}day{day}/'
         if optData.feasible:
-            hyper_parameters = HyperParameters(120, 300, CXPB, MUTPB,
+            hyper_parameters = HyperParameters(12, 30, CXPB, MUTPB,
                                                tournament_size=tournament_size,
                                                penalization_constant=penalization_constant,
                                                keep_best=keep_best,
@@ -88,7 +88,7 @@ while not all_degraded:
                                                r=r,
                                                starting_points=starting_points)
         else:
-            hyper_parameters = HyperParameters(300, 400, CXPB, MUTPB,
+            hyper_parameters = HyperParameters(30, 40, CXPB, MUTPB,
                                                tournament_size=tournament_size,
                                                penalization_constant=penalization_constant,
                                                keep_best=keep_best,
@@ -100,20 +100,20 @@ while not all_degraded:
         route = False
 
     # Set routes
-    fit, feasi = toolbox.evaluate(bestOfAll)
     fleet.set_routes_of_vehicles(routes, iterate=False)
 
     # Degrade
     drop = []
     for ev_id, ev in fleet.vehicles.items():
         eta0 = capacity_pu_end_day[ev_id][-1]
-
+        '''''
         used_capacity = used_capacity_end_day[ev_id]
         eta, used_capacity = ev.step_degradation_eta_capacity(fleet.network, eta0, used_capacity, fleet.eta_table,
                                                               fleet.eta_model)
         used_capacity_end_day[ev_id] = used_capacity
+        '''
 
-        #eta = ev.step_degradation_eta(fleet.network, eta0, fleet.eta_table, fleet.eta_model)
+        eta = ev.step_degradation_eta(fleet.network, eta0, fleet.eta_table, fleet.eta_model)
 
         capacity_pu[ev_id] += eta
         capacity_pu_end_day[ev_id] = capacity_pu_end_day[ev_id] + [eta[-1]] if eta else capacity_pu_end_day[ev_id]
