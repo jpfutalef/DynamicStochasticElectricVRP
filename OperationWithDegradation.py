@@ -4,11 +4,11 @@ import pandas as pd
 import os
 
 # %% 1. Specify instance location, routing frequency, and degradation threshold
-data_folder = 'data/real_data/instances_london_bat/'
-# instance_filename = '21nodes_0_100_1EV'
+data_folder = 'data/instances_real_data/normal_weight/'
+instance_filename = '21nodes_0_100_1EV'
 # instance_filename = '21nodes_20_95_1EV'
 # instance_filename = '21nodes_25_75_1EV'
-instance_filename = '21nodes_25_100_1EV'
+# instance_filename = '21nodes_25_100_1EV'
 # instance_filename = '21nodes_30_70_1EV'
 # instance_filename = '21nodes_50_100_1EV'
 path = f'{data_folder}{instance_filename}.xml'
@@ -26,7 +26,7 @@ fleet.network.draw(save_to=None, width=0.02,
 # %% 3. GA hyper-parameters for first routing
 CXPB = 0.75
 MUTPB = 0.88
-num_individuals = 2
+num_individuals = 120
 max_generations = 1
 penalization_constant = 500000
 weights = (0.2, 0.8, 1.2, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
@@ -62,8 +62,8 @@ except FileExistsError:
 
 # %% 5. First routes
 bestOfAll = None
-bestOfAll = [15, 14, 17, 18, 19, 20, 16, 10, 9, 7, 6, 2, 1, 3, 4, 5, 8, 13, 12, 11, '|', -1, 21, 5.664558477457513, -1,
-             21, 10.561698891104808, -1, 21, 43.06264480070523, 700.8821086801553]  # 0-100 cambiar 13 por -1
+# bestOfAll = [16, 17, 15, 6, 7, 3, 13, 12, 10, 9, 14, 20, 19, 18, 11, 8, 5, 4, 1, 2, '|', -1, 21, 17.477861132679163, -1, 21, 9.043715167470314, -1, 21, 27.099585092313035, 694.5059771561039]
+# bestOfAll = [15, 14, 17, 18, 19, 20, 16, 10, 9, 7, 6, 2, 1, 3, 4, 5, 8, 13, 12, 11, '|', -1, 21, 5.664558477457513, -1, 21, 10.561698891104808, -1, 21, 43.06264480070523, 700.8821086801553]  # 0-100 cambiar 13 por -1
 # bestOfAll = [14, 15, 9, 17, 18, 19, 20, 10, 7, 4, 3, 16, 13, 12, 6, 2, 1, 5, 8, 11, '|', 3, 21, 13.151243351255353, -1, 21, 0.2574423237339296, 3, 21, 25.420445559401614, 699.9828181578997] # 25-95
 # bestOfAll = [9, 15, 14, 17, 18, 19, 16, 20, 10, 7, 6, 5, 3, 2, 4, 13, 12, 11, 8, 1, '|', -1, 21, 19.700170398095803, 4, 21, 33.87054347634128, 10, 21, 34.92683392101684, 683.9210182855405] # 25-75
 # bestOfAll = [9, 15, 14, 18, 19, 17, 6, 4, 3, 2, 10, 5, 16, 20, 8, 7, 1, 12, 13, 11, '|', 17, 21, 28.57100983787813, 20, 21, 25.8966077594467, 10, 21, 38.88255709711892, 636.4233151111349] # 30-70
@@ -74,8 +74,8 @@ routes, fleet, bestOfAll, feasible, toolbox, optData = optimal_route_assignation
 # %% 6. Procedure
 while not all_degraded:
     # Route when required
-    #if (day > 0 and day % route_every == 0) or route:
-    if False:
+    if (day > 0 and day % route_every == 0) or route:
+    #if False:
         save_to = f'{opt_folder}day{day}/'
         if optData.feasible:
             hyper_parameters = HyperParameters(120, 300, CXPB, MUTPB,

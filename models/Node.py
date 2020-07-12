@@ -62,8 +62,8 @@ class CustomerNode(NetworkNode):
 @dataclass
 class ChargeStationNode(NetworkNode):
     capacity: int = 4
-    time_points: Tuple[float, ...] = (0.0, 50.0, 120.0)
-    soc_points: Tuple[float, ...] = (0.0, 80.0, 100.0)
+    time_points: Tuple[float, ...] = (0.0, 75.6, 92.4, 122.4)
+    soc_points: Tuple[float, ...] = (0.0, 85., 95., 100.)
     technology: int = 1
     type: int = 2
 

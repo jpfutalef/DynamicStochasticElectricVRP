@@ -740,9 +740,12 @@ class Fleet:
         _fleet = ET.Element('fleet')
         ev_id = 0
         for vehicle in self.vehicles.values():
-            if len(vehicle.assigned_customers) > 0:
+            if assign_customers:
+                if len(vehicle.assigned_customers) > 0:
+                    _fleet.append(vehicle.xml_element(assign_customers, with_routes, ev_id))
+                    ev_id += 1
+            else:
                 _fleet.append(vehicle.xml_element(assign_customers, with_routes, ev_id))
-                ev_id += 1
         return _fleet
 
     def write_xml(self, path, network_in_file=False, assign_customers=False, with_routes=False,

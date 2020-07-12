@@ -49,6 +49,7 @@ class ElectricVehicle:
     travel_times: ndarray = None
     energy_consumption: ndarray = None
     charging_times: ndarray = None
+    waiting_times: ndarray = None
     state_reaching: ndarray = None
     state_leaving: ndarray = None
 
@@ -68,6 +69,7 @@ class ElectricVehicle:
         size_state_matrix = (3, len_route)
         size_tt = (1, len_route - 1)
         size_ec = (1, len_route - 1)
+        size_wt = (1, len_route - 1)
         size_c_op = (1, len_route)
         init_state = (self.x1_0, self.x2_0, self.x3_0)
 
@@ -83,6 +85,7 @@ class ElectricVehicle:
         # Other variables
         self.travel_times = np.zeros(size_tt)
         self.energy_consumption = np.zeros(size_ec)
+        self.waiting_times = np.zeros(size_wt)
         self.charging_times = np.zeros(size_c_op)
         self.charging_times[0, 0] = route[1][0]  # TODO what's this?
 
@@ -94,7 +97,8 @@ class ElectricVehicle:
             payload = self.state_leaving[2, k - 1]
 
             self.travel_times[0, k - 1] = tij = network.t(Sk0, Sk1, departure_time)
-            self.energy_consumption[0, k - 1] = eij = network.e(Sk0, Sk1, payload, self.weight, departure_time)
+            self.energy_consumption[0, k - 1] = eij = network.e(Sk0, Sk1, payload, self.weight,
+                                                                departure_time, tij)/self.battery_capacity*100.
 
             self.state_reaching[:, k] = self.state_leaving[:, k - 1] + np.array([tij, -eij, 0])
 
@@ -118,7 +122,7 @@ class ElectricVehicle:
 
             self.travel_times[0, k - 1] = tij = network.t(Sk0, Sk1, departure_time)
             self.energy_consumption[0, k - 1] = eij = network.e(Sk0, Sk1, payload, self.weight,
-                                                                departure_time) / eta[-1]
+                                                                departure_time) / (eta[-1]*self.battery_capacity) * 100.
 
             self.state_reaching[:, k] = self.state_leaving[:, k - 1] + np.array([tij, -eij, 0])
 
@@ -151,12 +155,11 @@ class ElectricVehicle:
             payload = self.state_leaving[2, k - 1]
 
             self.travel_times[0, k - 1] = tij = network.t(Sk0, Sk1, departure_time)
-            self.energy_consumption[0, k - 1] = eij = network.e(Sk0, Sk1, payload, self.weight,
-                                                                departure_time) / eta[-1]
+            Eij = network.e(Sk0, Sk1, payload, self.weight, departure_time)
+            self.energy_consumption[0, k - 1] = eij = Eij / (eta[-1] * self.battery_capacity)*100.
 
             self.state_reaching[:, k] = self.state_leaving[:, k - 1] + np.array([tij, -eij, 0])
 
-            Eij = eij * eta[-1] * 20000 / 100.
             used_capacity += Eij
             if used_capacity >= self.battery_capacity:
                 used_capacity -= self.battery_capacity

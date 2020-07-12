@@ -1,13 +1,10 @@
-from typing import Tuple, Dict, Union
+from typing import Dict
 
-from models.Edge import Edge, DynamicEdge
-from models.Node import CustomerNode, ChargeStationNode, DepotNode
-import xml.etree.ElementTree as ET
-import xml.dom.minidom
-import numpy as np
-
-import networkx as nx
 import matplotlib.pyplot as plt
+import networkx as nx
+import xml.dom.minidom
+
+from models.Edge import *
 
 NodeDict = Dict[int, Union[CustomerNode, ChargeStationNode, DepotNode]]
 EdgeDict = Dict[int, Dict[int, Union[Edge, DynamicEdge]]]
@@ -73,14 +70,17 @@ class Network:
         return self.edges[node_from][node_to].get_travel_time(time_of_day)
 
     def e(self, node_from: int, node_to: int, payload: float, vehicle_weight: float,
-          time_of_day: float) -> Union[float, int]:
-        return self.edges[node_from][node_to].get_energy_consumption(payload, vehicle_weight, time_of_day)
+          time_of_day: float, tAB: float = None) -> Union[float, int]:
+        return self.edges[node_from][node_to].get_energy_consumption(payload, vehicle_weight, time_of_day, tAB=tAB)
 
     def spent_time(self, node: int, p, q, eta=None):
         return self.nodes[node].spentTime(p, q, eta)
 
     def demand(self, node: int):
         return self.nodes[node].demand
+
+    def waiting_time(self, i, j, done_time, payload_after, vehicle_weight):
+        return self.edges[i][j].waiting_time(done_time, self.nodes[j].time_window_low, payload_after, vehicle_weight)
 
     def isDepot(self, node: int):
         return self.nodes[node].isDepot()
@@ -151,7 +151,6 @@ class Network:
         return g
 
 
-
 def from_element_tree(tree):
     _info: ET = tree.find('info')
     _network: ET = tree.find('network')
@@ -192,13 +191,15 @@ def from_element_tree(tree):
             if _node_to.get('travel_time') is not None:
                 tt = float(_node_to.get('travel_time'))
                 ec = float(_node_to.get('energy_consumption'))
-                d_from[node_to_id] = Edge(node_from_id, node_to_id, tt, ec)
+                distance = float(_node_to.get('distance'))
+                d_from[node_to_id] = Edge(node_from_id, node_to_id, tt, ec, distance)
             else:
                 _tt, _ec = _node_to.find('travel_time'), _node_to.find('energy_consumption')
                 tt = np.array([float(bp.get('value')) for bp in _tt])
                 ec = np.array([float(bp.get('value')) for bp in _ec])
                 s = int(_tt[1].get('time_of_day')) - int(_tt[0].get('time_of_day'))
-                d_from[node_to_id] = DynamicEdge(node_from_id, node_to_id, s, tt, ec)
+                distance = float(_node_to.get('distance'))
+                d_from[node_to_id] = DynamicEdge(node_from_id, node_to_id, s, tt, ec, distance)
     return Network(nodes, edges)
 
 
