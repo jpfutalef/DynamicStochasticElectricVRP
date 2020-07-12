@@ -5,7 +5,7 @@ from GATools import *
 # data_folder = 'data/real_data/'
 data_folder = 'data/instances_real_data/'
 #instance_filename = data_folder.split('/')[-2]
-instance_filename = '21nodes_0_100_1EV_Ec'
+instance_filename = '21nodes_0_75'
 path = f'{data_folder}{instance_filename}.xml'
 
 print(f'Opening:\n {path}')

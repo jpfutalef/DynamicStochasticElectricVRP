@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import pandas as pd
 import xml.dom.minidom
+from copy import deepcopy
 
 # Visualization tools
 from bokeh.models import Whisker, Span, Range1d
@@ -101,6 +102,19 @@ class Fleet:
 
     def set_network(self, network: Network) -> None:
         self.network = network
+
+    def resize_fleet(self, new_size, as_new=True, based_on=0):
+        ev_base = deepcopy(self.vehicles[based_on])
+        if as_new:
+            ev_base.reset()
+
+        self.vehicles = {}
+        for i in range(new_size):
+            ev = deepcopy(ev_base)
+            ev.id = i
+            self.vehicles[i] = ev
+
+        self.vehicles_to_route = tuple(i for i in range(new_size))
 
     def drop_vehicle(self, ev_id: int) -> None:
         del self.vehicles[ev_id]

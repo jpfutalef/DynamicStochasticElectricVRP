@@ -27,7 +27,7 @@ fleet.network.draw(save_to=None, width=0.02,
 
 # %% 3. GA hyper-parameters for first routing
 CXPB = 0.75
-MUTPB = 0.88
+MUTPB = 0.98
 num_individuals = 5
 max_generations = 10
 penalization_constant = 500000

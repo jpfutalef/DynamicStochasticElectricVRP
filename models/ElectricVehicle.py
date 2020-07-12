@@ -54,6 +54,20 @@ class ElectricVehicle:
     state_reaching: ndarray = None
     state_leaving: ndarray = None
 
+    def reset(self):
+        self.battery_capacity = self.battery_capacity_nominal
+        self.assigned_customers = ()
+        self.x1_0 = 0.0
+        self.x2_0 = 100.0
+        self.x3_0 = 0.0
+        self.route = None
+        self.travel_times = None
+        self.energy_consumption = None
+        self.charging_times = None
+        self.waiting_times = None
+        self.state_reaching = None
+        self.state_leaving = None
+
     def set_customers_to_visit(self, new_customers: Tuple[int, ...]):
         self.assigned_customers = new_customers
 
