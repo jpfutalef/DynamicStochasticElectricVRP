@@ -799,10 +799,11 @@ def from_xml(path, assign_customers=False):
             alpha_up = float(_vehicle.get('alpha_up'))
             alpha_down = float(_vehicle.get('alpha_down'))
             battery_capacity = float(_vehicle.get('battery_capacity'))
+            battery_capacity_nominal = float(_vehicle.get('battery_capacity_nominal'))
             max_payload = float(_vehicle.get('max_payload'))
             weight = float(_vehicle.get('weight'))
-            vehicles[ev_id] = ElectricVehicle(ev_id, weight, battery_capacity, alpha_up, alpha_down, max_tour_duration,
-                                              max_payload)
+            vehicles[ev_id] = ElectricVehicle(ev_id, weight, battery_capacity,battery_capacity_nominal, alpha_up,
+                                              alpha_down, max_tour_duration, max_payload)
             if assign_customers:
                 _assigned_customers = _vehicle.find('assigned_customers')
                 assigned_customers = tuple(int(x.get('id')) for x in _assigned_customers)
