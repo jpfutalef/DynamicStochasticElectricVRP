@@ -16,9 +16,9 @@ fleet.network.draw(save_to=None, width=0.02,
                    edge_color='grey', markeredgecolor='black',
                    markeredgewidth=2.0)
 
-#init_fleet_size = int(sum([fleet.network.demand(i) for i in fleet.network.customers])/fleet.vehicles[0].max_payload) + 1
-#fleet.resize_fleet(init_fleet_size)
-# input('Ready! Press ENTER to continue...')
+init_fleet_size = int(sum([fleet.network.demand(i) for i in fleet.network.customers])/fleet.vehicles[0].max_payload) + 1
+fleet.resize_fleet(init_fleet_size)
+input('Ready! Press ENTER to continue...')
 
 # %% 3. GA hyper-parameters
 CXPB, MUTPB = 0.65, 0.85

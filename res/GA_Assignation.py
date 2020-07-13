@@ -36,8 +36,8 @@ def decode(individual: IndividualType, m: int, fleet: Fleet, starting_points: St
 
     # Store routes in dictionary
     routes = {}
-    for id_ev, (node_sequence, charging_sequence, depart_time) in enumerate(zip(customer_sequences, charging_sequences,
-                                                                                depart_times)):
+    for id_ev, node_sequence, charging_sequence, depart_time in zip(starting_points.keys(), customer_sequences,
+                                                                    charging_sequences, depart_times):
         ic = starting_points[id_ev]
         S = tuple([ic.S0] + node_sequence + [0])
         L = tuple([ic.L0] + charging_sequence + [0])

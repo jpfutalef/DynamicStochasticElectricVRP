@@ -106,7 +106,11 @@ class Fleet:
     def set_network(self, network: Network) -> None:
         self.network = network
 
-    def resize_fleet(self, new_size, as_new=True, based_on=0):
+    def resize_fleet(self, new_size, as_new=True, based_on=0, auto=False):
+        if auto:
+            net = self.network
+            new_size = int(sum([net.demand(i) for i in net.customers]) / self.vehicles[0].max_payload) + 1
+
         ev_base = deepcopy(self.vehicles[based_on])
         if as_new:
             ev_base.reset()
@@ -126,6 +130,7 @@ class Fleet:
 
     def drop_vehicle(self, ev_id: int) -> None:
         del self.vehicles[ev_id]
+        self.vehicles_to_route = tuple(i for i in self.vehicles_to_route if i != ev_id)
 
     def assign_customers_in_route(self):
         for ev in self.vehicles.values():
@@ -824,7 +829,7 @@ def from_xml(path, assign_customers=False):
             battery_capacity_nominal = float(_vehicle.get('battery_capacity_nominal'))
             max_payload = float(_vehicle.get('max_payload'))
             weight = float(_vehicle.get('weight'))
-            vehicles[ev_id] = ElectricVehicle(ev_id, weight, battery_capacity,battery_capacity_nominal, alpha_up,
+            vehicles[ev_id] = ElectricVehicle(ev_id, weight, battery_capacity, battery_capacity_nominal, alpha_up,
                                               alpha_down, max_tour_duration, max_payload)
             if assign_customers:
                 _assigned_customers = _vehicle.find('assigned_customers')
