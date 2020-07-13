@@ -97,6 +97,9 @@ class Fleet:
                                    [0.125, 0.25, 0.999987]])
         self.eta_model = NearestNeighbors(n_neighbors=3).fit(self.eta_table[:, 0:2])
 
+    def __len__(self):
+        return len(self.vehicles)
+
     def set_vehicles(self, vehicles: Dict[int, ElectricVehicle]) -> None:
         self.vehicles = vehicles
 

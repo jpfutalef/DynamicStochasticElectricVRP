@@ -354,15 +354,18 @@ def random_block_index(m, ics, idt, block_probability):
 
 
 # THE ALGORITHM
-def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind=None):
-    # TOOLBOX
+def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind=None,
+                              add_vehicles=False):
+    # OBJECTS
     creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
     creator.create("Individual", list, fitness=creator.FitnessMin, feasible=False)
 
+    # TOOLBOX
+    starting_points = {ev_id: InitialCondition(0, 0, 0, ev.alpha_up, 0) for ev_id, ev in fleet.vehicles.items()}
     toolbox = base.Toolbox()
     toolbox.register("individual", random_individual, num_customers=len(fleet.network.customers),
                      num_cs=len(fleet.network.charging_stations), m=len(fleet.vehicles), r=hp.r)
-    toolbox.register("evaluate", fitness, fleet=fleet, starting_points=hp.starting_points, weights=hp.weights,
+    toolbox.register("evaluate", fitness, fleet=fleet, starting_points=starting_points, weights=hp.weights,
                      penalization_constant=hp.penalization_constant, r=hp.r)
     toolbox.register("mate", crossover, m=len(fleet.vehicles), r=hp.r, index=None)
     toolbox.register("mutate", mutate, m=len(fleet.vehicles), num_customers=len(fleet.network.customers),
@@ -370,7 +373,7 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
                      r=hp.r, index=None)
     toolbox.register("select", tools.selTournament, tournsize=hp.tournament_size)
     toolbox.register("select_worst", tools.selWorst)
-    toolbox.register("decode", decode, m=len(fleet.vehicles), fleet=fleet, starting_points=hp.starting_points,
+    toolbox.register("decode", decode, m=len(fleet.vehicles), fleet=fleet, starting_points=starting_points,
                      r=hp.r)
 
     # BEGIN ALGORITHM
