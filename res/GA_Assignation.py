@@ -31,8 +31,14 @@ def decode(individual: IndividualType, m: int, fleet: Fleet, starting_points: St
             if customer not in node_sequence:
                 continue
             index = node_sequence.index(customer) + 1
-            node_sequence.insert(index, chg_st)
-            charging_sequence.insert(index, amount)
+            if index == len(node_sequence):
+                node_sequence.insert(index, chg_st)
+                charging_sequence.insert(index, amount)
+            elif node_sequence[index] == chg_st:
+                charging_sequence[index] += amount
+            else:
+                node_sequence.insert(index, chg_st)
+                charging_sequence.insert(index, amount)
 
     # Store routes in dictionary
     routes = {}
