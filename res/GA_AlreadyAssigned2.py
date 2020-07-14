@@ -112,7 +112,7 @@ def random_block_index(indices: IndicesType) -> int:
     i0, i1, i2 = indices[id_ev]
     if i0 + 1 >= i1:
         return 0
-    elif random() < 0.33:
+    elif random() < 0.3:
         return randint(i0, i1 - 1)
     elif random() < 0.8:
         return sample(range(i1, i2, 2), 1)[0]

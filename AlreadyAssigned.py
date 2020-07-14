@@ -20,7 +20,7 @@ sys.path.append('..')
 
 # %% 1. Specify instance location
 # data_folder = 'data/real_data/'
-data_folder = 'data/XML_files/35C_2CS_1D_3EV_4CAP_HIGHWEIGHT/08-07-2020_13-25-11_FEASIBLE_ASSIGNATION/'
+data_folder = 'data/montoya-et-al-2017/adapted/13-07-2020_23-28-48_INFEASIBLE_ASSIGNATION/'
 # instance_filename = data_folder.split('/')[-2]
 instance_filename = 'assigned'
 path = f'{data_folder}{instance_filename}.xml'
@@ -47,7 +47,7 @@ CXPB, MUTPB = 0.65, 0.85
 n_individuals = 90
 generations = 150
 penalization_constant = 500000
-weights = (0.2, 0.8, 1.2, 0.0)  # travel_time, charging_time, energy_consumption, charging_cost
+weights = (0.2, 0.8, 1.2, 0.0, 3.0)  # travel_time, charging_time, energy_consumption, charging_cost
 keep_best = 1  # Keep the 'keep_best' best individuals
 #tournament_size = int(n_individuals * 0.1)
 tournament_size = 4
