@@ -3,7 +3,7 @@ from res.GATools import *
 
 
 # FUNCTIONS
-def decode(individual: IndividualType, indices: IndicesType, init_state: StartingPointsType) -> RouteDict:
+def decode(individual: IndividualType, indices: IndicesType, init_state: StartingPointsType, fleet: Fleet) -> RouteDict:
     """
     """
     routes = {}
@@ -20,7 +20,8 @@ def decode(individual: IndividualType, indices: IndicesType, init_state: Startin
                 offset += 1
         Sk = tuple([0] + Sk + [0])
         Lk = tuple([0] + Lk + [0])
-        x0 = individual[i2]
+        tw = fleet.network.nodes[Sk[1]].time_window_low if fleet.network.isCustomer(Sk[1]) else 7 * 60.
+        x0 = tw + individual[i2]
         routes[id_ev] = ((Sk, Lk), x0, init_state[id_ev].x2_0, init_state[id_ev].x3_0)
     return routes
 
@@ -30,8 +31,10 @@ def mutate(individual: IndividualType, indices: IndicesType, charging_stations: 
         index = random_block_index(indices)
         for id_ev, (i0, i1, i2) in indices.items():
             if i0 <= index <= i2:
-                # Case customer
+                if i0 + 1 >= i1:
+                    break
                 if i0 <= index < i1:
+                    # Case customer
                     case = random()
                     if case < 0.55:
                         i, j = randint(i0, i1 - 1), randint(i0, i1 - 1)
@@ -44,15 +47,15 @@ def mutate(individual: IndividualType, indices: IndicesType, charging_stations: 
                     else:
                         individual[i0:i1] = sample(individual[i0:i1], i1 - i0)
 
-                # Case CS
                 elif i1 <= index < i2:
+                    # Case CS
                     i = i1 + 2 * int((index - i1) / 2)
                     sample_space = [-1] * len(charging_stations) + list(charging_stations)
                     individual[i] = sample(sample_space, 1)[0]
                     individual[i + 1] = abs(individual[i + 1] + uniform(-10, 10))
 
-                # Case depart time
                 else:
+                    # Case depart time
                     amount = uniform(-20.0, 20.0)
                     individual[i2] = abs(individual[i2] + amount)
                 break
@@ -107,9 +110,11 @@ def swap_block(l1, l2, i, j):
 def random_block_index(indices: IndicesType) -> int:
     id_ev = sample(indices.keys(), 1)[0]
     i0, i1, i2 = indices[id_ev]
-    if random() < 0.33:
-        return randint(i0, i1 - 1)
+    if i0 + 1 >= i1:
+        return 0
     elif random() < 0.33:
+        return randint(i0, i1 - 1)
+    elif random() < 0.8:
         return sample(range(i1, i2, 2), 1)[0]
     else:
         return i2
@@ -166,7 +171,7 @@ def fitness(individual: IndividualType, fleet: Fleet, indices: IndicesType, init
     """
 
     # Decode
-    routes = decode(individual, indices, init_state)
+    routes = decode(individual, indices, init_state, fleet)
 
     # Set routes
     fleet.set_routes_of_vehicles(routes)
@@ -189,7 +194,7 @@ def fitness(individual: IndividualType, fleet: Fleet, indices: IndicesType, init
     return fit, feasible
 
 
-def individual_from_routes(routes: RouteDict) -> IndividualType:
+def individual_from_routes(routes: RouteDict, fleet: Fleet) -> IndividualType:
     ind = []
     for (Sk, Lk), x10, x20, x3 in routes.values():
         cust, chg_ops = [], []
@@ -202,7 +207,8 @@ def individual_from_routes(routes: RouteDict) -> IndividualType:
             else:
                 cust.append(node)
                 chg_ops += [-1, uniform(5, 20)]
-        ind += cust + chg_ops + [x10]
+        dep_time = x10 - fleet.network.nodes[Sk[1]].time_window_low if fleet.network.isCustomer(Sk[1]) else 6*60
+        ind += cust + chg_ops + [dep_time]
     return ind
 
 # THE ALGORITHM
@@ -229,7 +235,7 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
                      repeat=hp.mutation_repeat)
     toolbox.register("select", tools.selTournament, tournsize=hp.tournament_size)
     toolbox.register("select_worst", tools.selWorst)
-    toolbox.register("decode", decode, indices=indices, init_state=starting_points)
+    toolbox.register("decode", decode, indices=indices, init_state=starting_points, fleet=fleet)
 
     # BEGIN ALGORITHM
     t_init = time.time()
@@ -367,5 +373,5 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
             os.mkdir(save_to)
         except FileExistsError:
             pass
-        opt_data.save_opt_data(save_to)
+        opt_data.save_opt_data(save_to, method='ASSIGNED')
     return routes, fleet, bestOfAll, feasible, toolbox, opt_data

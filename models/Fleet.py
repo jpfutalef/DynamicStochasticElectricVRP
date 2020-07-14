@@ -128,6 +128,15 @@ class Fleet:
             ev.alpha_down = alpha_down
             ev.alpha_up = alpha_upp
 
+    def relax_time_windows(self):
+        for cust in self.network.customers:
+            self.network.nodes[cust].time_window_low = 0.
+            self.network.nodes[cust].time_window_upp = 60*24
+
+    def modify_cs_capacities(self, new_capacity):
+        for cs in self.network.charging_stations:
+            self.network.nodes[cs].capacity = new_capacity
+
     def drop_vehicle(self, ev_id: int) -> None:
         del self.vehicles[ev_id]
         self.vehicles_to_route = tuple(i for i in self.vehicles_to_route if i != ev_id)

@@ -180,7 +180,9 @@ def from_element_tree(tree):
         else:
             capacity = int(_node.get('capacity'))
             technology = int(_node.get('technology'))
-            _technology = _technologies[technology - 1]
+            for _technology in _technologies:
+                if int(_technology.get('type')) == technology:
+                    break
             time_points = tuple([float(bp.get('charging_time')) for bp in _technology])
             soc_points = tuple([float(bp.get('battery_level')) for bp in _technology])
             node = ChargeStationNode(node_id, capacity, pos_x=pos_x, pos_y=pos_y, time_points=time_points,

@@ -42,11 +42,13 @@ def decode(individual: IndividualType, m: int, fleet: Fleet, starting_points: St
 
     # Store routes in dictionary
     routes = {}
-    for id_ev, node_sequence, charging_sequence, depart_time in zip(starting_points.keys(), customer_sequences,
-                                                                    charging_sequences, depart_times):
+    for id_ev, node_sequence, charging_sequence, depart_time_off in zip(starting_points.keys(), customer_sequences,
+                                                                        charging_sequences, depart_times):
         ic = starting_points[id_ev]
         S = tuple([ic.S0] + node_sequence + [0])
         L = tuple([ic.L0] + charging_sequence + [0])
+        tw = fleet.network.nodes[S[1]].time_window_low if fleet.network.isCustomer(S[1]) else 7*60.
+        depart_time = tw + depart_time_off
         routes[id_ev] = ((S, L), depart_time, ic.x2_0, sum([fleet.network.demand(x) for x in S]))
     return routes
 
@@ -150,7 +152,7 @@ def random_individual(num_customers, num_cs, m, r):
         else:
             assigned_customers = sample(customers, randint(0, len(customers)))
         customer_blocks += assigned_customers + ['|']
-        departure_time_blocks[i] = uniform(60 * 5, 60 * 12)
+        departure_time_blocks[i] = uniform(-10, 10)
         customers = [i for i in customers if i not in assigned_customers]
 
     # Charging station blocks

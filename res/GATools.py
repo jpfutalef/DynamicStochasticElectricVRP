@@ -46,10 +46,10 @@ class OptimizationIterationsData:
     feasible: bool
     algo_time: float = None
 
-    def save_opt_data(self, data_folder: str):
+    def save_opt_data(self, data_folder: str, method='ASSIGNATION'):
         # folder
         now = datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S')
-        folder_name = f'{now}_FEASIBLE_ASSIGNATION' if self.feasible else f'{now}_INFEASIBLE_ASSIGNATION/'
+        folder_name = f'{now}_FEASIBLE_{method}' if self.feasible else f'{now}_INFEASIBLE_{method}/'
         opt_path = data_folder + folder_name
 
         try:

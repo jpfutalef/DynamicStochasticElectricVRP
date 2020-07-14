@@ -13,17 +13,22 @@ class Edge:
     def get_travel_time(self, time_of_day=None) -> Union[float, int]:
         return self.travel_time
 
-    def get_energy_consumption(self, payload: float, vehicle_weight: float, time_of_day=None) -> Union[float, int]:
-        # return self.energy_consumption*(payload + vehicle_weight)/1.52
-        dAB = self.distance
-        tAB = self.travel_time
+    def get_energy_consumption(self, payload: float, vehicle_weight: float, time_of_day=None, tAB=None) -> Union[float, int]:
+        if not self.energy_consumption > 0.:
+            return 0.
+        v = 60*self.distance/self.travel_time
+        m = vehicle_weight + payload
+        g = 127008
+        Cr = 1.75
+        c1 = 4.575 * 1000 / 3600
+        c2 = 1.75
         rho_air = 1225600
-        Af = 2.3316 / 1000000
+        Af = 2.3316e-6
         Cd = 0.28
-        beta = (dAB / tAB) ** 3 * rho_air * Af * Cd / 2.
-        eAB = self.energy_consumption
-        alpha = (eAB * .92 * .91 * .9 / tAB - beta) / vehicle_weight
-        return ((payload + vehicle_weight) * alpha + beta) * tAB / (.92 * .91 * .9)
+        eta = 3.17768 * 0.92 * 0.91 * 0.9
+        factor_kwh = 100 / (1296 * 3600)
+        eAB = factor_kwh * self.distance * (m * g * Cr * (c1 * v + c2) / 1000 + rho_air * Af * Cd * v ** 2 / 2) / eta
+        return eAB
 
     def waiting_time(self, done_time, t_low, payload_after, vehicle_weight) -> Tuple[float, float, float]:
         tt, ec = self.travel_time, self.get_energy_consumption(payload_after, vehicle_weight)
@@ -68,7 +73,7 @@ class DynamicEdge:
         # return self.energy_consumption[int(time_of_day/self.sample_time)]*(payload + vehicle_weight)/1.52
         dAB = self.distance
         if tAB is None:
-            tAB = self.get_travel_time(time_of_day, breakpoints_info)
+            tAB = self.get_travel_time(time_of_day, breakpoints_info)/60.
         rho_air = 1225600
         Af = 2.3316e-6
         Cd = 0.28
