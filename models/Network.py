@@ -82,7 +82,7 @@ class Network:
     def waiting_time(self, i, j, done_time, payload_after, vehicle_weight):
         if self.nodes[j].isDepot() or self.nodes[j].isChargeStation():
             tt = self.t(i, j, done_time)
-            ec = self.e(i, j, payload_after, vehicle_weight, done_time, tt)
+            ec = self.e(i, j, payload_after, vehicle_weight, done_time, tt*60.)
             return tt, ec, 0.0
         return self.edges[i][j].waiting_time(done_time, self.nodes[j].time_window_low, payload_after, vehicle_weight)
 
@@ -128,6 +128,7 @@ class Network:
     def draw(self, color=('lightskyblue', 'limegreen', 'goldenrod'), shape=('s', 'o', '^'),
              fig: plt.Figure = None, save_to=None, **kwargs):
         nodes = self.nodes.keys()
+        nodes_id = {i: i for i, node in self.nodes.items()}
         arcs = [(i, j) for i in nodes for j in nodes if i != j]
 
         g = nx.DiGraph()
@@ -138,10 +139,12 @@ class Network:
             fig = plt.figure()
 
         pos = {i: (self.nodes[i].pos_x, self.nodes[i].pos_y) for i in nodes}
-        nx.draw(g, pos=pos, nodelist=self.depots, arrows=False, node_color=color[0], node_shape=shape[0], **kwargs)
-        nx.draw(g, pos=pos, nodelist=self.customers, arrows=False, node_color=color[1], node_shape=shape[1], **kwargs)
+        nx.draw(g, pos=pos, nodelist=self.depots, arrows=False, node_color=color[0], node_shape=shape[0],
+                labels=nodes_id, **kwargs)
+        nx.draw(g, pos=pos, nodelist=self.customers, arrows=False, node_color=color[1], node_shape=shape[1],
+                labels=nodes_id, **kwargs)
         nx.draw(g, pos=pos, nodelist=self.charging_stations, arrows=False, node_color=color[2], node_shape=shape[2],
-                **kwargs)
+                labels=nodes_id, **kwargs)
         if save_to:
             fig.savefig(save_to)
         return fig, g
@@ -203,7 +206,7 @@ def from_element_tree(tree):
                 _tt, _ec = _node_to.find('travel_time'), _node_to.find('energy_consumption')
                 tt = np.array([float(bp.get('value')) for bp in _tt])
                 ec = np.array([float(bp.get('value')) for bp in _ec])
-                s = int(_tt[1].get('time_of_day')) - int(_tt[0].get('time_of_day'))
+                s = int(float(_tt[1].get('time_of_day'))) - int(float(_tt[0].get('time_of_day')))
                 distance = float(_node_to.get('distance'))
                 d_from[node_to_id] = DynamicEdge(node_from_id, node_to_id, s, tt, ec, distance)
     return Network(nodes, edges)

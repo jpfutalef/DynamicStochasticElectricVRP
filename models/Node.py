@@ -65,6 +65,7 @@ class ChargeStationNode(NetworkNode):
     time_points: Tuple[float, ...] = (0.0, 75.6, 92.4, 122.4)
     soc_points: Tuple[float, ...] = (0.0, 85., 95., 100.)
     technology: int = 1
+    price: float = 70.
     type: int = 2
 
     def spentTime(self, init_soc, increment, eta: float = None):

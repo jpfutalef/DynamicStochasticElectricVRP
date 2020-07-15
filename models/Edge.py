@@ -68,27 +68,35 @@ class DynamicEdge:
 
     def get_energy_consumption(self, payload: float, vehicle_weight: float, time_of_day: float,
                                breakpoints_info: Tuple[int, int] = None, tAB: float = None) -> Union[float, int]:
+        if self.energy_consumption[0] == 0.:
+            return 0.
+
         while time_of_day >= 1440:
             time_of_day -= 1440
-        # return self.energy_consumption[int(time_of_day/self.sample_time)]*(payload + vehicle_weight)/1.52
-        dAB = self.distance
-        if tAB is None:
-            tAB = self.get_travel_time(time_of_day, breakpoints_info)/60.
-        rho_air = 1225600
-        Af = 2.3316e-6
-        Cd = 0.28
-        beta = (dAB / tAB) ** 3 * rho_air * Af * Cd / 2. if tAB > 0.0 else 0.0
 
+        if tAB is None:
+            tAB = self.get_travel_time(time_of_day, breakpoints_info)*60 # seconds
+
+        dAB = self.distance*1000  # meters
+        v = dAB / tAB  # m/s
+        rho_air = 1.2256 # kg/m^3
+        Af = 2.3316 # m^2
+        Cd = 0.28
+        eta = 0.92 * 0.91 * 0.9
+
+        beta = v ** 2 * rho_air * Af * Cd / 2.
         if breakpoints_info:
             i, j = breakpoints_info
         else:
             i = int(time_of_day / self.sample_time)
             j = i + 1 if i + 1 < len(self.energy_consumption) else 0
-        m = (self.energy_consumption[j] - self.energy_consumption[i]) / self.sample_time
-        n = self.energy_consumption[i] - m * i * self.sample_time
-        eAB = m * time_of_day + n
-        alpha = (eAB*.92*.91*.9/tAB-beta)/vehicle_weight if tAB > 0.0 else 0.0
-        return ((payload+vehicle_weight)*alpha + beta)*tAB/(.92*.91*.9)
+
+        m = (self.energy_consumption[j] - self.energy_consumption[i]) / (self.sample_time*60)  # kWh/s
+        n = self.energy_consumption[j] - m * j * self.sample_time*60
+        eAB = (m * time_of_day*60 + n)*1000*3.6e3 if j > 0 else (m * (time_of_day - 1440)*60 + n)*1000*3.6e3
+
+        alpha = (eAB*eta/dAB-beta)/(vehicle_weight*1000)
+        return ((1000*(vehicle_weight + payload)*alpha + beta)*dAB/eta)/3.6e6
 
     def waiting_time(self, done_time, t_low, payload_after, vehicle_weight) -> Tuple[float, float, float]:
         while done_time > 1440:

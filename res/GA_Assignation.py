@@ -473,6 +473,7 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
         if bestInd.fitness.wvalues[0] > bestOfAll.fitness.wvalues[0]:
             bestOfAll = bestInd
 
+        toolbox.evaluate(bestOfAll)
         # Real-time info
         print(f"Best individual  : {bestInd}\n Fitness: {bestInd.fitness.wvalues[0]} Feasible: {bestInd.feasible}")
 
