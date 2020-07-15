@@ -8,8 +8,8 @@ from os.path import isfile, join
 
 # %% 1. Specify instance location
 data_folder = 'data/instances/'
-capacities = [4]
-instances = [f for f in listdir('data/instances/') if isfile(join('data/instances/', f))]
+instances = [f for f in listdir('data/instances/') if isfile(join('data/instances/', f))][2:]
+capacities = [1, 2, 3]
 
 for instance in instances:
     for cap in capacities:
@@ -22,17 +22,17 @@ for instance in instances:
         fleet = from_xml(path, assign_customers=False)
         fleet.network.draw(save_to=None, width=0.02,
                            edge_color='grey', markeredgecolor='black',
-                           markeredgewidth=2.0)[0].show()
+                           markeredgewidth=2.0)
 
         fleet.modify_cs_capacities(cap)
         init_fleet_size = int(
-            sum([fleet.network.demand(i) for i in fleet.network.customers]) / fleet.vehicles[0].max_payload)
+            sum([fleet.network.demand(i) for i in fleet.network.customers]) / fleet.vehicles[0].max_payload) + 1
         fleet.resize_fleet(init_fleet_size)
 
         # %% 3. GA hyper-parameters
         CXPB, MUTPB = 0.7, 0.9
-        num_individuals = 250
-        max_generations = 450
+        num_individuals = int(len(fleet.network)*1.5) + int(len(fleet)*10) + 50
+        max_generations = num_individuals*3
         penalization_constant = 500000
         weights = (0.2, 0.8, 1.2, 0.0, 3.0)  # travel_time, charging_time, energy_consumption, charging_cost
         keep_best = 1  # Keep the 'keep_best' best individuals
@@ -47,8 +47,8 @@ for instance in instances:
                                            r=r)
 
         CXPB, MUTPB = 0.7, 0.9
-        num_individuals = 250
-        max_generations = 300
+        num_individuals = int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 50
+        max_generations = num_individuals * 2
         penalization_constant = 500000
         weights = (0.2, 0.8, 1.2, 0.0, 3.0)  # travel_time, charging_time, energy_consumption, charging_cost
         keep_best = 1  # Keep the 'keep_best' best individuals
@@ -63,17 +63,18 @@ for instance in instances:
                                                    crossover_repeat=crossover_repeat,
                                                    mutation_repeat=mutation_repeat)
 
-
         # %% 4. Run algorithm
-        done = False
-        bestOfAll1 = None
+        instance_name = instance[:-4]
         try:
-            os.mkdir(f'{data_folder}/{instance}/')
+            os.mkdir(f'{data_folder}{instance_name}/')
         except FileExistsError:
             pass
-        save_to = f'{data_folder}/{instance}/{cap}/'
-        while not done:
-            routes, fleet, bestOfAll1, feasible1, toolbox1, optData1 = optimal_route_assignation(fleet, hyper_parameters,
+        save_to = f'{data_folder}{instance_name}/{cap}/'
+        bestOfAll1 = None
+        bestOfAll2 = None
+        for k in range(6):
+            routes, fleet, bestOfAll1, feasible1, toolbox1, optData1 = optimal_route_assignation(fleet,
+                                                                                                 hyper_parameters,
                                                                                                  save_to,
                                                                                                  best_ind=bestOfAll1)
 
@@ -82,25 +83,23 @@ for instance in instances:
                                                                                      save_to,
                                                                                      best_improve)
             best_fitness, best_is_feasible = toolbox2.evaluate(bestOfAll2)
-            print(f'The best individual {"is" if best_is_feasible else "is not"} feasible and its fitness is {-best_fitness}')
+            print(
+                f'The best individual {"is" if best_is_feasible else "is not"} feasible and its fitness is {-best_fitness}')
             if not feasible1 and not feasible2:
-                if len(fleet) >= init_fleet_size + 8:
-                    fleet.resize_fleet(init_fleet_size)
-                    bestOfAll1, bestOfAll2 = None, None
-                else:
-                    print('INCREASING FLEET SIZE BY 1...')
-                    fleet.resize_fleet(len(fleet) + 1)
-                    bestOfAll1.insert(len(fleet.network.customers) + len(fleet) - 2, '|')
-                    bestOfAll1.append(7*60)
-                    for i in range(hyper_parameters.r):
-                        chg_op = [-1, sample(fleet.network.charging_stations, 1)[0], uniform(10, 20)]
-                        index = -len(fleet)
-                        bestOfAll1 = bestOfAll1[:index] + chg_op + bestOfAll1[index:]
+                print('INCREASING FLEET SIZE BY 1...')
+                fleet.resize_fleet(len(fleet) + 1)
+                bestOfAll1.insert(len(fleet.network.customers) + len(fleet) - 2, '|')
+                bestOfAll1.append(7 * 60)
+                for i in range(hyper_parameters.r):
+                    chg_op = [-1, sample(fleet.network.charging_stations, 1)[0], uniform(10, 20)]
+                    index = -len(fleet)
+                    bestOfAll1 = bestOfAll1[:index] + chg_op + bestOfAll1[index:]
+                hyper_parameters.num_individuals += 15
+                hyper_parameters_improve.num_individuals += 10
+                hyper_parameters.max_generations += 10
+                hyper_parameters_improve.max_generations += 10
             else:
-                done = True
-
-        best_routes = toolbox2.decode(bestOfAll2)
-        print('After decoding:\n', best_routes)
+                break
 
 # plot_operation = True if input('Do you want to plot results? (y/n)') == 'y' else False
 plot_operation = False
