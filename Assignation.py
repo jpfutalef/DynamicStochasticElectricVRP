@@ -1,7 +1,7 @@
-from GA_Assignation import *
-from GATools import *
-from GA_AlreadyAssigned2 import optimal_route_assignation as improve_route
-from GA_AlreadyAssigned2 import individual_from_routes
+from res.GA_Assignation import *
+from res.GATools import *
+from res.GA_AlreadyAssigned2 import optimal_route_assignation as improve_route
+from res.GA_AlreadyAssigned2 import individual_from_routes
 
 from os import listdir
 from os.path import isfile, join
