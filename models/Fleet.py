@@ -463,6 +463,10 @@ class Fleet:
             plt.quiver(X_edge, Y_edge, U_edge, V_edge, scale=1, angles='xy', scale_units='xy', color=color_edge,
                        width=0.0004 * fig_size[0], zorder=15)
 
+            # Maximum tour time
+            plt.axhline(vehicle.state_leaving[0, 0] + vehicle.max_tour_duration, linestyle='--', color='black',
+                        label='Maximum tour time')
+
             # Annotate nodes
             labels = [str(i) for i in vehicle.route[0]]
             pos = [(x, y) for x, y in zip(range(si), r_time)]
@@ -560,6 +564,20 @@ class Fleet:
                 fig.savefig(f'{save_to}operation_EV{id_ev}_full.pdf', format='pdf')
 
             figs.append(fig)
+
+        # Charging stations occupation
+        theta_vector = self.optimization_vector[self.optimization_vector_indices[10]:]
+        net_size = len(self.network)
+        events = list(range(int(len(theta_vector) / net_size)))
+        theta_matrix = np.array([theta_vector[i * net_size:net_size * (i + 1)] for i in events])
+
+        fig = plt.figure(figsize=fig_size)
+        plt.step(events, theta_matrix[:, net_size - len(self.network.charging_stations):])
+        plt.title('CS Occupation')
+        plt.xlabel('Event')
+        plt.ylabel('Number of EVs')
+        plt.legend(tuple(f'CS {i}' for i in self.network.charging_stations))
+        figs.append(fig)
         return figs
 
     def draw_operation(self, color_route='red', **kwargs):

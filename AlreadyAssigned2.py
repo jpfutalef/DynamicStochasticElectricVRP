@@ -9,7 +9,7 @@ t0 = time.time()
 sys.path.append('..')
 
 # %% 1. Specify instance location
-data_folder = 'data/instances/c25cs2_30x30km/15-07-2020_05-19-43_FEASIBLE_ASSIGNED/'
+data_folder = 'data/instances/c25cs3_20x20km/2/15-07-2020_21-36-25_FEASIBLE_ASSIGNED/'
 instance_filename = 'assigned'
 path = f'{data_folder}{instance_filename}.xml'
 
@@ -45,7 +45,7 @@ print(hyper_parameters)
 #input('Press enter to continue...')
 # %% 4. Run algorithm
 routes = routes_from_xml(path, fleet)
-bestOfAll = individual_from_routes(routes, fleet)
+bestOfAll = [15, 7, 1, 4, 23, 18, 14, 3, 19, 13, 16, -1, 20.6936038509605, -1, 6.022805206112359, -1, 22.011423704726468, -1, 5.43706562351569, -1, 9.435520364850387, 28, 23.656725396760784, 28, 37.16365407589693, -1, 12.410515861751833, -1, 17.556727267751036, -1, 7.073503972199438, -1, 18.686691490711823, 72.91240035996373, 11, 17, 22, 10, 20, -1, 5.114038661178393, -1, 19.2089648925821, -1, 19.10405355295757, -1, 14.623635278259977, -1, 7.592220512037036, 90.29427624930973, 24, 21, 8, 6, 12, 9, 5, 25, 2, -1, 12.947251990845054, -1, 13.58844484882668, -1, 7.82714716325974, 28, 30.57495997836717, -1, 0.4110719448640765, -1, 18.70194850864131, -1, 29.903732306255154, 28, 28.511965096890542, -1, 20.313587392976327, 158.41569366938253]#individual_from_routes(routes, fleet)
 routes, fleet, bestOfAll, feasible, toolbox, optData = optimal_route_assignation(fleet, hyper_parameters, data_folder,
                                                                                  best_ind=bestOfAll)
 

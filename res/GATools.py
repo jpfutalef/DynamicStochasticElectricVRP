@@ -49,7 +49,7 @@ class OptimizationIterationsData:
     def save_opt_data(self, data_folder: str, method='ASSIGNATION', savefig=False):
         # folder
         now = datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S')
-        folder_name = f'{now}_FEASIBLE_{method}' if self.feasible else f'{now}_INFEASIBLE_{method}/'
+        folder_name = f'{now}_FEASIBLE_{method}/' if self.feasible else f'{now}_INFEASIBLE_{method}/'
         opt_path = data_folder + folder_name
 
         try:
@@ -58,9 +58,9 @@ class OptimizationIterationsData:
             pass
 
         # files
-        optimization_iterations_filepath = opt_path + '/optimization_iterations.csv'
-        theta_vector_filepath = opt_path + '/nodes_occupation.csv'
-        info_filepath = opt_path + '/hyper-parameters.txt'
+        optimization_iterations_filepath = opt_path + 'optimization_iterations.csv'
+        theta_vector_filepath = opt_path + 'nodes_occupation.csv'
+        info_filepath = opt_path + 'hyper-parameters.txt'
 
         # optimization results
         df_op_gens = pd.DataFrame({'best_fitness': self.best_fitness, 'worst_fitness': self.worst_fitness,
@@ -69,7 +69,7 @@ class OptimizationIterationsData:
         df_op_gens.to_csv(optimization_iterations_filepath)
 
         # theta vector
-        theta_vector = self.fleet.optimization_vector[self.fleet.optimization_vector_indices[8]:]
+        theta_vector = self.fleet.optimization_vector[self.fleet.optimization_vector_indices[10]:]
         net_size = len(self.fleet.network.nodes)
         events = list(range(int(len(theta_vector) / net_size)))
         theta_matrix = np.array([theta_vector[i * net_size:net_size * (i + 1)] for i in events])
@@ -78,15 +78,17 @@ class OptimizationIterationsData:
 
         # fleet operation
         for id_ev, ev in self.fleet.vehicles.items():
-            ev_filepath = opt_path + f'/EV{id_ev}_operation.csv'
+            ev_filepath = opt_path + f'EV{id_ev}_operation.csv'
+            route_data = pd.DataFrame({'Sk': ev.route[0], 'Lk': ev.route[1]})
             reaching_data = pd.DataFrame(ev.state_reaching.T, columns=['x1_reaching', 'x2_reaching', 'x3_reaching'])
             leaving_data = pd.DataFrame(ev.state_leaving.T, columns=['x1_leaving', 'x2_leaving', 'x3_leaving'])
-            route_data = pd.DataFrame({'Sk': ev.route[0], 'Lk': ev.route[1]})
-            data = pd.concat([route_data, reaching_data, leaving_data], axis=1)
+            wt0 = pd.DataFrame(ev.waiting_times0.T, columns=['wating_time_after'])
+            wt1 = pd.DataFrame(ev.waiting_times1.T, columns=['wating_time_before'])
+            data = pd.concat([route_data, reaching_data, leaving_data, wt0, wt1], axis=1)
             data.to_csv(ev_filepath)
 
         # costs
-        cost_filepath = opt_path + '/costs.csv'
+        cost_filepath = opt_path + 'costs.csv'
         weight_tt, weight_ec, weight_chg_op, weight_chg_cost, weight_wait_time = self.hyper_parameters.weights
         cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_weight_time = self.fleet.cost_function()
         index = ['weight', 'cost']
@@ -106,13 +108,14 @@ class OptimizationIterationsData:
 
         # Edit assignation file
         self.fleet.assign_customers_in_route()
-        assigned_path = f'{opt_path}/assigned.xml'
+        assigned_path = f'{opt_path}assigned.xml'
         self.fleet.write_xml(assigned_path, True, True, True, True)
 
         if savefig:
-            for ev_id, fig in enumerate(self.fleet.plot_operation_pyplot()):
+            figs = self.fleet.plot_operation_pyplot()
+            for ev_id, fig in enumerate(figs[:-1]):
                 fig.savefig(f'{opt_path}operation_EV{ev_id}')
-
+            figs[-1].savefig(f'{opt_path}cs_occupation')
 class OptimizationReport(NamedTuple):
     best_fitness: float
     feasible: bool
