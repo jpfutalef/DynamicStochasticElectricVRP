@@ -362,8 +362,7 @@ def random_block_index(m, ics, idt, block_probability):
 
 
 # THE ALGORITHM
-def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind=None,
-                              add_vehicles=False):
+def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind=None, savefig=False):
     # OBJECTS
     creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
     creator.create("Individual", list, fitness=creator.FitnessMin, feasible=False)
@@ -519,5 +518,5 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
             os.mkdir(save_to)
         except FileExistsError:
             pass
-        opt_data.save_opt_data(save_to)
+        opt_data.save_opt_data(save_to, savefig=savefig)
     return routes, fleet, bestOfAll, feasible, toolbox, opt_data

@@ -71,7 +71,7 @@ class Network:
 
     def e(self, node_from: int, node_to: int, payload: float, vehicle_weight: float,
           time_of_day: float, tAB: float = None) -> Union[float, int]:
-        return self.edges[node_from][node_to].get_energy_consumption(payload, vehicle_weight, time_of_day, tAB=tAB)
+        return self.edges[node_from][node_to].get_energy_consumption(payload, vehicle_weight, time_of_day, tAB)
 
     def spent_time(self, node: int, p, q, eta=None):
         return self.nodes[node].spentTime(p, q, eta)
@@ -82,8 +82,8 @@ class Network:
     def waiting_time(self, i, j, done_time, payload_after, vehicle_weight):
         if self.nodes[j].isDepot() or self.nodes[j].isChargeStation():
             tt = self.t(i, j, done_time)
-            ec = self.e(i, j, payload_after, vehicle_weight, done_time, tt*60.)
-            return tt, ec, 0.0
+            ec = self.e(i, j, payload_after, vehicle_weight, done_time, tt)
+            return tt, ec, 0.0, 0.0
         return self.edges[i][j].waiting_time(done_time, self.nodes[j].time_window_low, payload_after, vehicle_weight)
 
     def isDepot(self, node: int):

@@ -9,8 +9,7 @@ t0 = time.time()
 sys.path.append('..')
 
 # %% 1. Specify instance location
-data_folder = 'data/instances_real_data/12-07-2020_00-24-03_INFEASIBLE_ASSIGNATION/'
-#instance_filename = data_folder.split('/')[-2]
+data_folder = 'data/instances/c25cs2_30x30km/15-07-2020_05-19-43_FEASIBLE_ASSIGNED/'
 instance_filename = 'assigned'
 path = f'{data_folder}{instance_filename}.xml'
 
@@ -21,12 +20,12 @@ fleet = from_xml(path, assign_customers=True)
 fleet.network.draw(save_to=None, width=0.02,
                    edge_color='grey', markeredgecolor='black',
                    markeredgewidth=2.0)
-input('Press enter to continue...')
+#input('Press enter to continue...')
 
 # %% 3. GA hyperparameters
 CXPB, MUTPB = 0.65, 0.85
-num_individuals = 200
-max_generations = 350
+num_individuals = 1
+max_generations = 3
 penalization_constant = 500000
 weights = (0.2, 0.8, 1.2, 0.0, 3.0)  # travel_time, charging_time, energy_consumption, charging_cost
 keep_best = 1  # Keep the 'keep_best' best individuals
@@ -43,10 +42,10 @@ hyper_parameters = HyperParameters(num_individuals, max_generations, CXPB, MUTPB
                                    mutation_repeat=mutation_repeat)
 print(hyper_parameters)
 
-input('Press enter to continue...')
+#input('Press enter to continue...')
 # %% 4. Run algorithm
 routes = routes_from_xml(path, fleet)
-bestOfAll = individual_from_routes(routes)
+bestOfAll = individual_from_routes(routes, fleet)
 routes, fleet, bestOfAll, feasible, toolbox, optData = optimal_route_assignation(fleet, hyper_parameters, data_folder,
                                                                                  best_ind=bestOfAll)
 

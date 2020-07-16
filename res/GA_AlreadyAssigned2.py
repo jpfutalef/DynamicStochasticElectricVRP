@@ -207,12 +207,14 @@ def individual_from_routes(routes: RouteDict, fleet: Fleet) -> IndividualType:
             else:
                 cust.append(node)
                 chg_ops += [-1, uniform(5, 20)]
-        dep_time = x10 - fleet.network.nodes[Sk[1]].time_window_low if fleet.network.isCustomer(Sk[1]) else 6*60
+        dep_time = x10 - fleet.network.nodes[Sk[1]].time_window_low if fleet.network.isCustomer(Sk[1]) else 6 * 60
         ind += cust + chg_ops + [dep_time]
     return ind
 
+
 # THE ALGORITHM
-def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind: IndividualType = None):
+def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind: IndividualType = None,
+                              savefig=False):
     customers_to_visit = {ev_id: ev.assigned_customers for ev_id, ev in fleet.vehicles.items()}
     starting_points = {ev_id: InitialCondition(0, 0, 0, ev.alpha_up, sum([fleet.network.demand(x)
                                                                           for x in ev.assigned_customers]))
@@ -373,5 +375,5 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
             os.mkdir(save_to)
         except FileExistsError:
             pass
-        opt_data.save_opt_data(save_to, method='ASSIGNED')
+        opt_data.save_opt_data(save_to, method='ASSIGNED', savefig=savefig)
     return routes, fleet, bestOfAll, feasible, toolbox, opt_data

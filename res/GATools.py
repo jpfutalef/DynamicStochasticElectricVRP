@@ -46,7 +46,7 @@ class OptimizationIterationsData:
     feasible: bool
     algo_time: float = None
 
-    def save_opt_data(self, data_folder: str, method='ASSIGNATION'):
+    def save_opt_data(self, data_folder: str, method='ASSIGNATION', savefig=False):
         # folder
         now = datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S')
         folder_name = f'{now}_FEASIBLE_{method}' if self.feasible else f'{now}_INFEASIBLE_{method}/'
@@ -109,20 +109,9 @@ class OptimizationIterationsData:
         assigned_path = f'{opt_path}/assigned.xml'
         self.fleet.write_xml(assigned_path, True, True, True, True)
 
-        '''
-        tree = ET.parse(assigned_path)
-        _fleet = tree.find('fleet')
-
-        for _ev, ev in zip(_fleet, fleet.vehicles.values()):
-            while _ev.find('assigned_customers'):
-                _ev.remove(_ev.find('assigned_customers'))
-            _assigned_customers = ET.SubElement(_ev, 'assigned_customers')
-            for node in ev.assigned_customers:
-                _node = ET.SubElement(_assigned_customers, 'node', attrib={'id': str(node)})
-
-        tree.write(assigned_path)
-        '''
-
+        if savefig:
+            for ev_id, fig in enumerate(self.fleet.plot_operation_pyplot()):
+                fig.savefig(f'{opt_path}operation_EV{ev_id}')
 
 class OptimizationReport(NamedTuple):
     best_fitness: float

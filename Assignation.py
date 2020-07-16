@@ -6,30 +6,31 @@ from res.GA_AlreadyAssigned2 import individual_from_routes
 from os import listdir
 from os.path import isfile, join
 
-# %% 1. Specify instance location
+# %% 1. Specify instance location and capacities to iterate
 data_folder = 'data/instances/'
-instances = [f for f in listdir('data/instances/') if isfile(join('data/instances/', f))][2:]
-capacities = [1, 2, 3]
+instances = [f for f in listdir('data/instances/') if isfile(join('data/instances/', f))]
+# instances = ['c25cs3_20x20km.xml']
 
+capacities = [4, 3, 2, 1]
+
+# %% 2. Instances iteration
 for instance in instances:
+    instance_filename = instance
+    path = f'{data_folder}{instance_filename}'
+    print(f'Opening:\n {path}')
+    fleet = from_xml(path, assign_customers=False)
+    fleet.network.draw(save_to=None, width=0.02,
+                       edge_color='grey', markeredgecolor='black',
+                       markeredgewidth=2.0)
     for cap in capacities:
-        instance_filename = instance
-        path = f'{data_folder}{instance_filename}'
-
-        print(f'Opening:\n {path}')
-
-        # %% 2. Instance fleet
-        fleet = from_xml(path, assign_customers=False)
-        fleet.network.draw(save_to=None, width=0.02,
-                           edge_color='grey', markeredgecolor='black',
-                           markeredgewidth=2.0)
-
-        fleet.modify_cs_capacities(cap)
-        init_fleet_size = int(
-            sum([fleet.network.demand(i) for i in fleet.network.customers]) / fleet.vehicles[0].max_payload) + 1
+        # %% 3. Modify CS capacities and set initial fleet size
+        weight_sum = sum([fleet.network.demand(i) for i in fleet.network.customers])
+        max_weight = fleet.vehicles[0].max_payload
+        init_fleet_size = int(weight_sum/ max_weight) + 1
         fleet.resize_fleet(init_fleet_size)
+        fleet.modify_cs_capacities(cap)
 
-        # %% 3. GA hyper-parameters
+        # %% 4. GA hyper-parameters
         CXPB, MUTPB = 0.7, 0.9
         num_individuals = int(len(fleet.network)*1.5) + int(len(fleet)*10) + 50
         max_generations = num_individuals*3
@@ -38,7 +39,6 @@ for instance in instances:
         keep_best = 1  # Keep the 'keep_best' best individuals
         tournament_size = 3
         r = 4
-
         hyper_parameters = HyperParameters(num_individuals, max_generations, CXPB, MUTPB,
                                            tournament_size=tournament_size,
                                            penalization_constant=penalization_constant,
@@ -63,29 +63,32 @@ for instance in instances:
                                                    crossover_repeat=crossover_repeat,
                                                    mutation_repeat=mutation_repeat)
 
-        # %% 4. Run algorithm
+        # %% 5. Specify data folder
         instance_name = instance[:-4]
         try:
             os.mkdir(f'{data_folder}{instance_name}/')
         except FileExistsError:
             pass
         save_to = f'{data_folder}{instance_name}/{cap}/'
+
+        # %% 6. Run algorithm
+        feasible1, feasible2 = False, False
         bestOfAll1 = None
         bestOfAll2 = None
         for k in range(6):
+            # Iterate for init_fleet_size + k vehicles
             routes, fleet, bestOfAll1, feasible1, toolbox1, optData1 = optimal_route_assignation(fleet,
                                                                                                  hyper_parameters,
                                                                                                  save_to,
-                                                                                                 best_ind=bestOfAll1)
+                                                                                                 best_ind=bestOfAll1,
+                                                                                                 savefig=True)
 
-            best_improve = individual_from_routes(routes, fleet)
+            bestOfAll2 = individual_from_routes(routes, fleet)
             routes, fleet, bestOfAll2, feasible2, toolbox2, optData2 = improve_route(fleet, hyper_parameters_improve,
-                                                                                     save_to,
-                                                                                     best_improve)
+                                                                                     save_to, bestOfAll2, savefig=True)
             best_fitness, best_is_feasible = toolbox2.evaluate(bestOfAll2)
-            print(
-                f'The best individual {"is" if best_is_feasible else "is not"} feasible and its fitness is {-best_fitness}')
             if not feasible1 and not feasible2:
+                # Not fasible
                 print('INCREASING FLEET SIZE BY 1...')
                 fleet.resize_fleet(len(fleet) + 1)
                 bestOfAll1.insert(len(fleet.network.customers) + len(fleet) - 2, '|')
@@ -99,40 +102,9 @@ for instance in instances:
                 hyper_parameters.max_generations += 10
                 hyper_parameters_improve.max_generations += 10
             else:
+                # At least one is feasible
                 break
 
-# plot_operation = True if input('Do you want to plot results? (y/n)') == 'y' else False
-plot_operation = False
-
-# %% 5. Plot if user wants to
-if plot_operation:
-    figFitness = figure(plot_width=400, plot_height=300,
-                        title='Best fitness evolution')
-    figFitness.circle(optData2.generations, np.log(optData2.best_fitness))
-    figFitness.xaxis.axis_label = 'Generation'
-    figFitness.yaxis.axis_label = 'log(-fitness)'
-
-    # Standard deviation of fitness per generation
-    figFitnessStd = figure(plot_width=400, plot_height=300,
-                           title='Standard deviation of best fitness per generation')
-    figFitnessStd.circle(optData2.generations, optData2.std_fitness)
-    figFitnessStd.xaxis.axis_label = 'Generation'
-    figFitnessStd.yaxis.axis_label = 'Standard deviation of fitness'
-    figFitnessStd.left[0].formatter.use_scientific = False
-
-    # Grid
-    # p = gridplot([[figFitness, figFitnessStd]], toolbar_location='right')
-    # show(p)
-
-    fig, g = fleet.draw_operation(
-        color_route=('r', 'b', 'g', 'c', 'y', 'r', 'b', 'g', 'c', 'y', 'r', 'b', 'g', 'c', 'y'),
-        save_to=None, width=0.02,
-        edge_color='grey', alpha=.1, markeredgecolor='black', markeredgewidth=2.0)
-    fig.show()
-
-    figs = fleet.plot_operation_pyplot()
-    for k, i in enumerate(figs):
-        plt.figure()
-        i.tight_layout()
-        i.show()
-    # fleet.plot_operation()
+        # %% 7. If both solutions are infeasible, then the instance is infeasible with this capacity and less.
+        if not feasible1 and not feasible2:
+            break

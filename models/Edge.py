@@ -13,10 +13,11 @@ class Edge:
     def get_travel_time(self, time_of_day=None) -> Union[float, int]:
         return self.travel_time
 
-    def get_energy_consumption(self, payload: float, vehicle_weight: float, time_of_day=None, tAB=None) -> Union[float, int]:
+    def get_energy_consumption(self, payload: float, vehicle_weight: float, time_of_day=None, tAB=None) -> Union[
+        float, int]:
         if not self.energy_consumption > 0.:
             return 0.
-        v = 60*self.distance/self.travel_time
+        v = 60 * self.distance / self.travel_time
         m = vehicle_weight + payload
         g = 127008
         Cr = 1.75
@@ -63,11 +64,10 @@ class DynamicEdge:
         m = (self.travel_time[j] - self.travel_time[i]) / self.sample_time
         n = self.travel_time[i] - m * i * self.sample_time
         tt = m * time_of_day + n
-        # return self.travel_time[int(time_of_day/self.sample_time)]
         return tt
 
-    def get_energy_consumption(self, payload: float, vehicle_weight: float, time_of_day: float,
-                               breakpoints_info: Tuple[int, int] = None, tAB: float = None) -> Union[float, int]:
+    def get_energy_consumption(self, payload: float, vehicle_weight: float, time_of_day: float, tAB: float = None,
+                               breakpoints_info: Tuple[int, int] = None) -> Union[float, int]:
         if self.energy_consumption[0] == 0.:
             return 0.
 
@@ -75,12 +75,14 @@ class DynamicEdge:
             time_of_day -= 1440
 
         if tAB is None:
-            tAB = self.get_travel_time(time_of_day, breakpoints_info)*60 # seconds
+            tAB = self.get_travel_time(time_of_day, breakpoints_info) * 60  # seconds
+        else:
+            tAB = tAB * 60
 
-        dAB = self.distance*1000  # meters
+        dAB = self.distance * 1000  # meters
         v = dAB / tAB  # m/s
-        rho_air = 1.2256 # kg/m^3
-        Af = 2.3316 # m^2
+        rho_air = 1.2256  # kg/m^3
+        Af = 2.3316  # m^2
         Cd = 0.28
         eta = 0.92 * 0.91 * 0.9
 
@@ -91,31 +93,53 @@ class DynamicEdge:
             i = int(time_of_day / self.sample_time)
             j = i + 1 if i + 1 < len(self.energy_consumption) else 0
 
-        m = (self.energy_consumption[j] - self.energy_consumption[i]) / (self.sample_time*60)  # kWh/s
-        n = self.energy_consumption[j] - m * j * self.sample_time*60
-        eAB = (m * time_of_day*60 + n)*1000*3.6e3 if j > 0 else (m * (time_of_day - 1440)*60 + n)*1000*3.6e3
+        m = 3.6e6 * (self.energy_consumption[j] - self.energy_consumption[i]) / (self.sample_time * 60)  # J/s
+        n = 3.6e6 * self.energy_consumption[i] - m * i * self.sample_time * 60  # J
+        eAB = m * time_of_day * 60 + n  # J
 
-        alpha = (eAB*eta/dAB-beta)/(vehicle_weight*1000)
-        return ((1000*(vehicle_weight + payload)*alpha + beta)*dAB/eta)/3.6e6
+        alpha = (eAB * eta / dAB - beta) / (vehicle_weight * 1000)
+        return ((1000 * (vehicle_weight + payload) * alpha + beta) * dAB / eta) / 3.6e6
 
-    def waiting_time(self, done_time, t_low, payload_after, vehicle_weight) -> Tuple[float, float, float]:
+    def waiting_time(self, done_time, t_low, payload_after, vehicle_weight) -> Tuple[float, float, float, float]:
         while done_time > 1440:
             done_time -= 1440
-        i = int(done_time / self.sample_time) + 1
-        wt = self.sample_time * i - done_time
-        while wt + self.get_travel_time(done_time + wt) < t_low - done_time:
-            i += 1
-            wt = self.sample_time * i - done_time
 
-        i = i if i < len(self.energy_consumption) else 0
-        j = i - 1
+        # Waiting time in Sk1
+        wt1 = max(0, t_low - self.get_travel_time(done_time) - done_time)
+        ec1 = self.get_energy_consumption(payload_after, vehicle_weight, done_time)
+
+        if wt1 == 0:
+            # Do not wait anywhere
+            tt = self.get_travel_time(done_time)
+            return tt, ec1, 0., 0.
+
+        # Waiting time in SK0
+        j = int(done_time / self.sample_time) + 1
+        wt = self.sample_time * j - done_time
+
+        while wt + self.get_travel_time(done_time + wt) < t_low - done_time:
+            j += 1
+            wt = self.sample_time * j - done_time
+
+        i = j - 1
         m = (self.travel_time[j] - self.travel_time[i]) / self.sample_time
         n = self.travel_time[i] - m * i * self.sample_time
-        wt = max((t_low - n) / (1 + m) - done_time, 0)
+        val = (t_low - n) / (1 + m) - done_time
 
-        tt = self.get_travel_time(done_time + wt, (i, j))
-        ec = self.get_energy_consumption(payload_after, vehicle_weight, done_time + wt, (i, j))
-        return tt, ec, wt
+        wt0 = max(val, 0) if val < 1440 else max(val - 1440, 0)
+        ec0 = self.get_energy_consumption(payload_after, vehicle_weight, done_time + wt)
+
+        # Choose
+        if ec0 >= ec1:
+            ec = ec1
+            tt = self.get_travel_time(done_time)
+            wt0 = 0.
+        else:
+            ec = ec0
+            tt = self.get_travel_time(done_time + wt0, (i, j))
+            wt1 = 0.
+
+        return tt, ec, wt0, wt1
 
     def xml_element(self):
         attribs = {'id': str(self.node_to), 'distance': str(self.distance)}
