@@ -362,7 +362,8 @@ def random_block_index(m, ics, idt, block_probability):
 
 
 # THE ALGORITHM
-def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind=None, savefig=False):
+def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind=None, savefig=False,
+                              plot_best_generation=False):
     # OBJECTS
     creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
     creator.create("Individual", list, fitness=creator.FitnessMin, feasible=False)
@@ -472,7 +473,6 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
         if bestInd.fitness.wvalues[0] > bestOfAll.fitness.wvalues[0]:
             bestOfAll = bestInd
 
-        toolbox.evaluate(bestOfAll)
         # Real-time info
         print(f"Best individual  : {bestInd}\n Fitness: {bestInd.fitness.wvalues[0]} Feasible: {bestInd.feasible}")
 
@@ -499,6 +499,12 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
         opt_data.best_individuals.append(bestInd)
 
         print()
+
+        if plot_best_generation:
+            toolbox.evaluate(bestOfAll)
+            fleet.plot_operation_pyplot()
+            plt.show()
+            input('Press ENTER to evolve...')
 
     t_end = time.time()
     print("################  End of (successful) evolution  ################")

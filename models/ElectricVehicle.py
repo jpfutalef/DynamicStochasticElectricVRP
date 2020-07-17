@@ -86,10 +86,10 @@ class ElectricVehicle:
         len_route = len(route[0])
 
         size_state_matrix = (3, len_route)
-        size_tt = (1, len_route - 1)
-        size_ec = (1, len_route - 1)
-        size_wt = (1, len_route)
-        size_c_op = (1, len_route)
+        size_tt = len_route - 1
+        size_ec = len_route - 1
+        size_wt = len_route
+        size_c_op = len_route
         init_state = (self.x1_0, self.x2_0, self.x3_0)
 
         # Matrices
@@ -108,7 +108,7 @@ class ElectricVehicle:
         self.waiting_times0 = np.zeros(size_wt)
         self.waiting_times1 = np.zeros(size_wt)
         self.charging_times = np.zeros(size_c_op)
-        self.charging_times[0, 0] = route[1][0]  # TODO what's this?
+        self.charging_times[0] = route[1][0]  # TODO what's this?
 
     def step(self, network: Network):
         Sk, Lk = self.route[0], self.route[1]
@@ -118,8 +118,8 @@ class ElectricVehicle:
         wti0, wti1 = 0, 0
         for k, (Sk0, Lk0, Sk1, Lk1) in enumerate(zip(Sk[1:-1], Lk[1:-1], Sk[2:], Lk[2:]), 1):
             self.state_reaching[:, k] = self.state_leaving[:, k - 1] + np.array([tij + wti1, -eij, 0])
-            self.travel_times[0, k - 1] = tij
-            self.energy_consumption[0, k - 1] = eij
+            self.travel_times[k - 1] = tij
+            self.energy_consumption[k - 1] = eij
 
             eta = self.battery_capacity/self.battery_capacity_nominal
             ti = network.spent_time(Sk0, self.state_reaching[1, k], Lk0, eta)
@@ -132,14 +132,14 @@ class ElectricVehicle:
 
             self.state_leaving[:, k] = self.state_reaching[:, k] + np.array([ti + wti0, Lk0, -di])
 
-            self.waiting_times[0, k] = wti1 + wti0
-            self.waiting_times0[0, k] = wti0
-            self.waiting_times1[0, k] = wti1
+            self.waiting_times[k] = wti1 + wti0
+            self.waiting_times0[k] = wti0
+            self.waiting_times1[k+1] = wti1
             if network.isChargingStation(Sk0):
-                self.charging_times[0, k] = ti
+                self.charging_times[k] = ti
 
-        self.travel_times[0, -1] = tij
-        self.energy_consumption[0, -1] = eij
+        self.travel_times[-1] = tij
+        self.energy_consumption[-1] = eij
         self.state_reaching[:, -1] = self.state_leaving[:, -2] + np.array([tij, -eij, 0])
         self.state_leaving[:, -1] = self.state_reaching[:, -1]
 
