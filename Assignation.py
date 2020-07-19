@@ -9,7 +9,7 @@ from os.path import isfile, join
 # %% 1. Specify instance location and capacities to iterate
 data_folder = 'data/instances/'
 # instances = [f for f in listdir('data/instances/') if isfile(join('data/instances/', f))]
-instances = ['c10cs1_20x20km.xml']
+instances = ['c75cs14_20x20km.xml']
 
 capacities = [4, 3, 2, 1]
 soc_policy = (20, 95)

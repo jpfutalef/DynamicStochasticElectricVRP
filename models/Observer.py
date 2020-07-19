@@ -55,12 +55,24 @@ class Observer:
         self.read_measurements()
 
         for id_ev, meas in self.collection.items():
+            ev = f.vehicles[id_ev]
             if meas.is_in_node_from:
-                if n.isCustomer(meas.node_from):
-                    pass
-                elif n.isChargingStation(meas.node_from):
-                    pass
+                route = (ev.route, meas.x1L, meas.x2L, meas.x3L)
             else:
-                pass
-                
+                (S, L) = ev.route
+                i = S.index(meas.node_to)
+                S0, L0 = S[i], L[i]
+                t_reach = meas.x1 + (1-meas.eta)*n.t(meas.node_from, meas.node_to, meas.x1)
+                e_reach = meas.x2 - (1-meas.eta)*n.e(meas.node_from, meas.node_to, meas.x3, ev.weight, meas.x1)
+                t_leave = t_reach + n.spent_time(meas.node_to, e_reach, L0)
+                e_leave = e_reach + L0
+                w_leave = meas.x3 - n.demand(meas.node_to)
+                route = ((S[i:], L[i:]), t_leave, e_leave, w_leave)
+
+            ev.set_route(route[0], route[1], route[2], route[3])
+            ev.step(n)
+
+            for k, t in enumerate(ev.state_reaching[0, :]):
+                if t - meas.x1 >= self.ga_time + self.offset_time:
+                    pass
         return n, f

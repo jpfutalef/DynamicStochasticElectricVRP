@@ -150,27 +150,31 @@ class Fleet:
         if vehicles:
             self.vehicles_to_route = tuple(vehicles)
 
-    def set_routes_of_vehicles(self, routes: RouteDict, iterate=True, init_theta: ndarray = None) -> None:
+    def set_routes_of_vehicles(self, routes: RouteDict, iterate=True, iterate_cs=True,
+                               init_theta: ndarray = None) -> None:
         for id_ev, (route, dep_time, dep_soc, dep_pay) in routes.items():
             self.vehicles[id_ev].set_route(route, dep_time, dep_soc, dep_pay)
             if iterate:
                 self.vehicles[id_ev].step(self.network)
+        if iterate_cs:
+            self.iterate_cs_capacities(init_theta)
 
-                sum_si = sum([len(ev.route[0]) for ev in self.vehicles.values()])
-                num_cs = len(self.network.charging_stations)
-                m = len(self.vehicles)
-                num_events = 2 * sum_si - 2 * m + 1
-                time_vectors = []
-                for id_ev, ev in self.vehicles.items():
-                    time_vectors.append((self.vehicles[id_ev].state_leaving[0, :-1] - ev.waiting_times0[:-1],
-                                         self.vehicles[id_ev].state_reaching[0, 1:], self.vehicles[id_ev].route[0]))
-                if init_theta is None:
-                    init_theta = np.zeros(len(self.network))
-                    init_theta[0] = len(self)
+    def iterate_cs_capacities(self, init_theta: ndarray = None):
+        sum_si = sum([len(ev.route[0]) for ev in self.vehicles.values()])
+        num_cs = len(self.network.charging_stations)
+        m = len(self.vehicles)
+        num_events = 2 * sum_si - 2 * m + 1
+        time_vectors = []
+        for id_ev, ev in self.vehicles.items():
+            time_vectors.append((self.vehicles[id_ev].state_leaving[0, :-1] - ev.waiting_times0[:-1],
+                                 self.vehicles[id_ev].state_reaching[0, 1:], self.vehicles[id_ev].route[0]))
+        if init_theta is None:
+            init_theta = np.zeros(len(self.network))
+            init_theta[0] = len(self)
 
-                self.theta_matrix = np.zeros((len(self.network), num_events))
-                self.theta_matrix[:, 0] = init_theta
-                theta_matrix(self.theta_matrix, time_vectors, num_events)
+        self.theta_matrix = np.zeros((len(self.network), num_events))
+        self.theta_matrix[:, 0] = init_theta
+        theta_matrix(self.theta_matrix, time_vectors, num_events)
 
     def cost_function(self) -> Tuple:
         cost_tt = sum([sum(ev.travel_times) for ev in self.vehicles.values()])

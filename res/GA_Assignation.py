@@ -47,7 +47,7 @@ def decode(individual: IndividualType, m: int, fleet: Fleet, starting_points: St
         ic = starting_points[id_ev]
         S = tuple([ic.S0] + node_sequence + [0])
         L = tuple([ic.L0] + charging_sequence + [0])
-        tw = fleet.network.nodes[S[1]].time_window_low if fleet.network.isCustomer(S[1]) else 7*60.
+        tw = fleet.network.nodes[S[1]].time_window_low if fleet.network.isCustomer(S[1]) else 7 * 60.
         depart_time = tw + depart_time_off
         routes[id_ev] = ((S, L), depart_time, ic.x2_0, sum([fleet.network.demand(x) for x in S]))
     return routes
@@ -161,6 +161,40 @@ def random_individual(num_customers, num_cs, m, r):
 
     individual = customer_blocks + charging_operation_blocks + departure_time_blocks
     return individual
+
+
+def construct_individuals(r: int, fleet: Fleet):
+    net = fleet.network
+    m = len(fleet)
+    tw = {i: net.nodes[i].time_window_low for i in net.customers}
+    sorted_tw = sorted(tw, key=tw.__getitem__)
+
+    inds = []
+    for j in range(m):
+        customers = [[] for _ in range(m)]
+        ev_id = 0
+        for cust_id in sorted_tw[j:] + sorted_tw[:j]:
+            customers[ev_id].append(cust_id)
+            ev_id += 1
+            if ev_id == m:
+                ev_id = 0
+
+        customer_block = []
+        for c in customers:
+            customer_block += c + ['|']
+
+        charging_operation_blocks = []
+        sample_space = tuple(net.customers) + tuple([-1] * m * r)
+        for j in range(m * r):
+            cust, cs, amount = sample(sample_space, 1)[0], sample(net.charging_stations, 1)[0], uniform(20, 30)
+            charging_operation_blocks += [cust, cs, amount]
+            
+        dep_time_block = list(np.random.uniform(-10, 10, m))
+        
+        ind = customer_block + charging_operation_blocks + dep_time_block
+        inds.append(ind)
+
+    return inds
 
 
 # FUNCTIONS MAIN FUNCTIONS WILL CALL
@@ -384,11 +418,14 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
     # BEGIN ALGORITHM
     t_init = time.time()
 
+    # Construct initial population
+    pop = [creator.Individual(i) for i in construct_individuals(hp.r, fleet)]
+
     # Random population
     if best_ind is None:
-        pop = [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals)]
+        pop += [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals - len(pop))]
     else:
-        pop = [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals - 1)]
+        pop += [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals - 1) - len(pop)]
         pop.append(creator.Individual(best_ind))
 
     # Evaluate the initial population and get fitness of each individual
