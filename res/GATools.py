@@ -69,11 +69,9 @@ class OptimizationIterationsData:
         df_op_gens.to_csv(optimization_iterations_filepath)
 
         # theta vector
-        theta_vector = self.fleet.optimization_vector[self.fleet.optimization_vector_indices[6]:]
-        net_size = len(self.fleet.network.nodes)
-        events = list(range(int(len(theta_vector) / net_size)))
-        theta_matrix = np.array([theta_vector[i * net_size:net_size * (i + 1)] for i in events])
-        df_nodes_occupation = pd.DataFrame(theta_matrix, index=events)
+        mt = self.fleet.theta_matrix.T
+        events = list(range(int(len(mt[:, 0]))))
+        df_nodes_occupation = pd.DataFrame(mt, index=events)
         df_nodes_occupation.to_csv(theta_vector_filepath)
 
         # fleet operation

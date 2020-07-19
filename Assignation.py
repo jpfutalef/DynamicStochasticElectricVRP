@@ -9,9 +9,9 @@ from os.path import isfile, join
 # %% 1. Specify instance location and capacities to iterate
 data_folder = 'data/instances/'
 # instances = [f for f in listdir('data/instances/') if isfile(join('data/instances/', f))]
-instances = ['c75cs14_20x20km.xml']
+instances = ['c10cs1_20x20km.xml']
 
-capacities = [4]
+capacities = [4, 3, 2, 1]
 soc_policy = (20, 95)
 
 # %% 2. Instances iteration
@@ -36,8 +36,8 @@ for instance in instances:
 
         # %% 4. GA hyper-parameters
         CXPB, MUTPB = 0.7, 0.9
-        num_individuals = 50#int(len(fleet.network)*1.5) + int(len(fleet)*10) + 50
-        max_generations = 10#num_individuals*3
+        num_individuals = int(len(fleet.network)*1.5) + int(len(fleet)*10) + 50
+        max_generations = num_individuals*3
         penalization_constant = 500000
         weights = (0.2, 0.8, 1.2, .05, 2.0)  # travel_time, charging_time, energy_consumption, charging_cost
         keep_best = 1  # Keep the 'keep_best' best individuals
@@ -51,8 +51,8 @@ for instance in instances:
                                            r=r)
 
         CXPB, MUTPB = 0.7, 0.9
-        num_individuals = 50#int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 50
-        max_generations = 10#num_individuals * 2
+        num_individuals = int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 50
+        max_generations = num_individuals * 2
         penalization_constant = 500000
         weights = (0.2, 0.8, 1.2, 0.05, 3.0)  # travel_time, charging_time, energy_consumption, charging_cost
         keep_best = 1  # Keep the 'keep_best' best individuals

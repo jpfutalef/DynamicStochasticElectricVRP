@@ -29,7 +29,7 @@ def distance(results, multi: np.ndarray, b: np.ndarray):
     return sum([dist_fun(multi[i], b[i]) for i, result in enumerate(results) if not result])
 
 
-def dist_fun(x: ndarray, y: ndarray):
+def dist_fun(x: Union[ndarray, float], y: Union[ndarray, float]):
     # return np.abs(x - y)
     # return np.sqrt(np.power(x - y, 2))
     # return np.abs(np.power(x - y, 2))
@@ -92,6 +92,7 @@ class Fleet:
         self.set_vehicles_to_route(vehicles_to_route)
 
         self.theta_vector = None
+        self.theta_matrix = None
         self.optimization_vector = None
         self.optimization_vector_indices = None
 
@@ -156,6 +157,7 @@ class Fleet:
                 self.vehicles[id_ev].step(self.network)
 
     def create_optimization_vector(self, init_theta: np.ndarray = None) -> np.ndarray:
+        '''
         # 1. Preallocate optimization vector
         sum_si = sum([len(ev.route[0]) for ev in self.vehicles.values()])
         num_cs = len(self.network.charging_stations)
@@ -201,13 +203,28 @@ class Fleet:
         if init_theta is None:
             init_theta = np.zeros(len(self.network))
             init_theta[0] = len(self)
-        m_theta = np.zeros((len(self.network), num_events))
-        m_theta[:, 0] = init_theta
-        theta_matrix(m_theta, time_vectors, num_events)
+        self.theta_matrix = np.zeros((len(self.network), num_events))
+        self.theta_matrix[:, 0] = init_theta
+        theta_matrix(self.theta_matrix, time_vectors, num_events)
         num_cust = len(self.network.customers)
         for i in range(len(self.network.charging_stations)):
             index = iTheta + i * num_events
-            self.optimization_vector[index:index + num_events] = m_theta[1 + num_cust + i, :]
+            self.optimization_vector[index:index + num_events] = self.theta_matrix[1 + num_cust + i, :]
+        '''
+        sum_si = sum([len(ev.route[0]) for ev in self.vehicles.values()])
+        num_cs = len(self.network.charging_stations)
+        m = len(self.vehicles)
+        num_events = 2 * sum_si - 2 * m + 1
+        time_vectors = []
+        for id_ev, ev in self.vehicles.items():
+            time_vectors.append((self.vehicles[id_ev].state_leaving[0, :-1] - ev.waiting_times0[:-1],
+                                 self.vehicles[id_ev].state_reaching[0, 1:], self.vehicles[id_ev].route[0]))
+        if init_theta is None:
+            init_theta = np.zeros(len(self.network))
+            init_theta[0] = len(self)
+        self.theta_matrix = np.zeros((len(self.network), num_events))
+        self.theta_matrix[:, 0] = init_theta
+        theta_matrix(self.theta_matrix, time_vectors, num_events)
 
         # 4. Return optimization vector
         return self.optimization_vector
@@ -232,6 +249,9 @@ class Fleet:
         sum_si = sum([len(ev.route[0]) for ev in self.vehicles.values()])
         num_cs = len(network.charging_stations)
         num_events = 2 * sum_si - 2 * m + 1
+        num_cust = len(network.customers)
+
+        '''
         length_op_vector = len(self.optimization_vector)
 
         ix1, ix2, ix3, ix1L, ix2L, ix3L, iTheta = self.optimization_vector_indices
@@ -244,15 +264,17 @@ class Fleet:
         rows += 2 * n  # Constraint 3 & 4 - Time window up and time window down
         rows += 2 * sum_si  # Constraint 5 & 6 - SOH policies when EV arrives
         rows += 2 * sum_si  # Constraint 7 & 8 - SOH policies when EV leaves
-        rows += num_cs*num_events  # Constraint 9 - CS capacities
+        rows += num_cs * num_events  # Constraint 9 - CS capacities
 
         # %% 4. Preallocate matrices
         A = np.zeros((rows, length_op_vector))
         b = np.zeros(rows)
 
-        # %% 5. Start filling
-        row = 0
 
+        # %% 5. Start filling
+
+        row = 0
+        
         # Constraint 1 - Maximum tour time
         si = 0
         for vehicle in self.vehicles.values():
@@ -325,6 +347,43 @@ class Fleet:
                 dist = distance(boolList, multi, b)
                 is_feasible = False
                 break
+        '''
+        for ev in self.vehicles.values():
+            if ev.state_reaching[0, -1] - ev.state_leaving[0, 0] > ev.max_tour_duration:
+                dist += dist_fun(ev.max_tour_duration, ev.state_reaching[0, -1] - ev.state_leaving[0, 0])
+
+            if ev.state_leaving[2, 0] > ev.max_payload and not online:
+                dist += dist_fun(ev.state_leaving[2, 0], ev.max_payload)
+
+            for k, (Sk, Lk) in enumerate(zip(ev.route[0], ev.route[1])):
+                if network.isCustomer(Sk):
+                    node = network.nodes[Sk]
+                    if node.time_window_low > ev.state_reaching[0, k]:
+                        dist += dist_fun(ev.state_reaching[0, k], node.time_window_low)
+
+                    if node.time_window_upp < ev.state_leaving[0, k] - ev.waiting_times0[k]:
+                        dist += dist_fun(node.time_window_upp, ev.state_leaving[0, k] - ev.waiting_times0[k])
+
+                if ev.state_reaching[1, k] < ev.alpha_down:
+                    dist += dist_fun(ev.state_reaching[1, k], ev.alpha_down)
+
+                if ev.state_reaching[1, k] > ev.alpha_up:
+                    dist += dist_fun(ev.state_reaching[1, k], ev.alpha_up)
+
+                if ev.state_leaving[1, k] < ev.alpha_down:
+                    dist += dist_fun(ev.state_leaving[1, k], ev.alpha_down)
+
+                if ev.state_leaving[1, k] > ev.alpha_up:
+                    dist += dist_fun(ev.state_leaving[1, k], ev.alpha_up)
+
+        for i, cs in enumerate(network.charging_stations):
+            for k in range(num_events):
+                if self.theta_matrix[1 + num_cust + i, k] > network.nodes[cs].capacity:
+                    dist += dist_fun(self.theta_matrix[1 + num_cust + i, :], network.nodes[cs].capacity)
+
+        if dist > 0:
+            is_feasible = False
+
         return is_feasible, dist
 
     def save_operation_xml(self, path: str, critical_points: Dict[int, Tuple[int, float, float, float]], pretty=False):
@@ -576,13 +635,14 @@ class Fleet:
             figs.append(fig)
 
         # Charging stations occupation
-        theta_vector = self.optimization_vector[self.optimization_vector_indices[6]:]
-        net_size = len(self.network)
-        events = list(range(int(len(theta_vector) / net_size)))
-        theta_matrix = np.array([theta_vector[i * net_size:net_size * (i + 1)] for i in events])
+        sum_si = sum([len(ev.route[0]) for ev in self.vehicles.values()])
+        num_cs = len(self.network.charging_stations)
+        m = len(self.vehicles)
+        num_events = 2 * sum_si - 2 * m + 1
+        events = range(num_events)
 
         fig = plt.figure(figsize=fig_size)
-        plt.step(events, theta_matrix[:, net_size - len(self.network.charging_stations):])
+        plt.step(events, self.theta_matrix[-num_cs:, :].T)
         plt.title('CS Occupation')
         plt.xlabel('Event')
         plt.ylabel('Number of EVs')
