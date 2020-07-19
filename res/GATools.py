@@ -1,7 +1,7 @@
 from deap import base, creator, tools
 import datetime, os
 import pandas as pd
-from models.Fleet import *
+from models.OnlineFleet import *
 from res.IOTools import write_pretty_xml
 
 # TYPES
@@ -69,7 +69,7 @@ class OptimizationIterationsData:
         df_op_gens.to_csv(optimization_iterations_filepath)
 
         # theta vector
-        theta_vector = self.fleet.optimization_vector[self.fleet.optimization_vector_indices[10]:]
+        theta_vector = self.fleet.optimization_vector[self.fleet.optimization_vector_indices[6]:]
         net_size = len(self.fleet.network.nodes)
         events = list(range(int(len(theta_vector) / net_size)))
         theta_matrix = np.array([theta_vector[i * net_size:net_size * (i + 1)] for i in events])
@@ -109,7 +109,7 @@ class OptimizationIterationsData:
         # Edit assignation file
         self.fleet.assign_customers_in_route()
         assigned_path = f'{opt_path}assigned.xml'
-        self.fleet.write_xml(assigned_path, True, True, True, True)
+        self.fleet.write_xml(assigned_path, False, True, True, False)
 
         if savefig:
             figs = self.fleet.plot_operation_pyplot()

@@ -69,8 +69,9 @@ def theta_matrix(matrix, time_vectors, events_count) -> None:
         min_t, ind_ev = min([(time_vectors[ind][x[0][1]][x[0][0]], ind) for ind, x in enumerate(counters) if not x[1]])
         event = 1 if counters[ind_ev][0][1] else -1
         node = time_vectors[ind_ev][2][counters[ind_ev][0][0] + counters[ind_ev][0][1]]
+        matrix[:, k] = matrix[:, k - 1]
         matrix[node, k] += event
-        counters[ind_ev][0] += 1
+        counters[ind_ev][0] = counters[ind_ev][0] + 1
         if not counters[ind_ev][0][1] and len(time_vectors[ind_ev][2]) - 1 == counters[ind_ev][0][0] + \
                 counters[ind_ev][0][1]:
             counters[ind_ev][1] = 1
@@ -109,6 +110,37 @@ class Fleet:
         del self.vehicles[ev_id]
         self.vehicles_to_route = tuple(i for i in self.vehicles_to_route if i != ev_id)
 
+    def resize_fleet(self, new_size, as_new=True, based_on=0, auto=False):
+        if auto:
+            net = self.network
+            new_size = int(sum([net.demand(i) for i in net.customers]) / self.vehicles[0].max_payload) + 1
+
+        ev_base = deepcopy(self.vehicles[based_on])
+        if as_new:
+            ev_base.reset()
+
+        self.vehicles = {}
+        for i in range(new_size):
+            ev = deepcopy(ev_base)
+            ev.id = i
+            self.vehicles[i] = ev
+
+        self.vehicles_to_route = tuple(i for i in range(new_size))
+
+    def new_soc_policy(self, alpha_down, alpha_upp):
+        for ev in self.vehicles.values():
+            ev.alpha_down = alpha_down
+            ev.alpha_up = alpha_upp
+
+    def relax_time_windows(self):
+        for cust in self.network.customers:
+            self.network.nodes[cust].time_window_low = 0.
+            self.network.nodes[cust].time_window_upp = 60 * 24
+
+    def modify_cs_capacities(self, new_capacity):
+        for cs in self.network.charging_stations:
+            self.network.nodes[cs].capacity = new_capacity
+
     def assign_customers_in_route(self):
         for ev in self.vehicles.values():
             ev.assign_customers_in_route(self.network)
@@ -123,13 +155,13 @@ class Fleet:
             if iterate:
                 self.vehicles[id_ev].step(self.network)
 
-    def create_optimization_vector(self, init_theta: np.ndarray) -> np.ndarray:
+    def create_optimization_vector(self, init_theta: np.ndarray = None) -> np.ndarray:
         # 1. Preallocate optimization vector
         sum_si = sum([len(ev.route[0]) for ev in self.vehicles.values()])
         num_cs = len(self.network.charging_stations)
         m = len(self.vehicles)
         num_events = 2 * sum_si - 2 * m + 1
-        length_op_vector = 3 * sum_si + num_cs * num_events
+        length_op_vector = 6 * sum_si + num_cs * num_events
 
         self.optimization_vector = np.zeros(length_op_vector)
 
@@ -166,13 +198,16 @@ class Fleet:
             ix3L += si
 
         # 3. Create theta vector and fill optimization vector
+        if init_theta is None:
+            init_theta = np.zeros(len(self.network))
+            init_theta[0] = len(self)
         m_theta = np.zeros((len(self.network), num_events))
         m_theta[:, 0] = init_theta
         theta_matrix(m_theta, time_vectors, num_events)
         num_cust = len(self.network.customers)
         for i in range(len(self.network.charging_stations)):
             index = iTheta + i * num_events
-            self.optimization_vector[index:index + num_events] = m_theta[:, 1 + num_cust + i]
+            self.optimization_vector[index:index + num_events] = m_theta[1 + num_cust + i, :]
 
         # 4. Return optimization vector
         return self.optimization_vector
@@ -185,7 +220,7 @@ class Fleet:
         cost_wait_time = sum([sum(ev.waiting_times) for ev in self.vehicles.values()])
         return cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_wait_time
 
-    def feasible(self) -> (bool, Union[int, float]):
+    def feasible(self, online=False) -> (bool, Union[int, float]):
         # %% 1. Variables to return
         is_feasible = True
         dist = 0
@@ -195,6 +230,8 @@ class Fleet:
         m = len(self.vehicles)
         n = sum([1 for ev in self.vehicles.values() for node in ev.route[0] if network.isCustomer(node)])
         sum_si = sum([len(ev.route[0]) for ev in self.vehicles.values()])
+        num_cs = len(network.charging_stations)
+        num_events = 2 * sum_si - 2 * m + 1
         length_op_vector = len(self.optimization_vector)
 
         ix1, ix2, ix3, ix1L, ix2L, ix3L, iTheta = self.optimization_vector_indices
@@ -203,11 +240,11 @@ class Fleet:
         rows = 0
 
         rows += m  # Constraint 1 - Maximum tour time
-        # rows += m  # Constraint 2 - Maximum weight
+        rows += m  # Constraint 2 - Maximum weight
         rows += 2 * n  # Constraint 3 & 4 - Time window up and time window down
         rows += 2 * sum_si  # Constraint 5 & 6 - SOH policies when EV arrives
         rows += 2 * sum_si  # Constraint 7 & 8 - SOH policies when EV leaves
-        rows += 2 * sum_si - 2 * m + 1  # Constraint 9 - CS capacities
+        rows += num_cs*num_events  # Constraint 9 - CS capacities
 
         # %% 4. Preallocate matrices
         A = np.zeros((rows, length_op_vector))
@@ -243,7 +280,7 @@ class Fleet:
                     row += 1
 
                     A[row, ix1L + si + k] = 1.0
-                    b[row] = network.nodes[Sk].time_window_upp
+                    b[row] = network.nodes[Sk].time_window_upp + vehicle.waiting_times0[k]
                     row += 1
             si += len(vehicle.route[0])
 
@@ -274,10 +311,9 @@ class Fleet:
             si += len(vehicle.route[0])
 
         # Constraint 9 - CS capacities
-        num_events = 2 * sum_si - 2 * m + 1
         for i, cs in enumerate(network.charging_stations):
             for k in range(num_events):
-                A[row, iTheta + i*num_events + k] = 1.0
+                A[row, iTheta + i * num_events + k] = 1.0
                 b[row] = network.nodes[cs].capacity
                 row += 1
 
@@ -402,7 +438,8 @@ class Fleet:
             U_node = [0 for i in range(si) if self.network.isCustomer(Si[i])]
             V_node = [l_time[i] - r_time[i] - wt0[i] for i in range(si) if self.network.isCustomer(Si[i])]
             plt.quiver(X_node, Y_node, U_node, V_node, scale=1, angles='xy', scale_units='xy',
-                       color=arrow_colors[2], width=0.0004 * fig_size[0], headwidth=6, zorder=10, label='Serving customer')
+                       color=arrow_colors[2], width=0.0004 * fig_size[0], headwidth=6, zorder=10,
+                       label='Serving customer')
 
             # time in nodes CS
             X_node = [i for i in range(si) if self.network.isChargingStation(Si[i])]
@@ -416,7 +453,7 @@ class Fleet:
             # waiting times 0
             X_node = range(si)
             Y_node = l_time - wt0
-            U_node = [0]*si
+            U_node = [0] * si
             V_node = wt0
             plt.quiver(X_node, Y_node, U_node, V_node, scale=1, angles='xy', scale_units='xy',
                        color='orange', width=0.0004 * fig_size[0], headwidth=6, zorder=10, label='Waiting')
@@ -539,7 +576,7 @@ class Fleet:
             figs.append(fig)
 
         # Charging stations occupation
-        theta_vector = self.optimization_vector[self.optimization_vector_indices[10]:]
+        theta_vector = self.optimization_vector[self.optimization_vector_indices[6]:]
         net_size = len(self.network)
         events = list(range(int(len(theta_vector) / net_size)))
         theta_matrix = np.array([theta_vector[i * net_size:net_size * (i + 1)] for i in events])

@@ -108,7 +108,6 @@ class ElectricVehicle:
         self.waiting_times0 = np.zeros(size_wt)
         self.waiting_times1 = np.zeros(size_wt)
         self.charging_times = np.zeros(size_c_op)
-        self.charging_times[0] = route[1][0]  # TODO what's this?
 
     def step(self, network: Network):
         Sk, Lk = self.route[0], self.route[1]

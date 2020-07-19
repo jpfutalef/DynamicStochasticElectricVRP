@@ -289,7 +289,7 @@ class Fleet:
                     row += 1
 
                     A[row, ix1L + si + k] = 1.0
-                    b[row] = network.nodes[Sk].time_window_upp
+                    b[row] = network.nodes[Sk].time_window_upp + vehicle.waiting_times0[k]
                     row += 1
             si += len(vehicle.route[0])
 

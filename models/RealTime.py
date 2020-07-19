@@ -63,7 +63,7 @@ class XMLParserRealtime:
         travel_time = {}
         energy_consumption = {}
 
-        for i, nodeFrom in enumerate(_edges):  # FIXME should 'i' be id?
+        for i, nodeFrom in enumerate(_edges):
             tt_dict = travel_time[i] = {}
             ec_dict = energy_consumption[i] = {}
             for j, nodeTo in enumerate(nodeFrom):
