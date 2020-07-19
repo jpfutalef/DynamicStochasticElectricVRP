@@ -74,7 +74,7 @@ def fitness(individual: IndividualType, fleet: Fleet, starting_points: StartingP
     fleet.set_routes_of_vehicles(routes)
 
     # Cost
-    cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_wait_time = fleet.cost_function()
+    costs = np.array(fleet.cost_function())
 
     # Check if the solution is feasible
     feasible, penalization = fleet.feasible()
@@ -83,7 +83,6 @@ def fitness(individual: IndividualType, fleet: Fleet, starting_points: StartingP
     if not feasible:
         penalization += penalization_constant
 
-    costs = np.array([cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_wait_time])
     fit = np.dot(costs, np.asarray(weights)) + penalization
 
     return fit, feasible
@@ -186,7 +185,8 @@ def construct_individuals(r: int, fleet: Fleet):
         charging_operation_blocks = []
         sample_space = tuple(net.customers) + tuple([-1] * m * r)
         for j in range(m * r):
-            cust, cs, amount = sample(sample_space, 1)[0], sample(net.charging_stations, 1)[0], uniform(20, 30)
+            #cust, cs, amount = sample(sample_space, 1)[0], sample(net.charging_stations, 1)[0], uniform(20, 30)
+            cust, cs, amount = -1, sample(net.charging_stations, 1)[0], uniform(20, 30)
             charging_operation_blocks += [cust, cs, amount]
             
         dep_time_block = list(np.random.uniform(-10, 10, m))
@@ -420,12 +420,17 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
 
     # Construct initial population
     pop = [creator.Individual(i) for i in construct_individuals(hp.r, fleet)]
+    init_size = len(pop)
+    random_inds_num = int(hp.num_individuals/3)
+    mutate_num = hp.num_individuals - init_size - random_inds_num
 
     # Random population
     if best_ind is None:
-        pop += [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals - len(pop))]
+        pop += [toolbox.mutate(toolbox.clone(pop[randint(0, init_size - 1)])) for i in range(mutate_num)]
+        pop += [creator.Individual(toolbox.individual()) for i in range(random_inds_num)]
     else:
-        pop += [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals - 1) - len(pop)]
+        pop += [toolbox.mutate(toolbox.clone(pop[randint(0, init_size - 1)])) for i in range(mutate_num)]
+        pop += [creator.Individual(toolbox.individual()) for i in range(random_inds_num - 1)]
         pop.append(creator.Individual(best_ind))
 
     # Evaluate the initial population and get fitness of each individual

@@ -227,7 +227,7 @@ class Fleet:
         for i, cs in enumerate(network.charging_stations):
             for k in range(num_events):
                 if self.theta_matrix[1 + num_cust + i, k] > network.nodes[cs].capacity:
-                    dist += dist_fun(self.theta_matrix[1 + num_cust + i, :], network.nodes[cs].capacity)
+                    dist += dist_fun(self.theta_matrix[1 + num_cust + i, k], network.nodes[cs].capacity)
 
         if dist > 0:
             is_feasible = False
@@ -341,7 +341,7 @@ class Fleet:
 
             # time in nodes customers
             X_node = [i for i in range(si) if self.network.isCustomer(Si[i])]
-            Y_node = [t for i, t in enumerate(r_time + wt1) if self.network.isCustomer(Si[i])]
+            Y_node = [t for i, t in enumerate(r_time) if self.network.isCustomer(Si[i])]
             U_node = [0 for i in range(si) if self.network.isCustomer(Si[i])]
             V_node = [l_time[i] - r_time[i] - wt0[i] for i in range(si) if self.network.isCustomer(Si[i])]
             plt.quiver(X_node, Y_node, U_node, V_node, scale=1, angles='xy', scale_units='xy',
@@ -499,8 +499,7 @@ class Fleet:
         return figs
 
     def draw_operation(self, color_route='red', **kwargs):
-        nodes_id = {i: i for i, node in self.network.nodes.items()}
-        fig, g = self.network.draw(labels=nodes_id, **kwargs)
+        fig, g = self.network.draw(**kwargs)
         pos = {i: (node.pos_x, node.pos_y) for i, node in self.network.nodes.items()}
         cc = 0
         for id_ev, ev in self.vehicles.items():
@@ -509,7 +508,7 @@ class Fleet:
                 nx.draw_networkx_edges(g, pos, edgelist=edges, ax=fig.get_axes()[0], edge_color=color_route)
             else:
                 nx.draw_networkx_edges(g, pos, edgelist=edges, ax=fig.get_axes()[0], edge_color=color_route[cc])
-                cc += 1
+                cc = cc + 1 if cc + 1 < len(color_route) else 0
         return fig, g
 
     def plot_operation(self, save=False, path=None):
@@ -803,6 +802,7 @@ def routes_from_xml(path: str, fleet: Fleet) -> RouteDict:
     # Open XML file
     tree = ET.parse(path)
     _fleet: ET = tree.find('fleet')
+    _fleet = _fleet if _fleet is not None else tree.getroot()
 
     routes: RouteDict = {}
     for _ev in _fleet:

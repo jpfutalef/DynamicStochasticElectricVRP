@@ -8,8 +8,8 @@ from os.path import isfile, join
 
 # %% 1. Specify instance location and capacities to iterate
 data_folder = 'data/instances/'
-# instances = [f for f in listdir('data/instances/') if isfile(join('data/instances/', f))]
-instances = ['c75cs14_20x20km.xml']
+instances = [f for f in listdir('data/instances/') if isfile(join('data/instances/', f))]
+#instances = ['c75cs14_20x20km.xml']
 
 capacities = [4, 3, 2, 1]
 soc_policy = (20, 95)
@@ -39,7 +39,7 @@ for instance in instances:
         num_individuals = int(len(fleet.network)*1.5) + int(len(fleet)*10) + 50
         max_generations = num_individuals*3
         penalization_constant = 500000
-        weights = (0.2, 0.8, 1.2, .05, 2.0)  # travel_time, charging_time, energy_consumption, charging_cost
+        weights = (.2, 1.2, 20., 20., .3)  # cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_wait_time
         keep_best = 1  # Keep the 'keep_best' best individuals
         tournament_size = 3
         r = 4
@@ -54,7 +54,7 @@ for instance in instances:
         num_individuals = int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 50
         max_generations = num_individuals * 2
         penalization_constant = 500000
-        weights = (0.2, 0.8, 1.2, 0.05, 3.0)  # travel_time, charging_time, energy_consumption, charging_cost
+        weights = (.2, 1.2, 20., 20., .3)  # cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_wait_time
         keep_best = 1  # Keep the 'keep_best' best individuals
         tournament_size = 3
         crossover_repeat = 1
@@ -79,7 +79,7 @@ for instance in instances:
         feasible1, feasible2 = False, False
         bestOfAll1 = None
         bestOfAll2 = None
-        for k in range(1):
+        for k in range(6):
             # Iterate for init_fleet_size + k vehicles
             routes, fleet, bestOfAll1, feasible1, toolbox1, optData1 = optimal_route_assignation(fleet,
                                                                                                  hyper_parameters,

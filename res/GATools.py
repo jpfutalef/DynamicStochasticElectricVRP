@@ -110,10 +110,23 @@ class OptimizationIterationsData:
         self.fleet.write_xml(assigned_path, False, True, True, False)
 
         if savefig:
+            fig, g = self.fleet.network.draw(save_to=f'{opt_path}network', width=0.02,
+                                             edge_color='grey',
+                                             markeredgecolor='black', markeredgewidth=2.0)
+
             figs = self.fleet.plot_operation_pyplot()
             for ev_id, fig in enumerate(figs[:-1]):
                 fig.savefig(f'{opt_path}operation_EV{ev_id}')
             figs[-1].savefig(f'{opt_path}cs_occupation')
+
+            fig, g = self.fleet.draw_operation(color_route=('r', 'b', 'g', 'c', 'y'), save_to=None, width=0.02,
+                                               edge_color='grey',
+                                               markeredgecolor='black', markeredgewidth=2.0)
+
+            fig.savefig(f'{opt_path}network_operation')
+            plt.close('all')
+
+
 class OptimizationReport(NamedTuple):
     best_fitness: float
     feasible: bool
@@ -154,6 +167,7 @@ def save_optimization_report(path, report: OptimizationReport, pretty=False) -> 
         write_pretty_xml(path)
     return
 
+
 def read_optimization_report(path, tree=None) -> Union[OptimizationReport, None]:
     if not tree:
         tree = ET.parse(path)
@@ -189,4 +203,3 @@ def fitness(routes: RouteDict, fleet: Fleet, hyper_parameters: HyperParameters):
     # calculate and return
     fit = np.dot(np.asarray(costs), np.asarray(weights)) + penalization
     return fit, feasible
-

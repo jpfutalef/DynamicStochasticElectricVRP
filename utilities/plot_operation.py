@@ -2,7 +2,7 @@ import sys
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
-from Fleet import routes_from_xml
+from models.OnlineFleet import routes_from_xml
 #rcParams['font.family'] = 'Times New Roman'
 #rcParams['font.size'] = '12'
 #rcParams['pdf.fonttype'] = 42
@@ -12,10 +12,10 @@ import matplotlib as mpl
 mpl.use('Qt5Agg')
 
 sys.path.append('..')
-from models.Fleet import from_xml
+from models.OnlineFleet import from_xml
 
-instance = 'data/instances/c10cs1_40x40km.xml'
-opt_res_folder = 'data/instances/c10cs1_40x40km/4/16-07-2020_01-54-48_INFEASIBLE_ASSIGNATION/'
+instance = 'data/instances/c10cs1_20x20km.xml'
+opt_res_folder = 'data/instances/c10cs1_20x20km/3/19-07-2020_03-06-58_FEASIBLE_ASSIGNED/'
 
 fleet = from_xml(instance)
 
@@ -37,7 +37,6 @@ for i in range(fleet_size):
 '''
 
 fleet.set_routes_of_vehicles(routes)
-fleet.create_optimization_vector()
 
 plots = fleet.plot_operation_pyplot(label_offset=(.05, -7), fig_size=(16, 4), save_to=opt_res_folder+'/')
 plt.show()
