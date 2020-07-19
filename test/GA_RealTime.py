@@ -1,4 +1,4 @@
-from res.GA_RealTime import *
+from res.GA_Online import *
 from models.Fleet import from_xml
 
 if __name__ == '__main__':

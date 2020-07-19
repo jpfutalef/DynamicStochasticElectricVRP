@@ -85,8 +85,9 @@ class Fleet:
     optimization_vector: Union[np.ndarray, None]
     optimization_vector_indices: Union[Tuple, None]
     starting_points: Dict[int, InitialCondition]
+    route: bool
 
-    def __init__(self, vehicles=None, network=None, vehicles_to_route=None):
+    def __init__(self, vehicles=None, network=None, vehicles_to_route=None, route=True):
         self.set_vehicles(vehicles)
         self.set_network(network)
         self.set_vehicles_to_route(vehicles_to_route)
@@ -97,6 +98,7 @@ class Fleet:
         self.optimization_vector_indices = None
 
         self.starting_points = {}
+        self.route = route
 
     def __len__(self):
         return len(self.vehicles)
@@ -109,7 +111,9 @@ class Fleet:
 
     def drop_vehicle(self, ev_id: int) -> None:
         del self.vehicles[ev_id]
-        self.vehicles_to_route = tuple(i for i in self.vehicles_to_route if i != ev_id)
+        evs_id = len(self.vehicles)
+        vehicles = {i: ev for i, ev in zip(range(evs_id), self.vehicles.values())}
+        self.vehicles = vehicles
 
     def resize_fleet(self, new_size, as_new=True, based_on=0, auto=False):
         if auto:

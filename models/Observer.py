@@ -11,12 +11,15 @@ class ElectricVehicleMeasurement:
     node_from: int
     node_to: int
     eta: float
-    ti: float
-    tf: float
-    is_in_node_from: bool
     x1: float
     x2: float
     x3: float
+    is_in_node_from: bool
+    end_service: float
+    end_soc: float
+    end_weight: float
+    time_since_start: float
+    consumption_since_start: float
     done: bool
 
     def xml_element(self) -> [ET.Element]:
@@ -30,8 +33,8 @@ class ElectricVehicleMeasurement:
 def create_measurement_files(f: fleet.Fleet):
     root = ET.Element('measurements')
     for ev in f.vehicles.values():
-        m = ElectricVehicleMeasurement(ev.id, ev.route[0][0], ev.route[0][1], 0., True, ev.x1_0, ev.x1_0, ev.x2_0,
-                                       ev.x3_0, False)
+        m = ElectricVehicleMeasurement(ev.id, ev.route[0][0], ev.route[0][1], 0., ev.x1_0, ev.x2_0, ev.x3_0, True,
+                                       ev.x1_0, ev.x2_0, ev.x3_0, 0., 0., False)
         root.append(m.xml_element())
 
 
@@ -43,6 +46,7 @@ class Observer:
     measure_path: str
     ga_time: float
     offset_time: float
+    num_of_last_nodes: int
 
     def read_measurements(self):
         root = ET.parse(self.measure_path).getroot()
@@ -55,9 +59,11 @@ class Observer:
         self.read_measurements()
 
         for id_ev, meas in self.collection.items():
+            if not meas.done:
+                continue
             ev = f.vehicles[id_ev]
             if meas.is_in_node_from:
-                route = (ev.route, meas.x1L, meas.x2L, meas.x3L)
+                route = (ev.route, meas.end_service, meas.end_soc, meas.end_weight)
             else:
                 (S, L) = ev.route
                 i = S.index(meas.node_to)
@@ -73,6 +79,10 @@ class Observer:
             ev.step(n)
 
             for k, t in enumerate(ev.state_reaching[0, :]):
-                if t - meas.x1 >= self.ga_time + self.offset_time:
-                    pass
+                if len(ev.route[0]) - k >= self.num_of_last_nodes:
+                    f.drop_vehicle(id_ev)
+                    break
+                elif t - meas.x1 >= self.ga_time + self.offset_time:
+                    S, L = ev.route
+
         return n, f

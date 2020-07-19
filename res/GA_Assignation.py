@@ -171,12 +171,12 @@ def construct_individuals(r: int, fleet: Fleet):
     inds = []
     for j in range(m):
         customers = [[] for _ in range(m)]
-        ev_id = 0
+        off = 0
         for cust_id in sorted_tw[j:] + sorted_tw[:j]:
-            customers[ev_id].append(cust_id)
-            ev_id += 1
-            if ev_id == m:
-                ev_id = 0
+            customers[j + off].append(cust_id)
+            off += 1
+            if j + off == m:
+                off = 0
 
         customer_block = []
         for c in customers:
