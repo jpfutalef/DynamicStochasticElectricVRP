@@ -176,9 +176,6 @@ def fitness(individual: IndividualType, fleet: Fleet, indices: IndicesType, init
     # Set routes
     fleet.set_routes_of_vehicles(routes)
 
-    # Get optimization vector
-    fleet.create_optimization_vector()
-
     # Cost
     costs = np.array(fleet.cost_function())
 

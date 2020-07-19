@@ -73,9 +73,6 @@ def fitness(individual: IndividualType, fleet: Fleet, starting_points: StartingP
     # Set routes
     fleet.set_routes_of_vehicles(routes)
 
-    # Get optimization vector
-    fleet.create_optimization_vector()
-
     # Cost
     cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_wait_time = fleet.cost_function()
 

@@ -150,84 +150,27 @@ class Fleet:
         if vehicles:
             self.vehicles_to_route = tuple(vehicles)
 
-    def set_routes_of_vehicles(self, routes: RouteDict, iterate=True) -> None:
+    def set_routes_of_vehicles(self, routes: RouteDict, iterate=True, init_theta: ndarray = None) -> None:
         for id_ev, (route, dep_time, dep_soc, dep_pay) in routes.items():
             self.vehicles[id_ev].set_route(route, dep_time, dep_soc, dep_pay)
             if iterate:
                 self.vehicles[id_ev].step(self.network)
 
-    def create_optimization_vector(self, init_theta: np.ndarray = None) -> np.ndarray:
-        '''
-        # 1. Preallocate optimization vector
-        sum_si = sum([len(ev.route[0]) for ev in self.vehicles.values()])
-        num_cs = len(self.network.charging_stations)
-        m = len(self.vehicles)
-        num_events = 2 * sum_si - 2 * m + 1
-        length_op_vector = 6 * sum_si + num_cs * num_events
+                sum_si = sum([len(ev.route[0]) for ev in self.vehicles.values()])
+                num_cs = len(self.network.charging_stations)
+                m = len(self.vehicles)
+                num_events = 2 * sum_si - 2 * m + 1
+                time_vectors = []
+                for id_ev, ev in self.vehicles.items():
+                    time_vectors.append((self.vehicles[id_ev].state_leaving[0, :-1] - ev.waiting_times0[:-1],
+                                         self.vehicles[id_ev].state_reaching[0, 1:], self.vehicles[id_ev].route[0]))
+                if init_theta is None:
+                    init_theta = np.zeros(len(self.network))
+                    init_theta[0] = len(self)
 
-        self.optimization_vector = np.zeros(length_op_vector)
-
-        # 1. Define indices
-        ix1 = 0
-        ix2 = sum_si
-        ix3 = 2 * sum_si
-        ix1L = 3 * sum_si
-        ix2L = 4 * sum_si
-        ix3L = 5 * sum_si
-        iTheta = 6 * sum_si
-
-        self.optimization_vector_indices = (ix1, ix2, ix3, ix1L, ix2L, ix3L, iTheta)
-
-        # 2. Fill
-        time_vectors = []
-        for id_ev, ev in self.vehicles.items():
-            si = len(ev.route[0])
-            self.optimization_vector[ix1:ix1 + si] = ev.state_reaching[0, :]
-            self.optimization_vector[ix2:ix2 + si] = ev.state_reaching[1, :]
-            self.optimization_vector[ix3:ix3 + si] = ev.state_reaching[2, :]
-            self.optimization_vector[ix1L:ix1L + si] = ev.state_leaving[0, :] - ev.waiting_times0
-            self.optimization_vector[ix2L:ix2L + si] = ev.state_leaving[1, :]
-            self.optimization_vector[ix3L:ix3L + si] = ev.state_leaving[2, :]
-
-            time_vectors.append((self.vehicles[id_ev].state_leaving[0, :-1] - ev.waiting_times0[:-1],
-                                 self.vehicles[id_ev].state_reaching[0, 1:], self.vehicles[id_ev].route[0]))
-
-            ix1 += si
-            ix2 += si
-            ix3 += si
-            ix1L += si
-            ix2L += si
-            ix3L += si
-
-        # 3. Create theta vector and fill optimization vector
-        if init_theta is None:
-            init_theta = np.zeros(len(self.network))
-            init_theta[0] = len(self)
-        self.theta_matrix = np.zeros((len(self.network), num_events))
-        self.theta_matrix[:, 0] = init_theta
-        theta_matrix(self.theta_matrix, time_vectors, num_events)
-        num_cust = len(self.network.customers)
-        for i in range(len(self.network.charging_stations)):
-            index = iTheta + i * num_events
-            self.optimization_vector[index:index + num_events] = self.theta_matrix[1 + num_cust + i, :]
-        '''
-        sum_si = sum([len(ev.route[0]) for ev in self.vehicles.values()])
-        num_cs = len(self.network.charging_stations)
-        m = len(self.vehicles)
-        num_events = 2 * sum_si - 2 * m + 1
-        time_vectors = []
-        for id_ev, ev in self.vehicles.items():
-            time_vectors.append((self.vehicles[id_ev].state_leaving[0, :-1] - ev.waiting_times0[:-1],
-                                 self.vehicles[id_ev].state_reaching[0, 1:], self.vehicles[id_ev].route[0]))
-        if init_theta is None:
-            init_theta = np.zeros(len(self.network))
-            init_theta[0] = len(self)
-        self.theta_matrix = np.zeros((len(self.network), num_events))
-        self.theta_matrix[:, 0] = init_theta
-        theta_matrix(self.theta_matrix, time_vectors, num_events)
-
-        # 4. Return optimization vector
-        return self.optimization_vector
+                self.theta_matrix = np.zeros((len(self.network), num_events))
+                self.theta_matrix[:, 0] = init_theta
+                theta_matrix(self.theta_matrix, time_vectors, num_events)
 
     def cost_function(self) -> Tuple:
         cost_tt = sum([sum(ev.travel_times) for ev in self.vehicles.values()])
@@ -245,109 +188,10 @@ class Fleet:
         # %% 2. Variables from the optimization vector and vehicles
         network = self.network
         m = len(self.vehicles)
-        n = sum([1 for ev in self.vehicles.values() for node in ev.route[0] if network.isCustomer(node)])
         sum_si = sum([len(ev.route[0]) for ev in self.vehicles.values()])
-        num_cs = len(network.charging_stations)
         num_events = 2 * sum_si - 2 * m + 1
         num_cust = len(network.customers)
 
-        '''
-        length_op_vector = len(self.optimization_vector)
-
-        ix1, ix2, ix3, ix1L, ix2L, ix3L, iTheta = self.optimization_vector_indices
-
-        # %% 3. Amount of rows
-        rows = 0
-
-        rows += m  # Constraint 1 - Maximum tour time
-        rows += m  # Constraint 2 - Maximum weight
-        rows += 2 * n  # Constraint 3 & 4 - Time window up and time window down
-        rows += 2 * sum_si  # Constraint 5 & 6 - SOH policies when EV arrives
-        rows += 2 * sum_si  # Constraint 7 & 8 - SOH policies when EV leaves
-        rows += num_cs * num_events  # Constraint 9 - CS capacities
-
-        # %% 4. Preallocate matrices
-        A = np.zeros((rows, length_op_vector))
-        b = np.zeros(rows)
-
-
-        # %% 5. Start filling
-
-        row = 0
-        
-        # Constraint 1 - Maximum tour time
-        si = 0
-        for vehicle in self.vehicles.values():
-            A[row, ix1 + si] = -1.0
-            si += len(vehicle.route[0])
-            A[row, ix1 + si - 1] = 1.0
-            b[row] = vehicle.max_tour_duration
-            row += 1
-
-        # Constraint 2 - Maximum weight
-        si = 0
-        for vehicle in self.vehicles.values():
-            A[row, ix3 + si] = 1.0
-            b[row] = vehicle.max_payload
-            si += len(vehicle.route[0])
-            row += 1
-
-        # Constraint 3 & 4 - Time window up and time window down
-        si = 0
-        for vehicle in self.vehicles.values():
-            for k, (Sk, Lk) in enumerate(zip(vehicle.route[0], vehicle.route[1])):
-                if network.isCustomer(Sk):
-                    A[row, ix1 + si + k] = -1.0
-                    b[row] = -network.nodes[Sk].time_window_low
-                    row += 1
-
-                    A[row, ix1L + si + k] = 1.0
-                    b[row] = network.nodes[Sk].time_window_upp + vehicle.waiting_times0[k]
-                    row += 1
-            si += len(vehicle.route[0])
-
-        # Constraint 5 & 6 - SOH policies when EV arrives
-        si = 0
-        for _, vehicle in self.vehicles.items():
-            for k, (Sk, Lk) in enumerate(zip(vehicle.route[0], vehicle.route[1])):
-                A[row, ix2 + si + k] = -1.0
-                b[row] = -vehicle.alpha_down
-                row += 1
-
-                A[row, ix2 + si + k] = 1.0
-                b[row] = vehicle.alpha_up
-                row += 1
-            si += len(vehicle.route[0])
-
-        # Constraint 7 & 8 - SOH policies when EV leaves
-        si = 0
-        for _, vehicle in self.vehicles.items():
-            for k, (Sk, Lk) in enumerate(zip(vehicle.route[0], vehicle.route[1])):
-                A[row, ix2L + si + k] = -1.0
-                b[row] = -vehicle.alpha_down + Lk
-                row += 1
-
-                A[row, ix2L + si + k] = 1.0
-                b[row] = vehicle.alpha_up - Lk
-                row += 1
-            si += len(vehicle.route[0])
-
-        # Constraint 9 - CS capacities
-        for i, cs in enumerate(network.charging_stations):
-            for k in range(num_events):
-                A[row, iTheta + i * num_events + k] = 1.0
-                b[row] = network.nodes[cs].capacity
-                row += 1
-
-        # 6. Check
-        multi = np.matmul(A, self.optimization_vector)
-        boolList = multi <= b
-        for result in boolList:
-            if not result:
-                dist = distance(boolList, multi, b)
-                is_feasible = False
-                break
-        '''
         for ev in self.vehicles.values():
             if ev.state_reaching[0, -1] - ev.state_leaving[0, 0] > ev.max_tour_duration:
                 dist += dist_fun(ev.max_tour_duration, ev.state_reaching[0, -1] - ev.state_leaving[0, 0])
