@@ -211,10 +211,10 @@ class Fleet:
                 if network.isCustomer(Sk):
                     node = network.nodes[Sk]
                     if node.time_window_low > ev.state_reaching[0, k]:
-                        dist += dist_fun(ev.state_reaching[0, k], node.time_window_low)
+                        dist += 20*dist_fun(ev.state_reaching[0, k], node.time_window_low)
 
                     if node.time_window_upp < ev.state_leaving[0, k] - ev.waiting_times0[k]:
-                        dist += dist_fun(node.time_window_upp, ev.state_leaving[0, k] - ev.waiting_times0[k])
+                        dist += 20*dist_fun(node.time_window_upp, ev.state_leaving[0, k] - ev.waiting_times0[k])
 
                 if ev.state_reaching[1, k] < ev.alpha_down:
                     dist += dist_fun(ev.state_reaching[1, k], ev.alpha_down)
@@ -227,6 +227,18 @@ class Fleet:
 
                 if ev.state_leaving[1, k] > ev.alpha_up:
                     dist += dist_fun(ev.state_leaving[1, k], ev.alpha_up)
+
+                if ev.state_reaching[1, k] < 0:
+                    dist += dist_fun(ev.state_reaching[1, k], ev.alpha_down) + 1000
+
+                if ev.state_reaching[1, k] > 100:
+                    dist += dist_fun(ev.state_reaching[1, k], ev.alpha_up) + 1000
+
+                if ev.state_leaving[1, k] < 0:
+                    dist += dist_fun(ev.state_leaving[1, k], ev.alpha_down) + 1000
+
+                if ev.state_leaving[1, k] > 100:
+                    dist += dist_fun(ev.state_leaving[1, k], ev.alpha_up) + 1000
 
         for i, cs in enumerate(network.charging_stations):
             for k in range(num_events):
