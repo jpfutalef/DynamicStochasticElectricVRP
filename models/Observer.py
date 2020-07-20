@@ -30,12 +30,13 @@ class ElectricVehicleMeasurement:
             self.__dict__[key] = attrib
 
 
-def create_measurement_files(f: fleet.Fleet):
+def create_measurement_files(f: fleet.Fleet, save_to: str):
     root = ET.Element('measurements')
     for ev in f.vehicles.values():
         m = ElectricVehicleMeasurement(ev.id, ev.route[0][0], ev.route[0][1], 0., ev.x1_0, ev.x2_0, ev.x3_0, True,
                                        ev.x1_0, ev.x2_0, ev.x3_0, 0., 0., False)
         root.append(m.xml_element())
+    ET.ElementTree(root).write(save_to)
 
 
 @dataclass

@@ -3,7 +3,7 @@ import res.GATools as tools
 import res.GA_Online as ga
 
 # %% 1. Specify instance location
-data_folder = 'data/online/c20cs1/'
+data_folder = 'data/online/'
 instance = ''
 
 capacity = 3
