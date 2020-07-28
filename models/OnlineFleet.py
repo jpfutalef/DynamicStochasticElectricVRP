@@ -802,7 +802,7 @@ def from_xml(path, assign_customers=False, with_routes=True, instance=True, from
             _prev_route = _vehicle.find('online_route') if from_online else _vehicle.find('previous_route')
             try:
                 x10, x20, x30 = float(_prev_route.get('x1')), float(_prev_route.get('x2')), float(_prev_route.get('x3'))
-            except TypeError:
+            except AttributeError:
                 _cp = _vehicle.find('critical_point')
                 x10, x20, x30 = float(_cp.get('x1')), float(_cp.get('x2')), float(_cp.get('x3'))
             S, L = [], []
