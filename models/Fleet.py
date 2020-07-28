@@ -816,7 +816,7 @@ class Fleet:
             time.sleep(0.5)
         return
 
-    def xml_tree(self, assign_customers=False, with_routes=False):
+    def xml_tree(self, assign_customers=False, with_routes=False, online=False):
         _fleet = ET.Element('fleet')
         ev_id = 0
         for vehicle in self.vehicles.values():
@@ -828,9 +828,9 @@ class Fleet:
                 _fleet.append(vehicle.xml_element(assign_customers, with_routes, ev_id))
         return _fleet
 
-    def write_xml(self, path, network_in_file=False, assign_customers=False, with_routes=False,
+    def write_xml(self, path, network_in_file=False, assign_customers=False, with_routes=False, online=False,
                   print_pretty=False):
-        tree = self.xml_tree(assign_customers, with_routes)
+        tree = self.xml_tree(assign_customers, with_routes, online)
         if network_in_file:
             instance_tree = ET.Element('instance')
             instance_tree.append(self.network.xml_tree())

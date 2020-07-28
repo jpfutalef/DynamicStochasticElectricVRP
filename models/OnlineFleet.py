@@ -111,9 +111,7 @@ class Fleet:
 
     def drop_vehicle(self, ev_id: int) -> None:
         del self.vehicles[ev_id]
-        evs_id = len(self.vehicles)
-        vehicles = {i: ev for i, ev in zip(range(evs_id), self.vehicles.values())}
-        self.vehicles = vehicles
+        self.vehicles_to_route = tuple(i for i in self.vehicles.keys())
 
     def resize_fleet(self, new_size, as_new=True, based_on=0, auto=False):
         if auto:
@@ -154,6 +152,14 @@ class Fleet:
         if vehicles:
             self.vehicles_to_route = tuple(vehicles)
 
+    def iterate(self):
+        for ev in self.vehicles.values():
+            route = ev.route
+            dep_time, dep_soc, dep_pay = ev.x1_0, ev.x2_0, ev.x3_0
+            ev.set_route(route, dep_time, dep_soc, dep_pay)
+            ev.step(self.network)
+        self.iterate_cs_capacities(None)
+
     def set_routes_of_vehicles(self, routes: RouteDict, iterate=True, iterate_cs=True,
                                init_theta: ndarray = None) -> None:
         for id_ev, (route, dep_time, dep_soc, dep_pay) in routes.items():
@@ -188,12 +194,13 @@ class Fleet:
         cost_wait_time = sum([sum(ev.waiting_times) for ev in self.vehicles.values()])
         return cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_wait_time
 
-    def feasible(self, online=False) -> (bool, Union[int, float]):
-        # %% 1. Variables to return
+    def feasible(self, online=False) -> Tuple[bool, Union[int, float], bool]:
+        # 1. Variables to return
         is_feasible = True
+        accept = True
         dist = 0
 
-        # %% 2. Variables from the optimization vector and vehicles
+        # 2. Variables from the optimization vector and vehicles
         network = self.network
         m = len(self.vehicles)
         sum_si = sum([len(ev.route[0]) for ev in self.vehicles.values()])
@@ -202,7 +209,9 @@ class Fleet:
 
         for ev in self.vehicles.values():
             if ev.state_reaching[0, -1] - ev.state_leaving[0, 0] > ev.max_tour_duration:
-                dist += dist_fun(ev.max_tour_duration, ev.state_reaching[0, -1] - ev.state_leaving[0, 0])
+                d = dist_fun(ev.max_tour_duration, ev.state_reaching[0, -1] - ev.state_leaving[0, 0])
+                dist += d
+                accept = False if d > 25 else True
 
             if ev.state_leaving[2, 0] > ev.max_payload and not online:
                 dist += dist_fun(ev.state_leaving[2, 0], ev.max_payload)
@@ -211,10 +220,14 @@ class Fleet:
                 if network.isCustomer(Sk):
                     node = network.nodes[Sk]
                     if node.time_window_low > ev.state_reaching[0, k]:
-                        dist += 20*dist_fun(ev.state_reaching[0, k], node.time_window_low)
+                        d = dist_fun(ev.state_reaching[0, k], node.time_window_low)
+                        dist += 20*d
+                        accept = False if d > 20 else True
 
                     if node.time_window_upp < ev.state_leaving[0, k] - ev.waiting_times0[k]:
-                        dist += 20*dist_fun(node.time_window_upp, ev.state_leaving[0, k] - ev.waiting_times0[k])
+                        d = dist_fun(node.time_window_upp, ev.state_leaving[0, k] - ev.waiting_times0[k])
+                        dist += 20*d
+                        accept = False if d > 20 else True
 
                 if ev.state_reaching[1, k] < ev.alpha_down:
                     dist += dist_fun(ev.state_reaching[1, k], ev.alpha_down)
@@ -230,25 +243,30 @@ class Fleet:
 
                 if ev.state_reaching[1, k] < 0:
                     dist += dist_fun(ev.state_reaching[1, k], ev.alpha_down) + 1000
+                    accept = False
 
                 if ev.state_reaching[1, k] > 100:
                     dist += dist_fun(ev.state_reaching[1, k], ev.alpha_up) + 1000
+                    accept = False
 
                 if ev.state_leaving[1, k] < 0:
                     dist += dist_fun(ev.state_leaving[1, k], ev.alpha_down) + 1000
+                    accept = False
 
                 if ev.state_leaving[1, k] > 100:
                     dist += dist_fun(ev.state_leaving[1, k], ev.alpha_up) + 1000
+                    accept = False
 
         for i, cs in enumerate(network.charging_stations):
             for k in range(num_events):
                 if self.theta_matrix[1 + num_cust + i, k] > network.nodes[cs].capacity:
                     dist += dist_fun(self.theta_matrix[1 + num_cust + i, k], network.nodes[cs].capacity)
+                    accept = False
 
         if dist > 0:
             is_feasible = False
 
-        return is_feasible, dist
+        return is_feasible, dist, accept
 
     def save_operation_xml(self, path: str, critical_points: Dict[int, Tuple[int, float, float, float]], pretty=False):
         # Open XML file
@@ -730,21 +748,15 @@ class Fleet:
             time.sleep(0.5)
         return
 
-    def xml_tree(self, assign_customers=False, with_routes=False):
+    def xml_tree(self, assign_customers=False, with_routes=False, online=False):
         _fleet = ET.Element('fleet')
-        ev_id = 0
         for vehicle in self.vehicles.values():
-            if assign_customers:
-                if len(vehicle.assigned_customers) > 0:
-                    _fleet.append(vehicle.xml_element(assign_customers, with_routes, ev_id))
-                    ev_id += 1
-            else:
-                _fleet.append(vehicle.xml_element(assign_customers, with_routes, ev_id))
+            _fleet.append(vehicle.xml_element(assign_customers, with_routes, None, online))
         return _fleet
 
-    def write_xml(self, path, network_in_file=False, assign_customers=False, with_routes=False,
+    def write_xml(self, path, network_in_file=False, assign_customers=False, with_routes=False, online=False,
                   print_pretty=False):
-        tree = self.xml_tree(assign_customers, with_routes)
+        tree = self.xml_tree(assign_customers, with_routes, online)
         if network_in_file:
             instance_tree = ET.Element('instance')
             instance_tree.append(self.network.xml_tree())
@@ -759,47 +771,56 @@ class Fleet:
             ET.ElementTree(tree).write(path)
 
 
-def from_xml(path, assign_customers=False):
+def from_xml(path, assign_customers=False, with_routes=True, instance=True, from_online=False):
     # Open XML file
     tree = ET.parse(path)
-    _info: ET = tree.find('info')
-    _network: ET = tree.find('network')
-    _fleet: ET = tree.find('fleet')
-    _technologies: ET = _network.find('technologies')
-
-    # Network data
-    network = net.from_element_tree(tree)
+    if instance:
+        _fleet = tree.find('fleet')
+    else:
+        _fleet = tree.getroot()
 
     # Fleet data
     vehicles = {}
     vehicles_to_route = []
     for _vehicle in _fleet:
-        add_ev = True
+        ev_id = int(_vehicle.get('id'))
+        max_tour_duration = float(_vehicle.get('max_tour_duration'))
+        alpha_up = float(_vehicle.get('alpha_up'))
+        alpha_down = float(_vehicle.get('alpha_down'))
+        battery_capacity = float(_vehicle.get('battery_capacity'))
+        battery_capacity_nominal = float(_vehicle.get('battery_capacity_nominal'))
+        max_payload = float(_vehicle.get('max_payload'))
+        weight = float(_vehicle.get('weight'))
+        vehicles[ev_id] = ElectricVehicle(ev_id, weight, battery_capacity, battery_capacity_nominal, alpha_up,
+                                          alpha_down, max_tour_duration, max_payload)
+        if assign_customers:
+            _assigned_customers = _vehicle.find('assigned_customers')
+            assigned_customers = tuple(int(x.get('id')) for x in _assigned_customers)
+            vehicles[ev_id].set_customers_to_visit(assigned_customers)
 
-        _cp = _vehicle.find('critical_point')
-        if _cp is not None and int(_cp.get('k')) == -1:
-            add_ev = False
+        if with_routes:
+            _prev_route = _vehicle.find('online_route') if from_online else _vehicle.find('previous_route')
+            try:
+                x10, x20, x30 = float(_prev_route.get('x1')), float(_prev_route.get('x2')), float(_prev_route.get('x3'))
+            except TypeError:
+                _cp = _vehicle.find('critical_point')
+                x10, x20, x30 = float(_cp.get('x1')), float(_cp.get('x2')), float(_cp.get('x3'))
+            S, L = [], []
+            for _node in _prev_route:
+                Sk, Lk = int(_node.get('Sk')), float(_node.get('Lk'))
+                S.append(Sk)
+                L.append(Lk)
+            route = (tuple(S), tuple(L))
+            vehicles[ev_id].set_route(route, x10, x20, x30)
 
-        if add_ev:
-            ev_id = int(_vehicle.get('id'))
-            max_tour_duration = float(_vehicle.get('max_tour_duration'))
-            alpha_up = float(_vehicle.get('alpha_up'))
-            alpha_down = float(_vehicle.get('alpha_down'))
-            battery_capacity = float(_vehicle.get('battery_capacity'))
-            battery_capacity_nominal = float(_vehicle.get('battery_capacity_nominal'))
-            max_payload = float(_vehicle.get('max_payload'))
-            weight = float(_vehicle.get('weight'))
-            vehicles[ev_id] = ElectricVehicle(ev_id, weight, battery_capacity, battery_capacity_nominal, alpha_up,
-                                              alpha_down, max_tour_duration, max_payload)
-            if assign_customers:
-                _assigned_customers = _vehicle.find('assigned_customers')
-                assigned_customers = tuple(int(x.get('id')) for x in _assigned_customers)
-                vehicles[ev_id].set_customers_to_visit(assigned_customers)
+        vehicles_to_route.append(ev_id)
 
-            vehicles_to_route.append(ev_id)
+    if instance:
+        network = net.from_element_tree(tree)
+    else:
+        network = None
 
     fleet = Fleet(vehicles, network, tuple(vehicles_to_route))
-
     return fleet
 
 

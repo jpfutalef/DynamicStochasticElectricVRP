@@ -158,11 +158,14 @@ class Network:
         return g
 
 
-def from_element_tree(tree):
-    _info: ET = tree.find('info')
-    _network: ET = tree.find('network')
-    _fleet: ET = tree.find('fleet')
-    _technologies: ET = _network.find('technologies')
+def from_element_tree(tree: ET.ElementTree, instance=True):
+    if instance:
+        _info: ET = tree.find('info')
+        _network: ET = tree.find('network')
+        _technologies: ET = _network.find('technologies')
+    else:
+        _network: ET = tree
+        _technologies: ET = _network.find('technologies')
 
     nodes = {}
     edges = {}
@@ -212,6 +215,6 @@ def from_element_tree(tree):
     return Network(nodes, edges)
 
 
-def from_xml(path):
+def from_xml(path, instance=True):
     tree = ET.parse(path)
-    return from_element_tree(tree)
+    return from_element_tree(tree, instance)

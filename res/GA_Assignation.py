@@ -77,11 +77,14 @@ def fitness(individual: IndividualType, fleet: Fleet, starting_points: StartingP
     costs = np.array(fleet.cost_function())
 
     # Check if the solution is feasible
-    feasible, penalization = fleet.feasible()
+    feasible, penalization, accept = fleet.feasible()
 
     # penalization
     if not feasible:
         penalization += penalization_constant
+
+    if not accept:
+        penalization = penalization**2
 
     fit = np.dot(costs, np.asarray(weights)) + penalization
 

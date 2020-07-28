@@ -120,7 +120,7 @@ class ElectricVehicle:
             self.travel_times[k - 1] = tij
             self.energy_consumption[k - 1] = eij
 
-            eta = self.battery_capacity/self.battery_capacity_nominal
+            eta = self.battery_capacity / self.battery_capacity_nominal
             ti = network.spent_time(Sk0, self.state_reaching[1, k], Lk0, eta)
             done_time = self.state_reaching[0, k] + ti
             di = network.demand(Sk0)
@@ -133,7 +133,7 @@ class ElectricVehicle:
 
             self.waiting_times[k] = wti1 + wti0
             self.waiting_times0[k] = wti0
-            self.waiting_times1[k+1] = wti1
+            self.waiting_times1[k + 1] = wti1
             if network.isChargingStation(Sk0):
                 self.charging_times[k] = ti
 
@@ -225,7 +225,7 @@ class ElectricVehicle:
         self.state_leaving[:, -1] = self.state_reaching[:, -1]
         return capacity_changes, used_capacity
 
-    def xml_element(self, assign_customers=False, with_routes=False, this_id=None):
+    def xml_element(self, assign_customers=False, with_routes=False, this_id=None, online=False):
         the_id = this_id if this_id is not None else self.id
         attribs = {'id': str(the_id),
                    'weight': str(self.weight),
@@ -243,9 +243,15 @@ class ElectricVehicle:
                 _customer = ET.SubElement(_assigned_customers, 'node', attrib={'id': str(customer)})
 
         if with_routes:
-            _previous_route = ET.SubElement(element, 'previous_route')
+            _previous_route = ET.SubElement(element, 'previous_route', attrib={'x1': str(self.x1_0),
+                                                                               'x2': str(self.x2_0),
+                                                                               'x3': str(self.x3_0)})
             for Sk, Lk in zip(self.route[0], self.route[1]):
                 _point = ET.SubElement(_previous_route, 'node', attrib={'Sk': str(Sk), 'Lk': str(Lk)})
-            _cp = ET.SubElement(element, 'critical_point', attrib={'x1': str(self.x1_0), 'x2': str(self.x2_0),
-                                                                   'x3': str(self.x3_0), 'k': '0'})
+        if online:
+            _previous_route = ET.SubElement(element, 'online_route', attrib={'x1': str(self.x1_0),
+                                                                             'x2': str(self.x2_0),
+                                                                             'x3': str(self.x3_0)})
+            for Sk, Lk in zip(self.route[0], self.route[1]):
+                _point = ET.SubElement(_previous_route, 'node', attrib={'Sk': str(Sk), 'Lk': str(Lk)})
         return element
