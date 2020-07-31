@@ -7,17 +7,18 @@ from os import listdir
 from os.path import isfile, join
 
 # %% 1. Specify instance location and capacities to iterate
-data_folder = 'data/instances/100km2/'
-instances = [f for f in listdir(data_folder) if isfile(join(data_folder, f))]
+data_folder = ['data/instances/400km2/']
+instances = [join(d_f, f) for d_f in data_folder for f in listdir(d_f) if isfile(join(d_f, f))]
 # instances = ['c20cs1.xml']
+print(instances)
 
 capacities = [3]
 soc_policy = (20, 95)
 
 # %% 2. Instances iteration
 for instance in instances:
-    instance_filename = instance
-    path = f'{data_folder}{instance_filename}'
+    #instance_filename = instance
+    path = instance
     print(f'Opening:\n {path}')
     for cap in capacities:
         fleet = from_xml(path, assign_customers=False, with_routes=False)
@@ -38,7 +39,7 @@ for instance in instances:
         CXPB, MUTPB = 0.7, 0.9
         num_individuals = int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 50
         max_generations = num_individuals * 3
-        penalization_constant = 100. * len(fleet.network) + 1000*len(fleet)
+        penalization_constant = 100. * len(fleet.network) + 1000 * len(fleet)
         weights = (.25, 1., .5, 1.4, 1.2)  # cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_wait_time
         keep_best = 1  # Keep the 'keep_best' best individuals
         tournament_size = 3
@@ -70,15 +71,17 @@ for instance in instances:
         # %% 5. Specify data folder
         instance_name = instance[:-4]
         try:
-            os.mkdir(f'{data_folder}{instance_name}/')
+            #os.mkdir(f'{data_folder}{instance_name}/')
+            os.mkdir(f'{instance_name}/')
         except FileExistsError:
             pass
-        save_to = f'{data_folder}{instance_name}/{cap}/'
+        #save_to = f'{data_folder}{instance_name}/{cap}/'
+        save_to = f'{instance_name}/{cap}/'
 
         # %% 6. Run algorithm
         feasible1, feasible2 = False, False
         bestOfAll1, bestOfAll2 = None, None
-        for k in range(3):
+        for k in range(6):
             routes, fleet, bestOfAll1, feasible1, toolbox1, optData1 = optimal_route_assignation(fleet,
                                                                                                  hyper_parameters,
                                                                                                  save_to,
@@ -90,7 +93,9 @@ for instance in instances:
             routes, fleet, bestOfAll2, feasible2, toolbox2, optData2 = improve_route(fleet, hyper_parameters_improve,
                                                                                      save_to, bestOfAll2, savefig=True)
             best_fitness, best_is_feasible = toolbox2.evaluate(bestOfAll2)
-            if not feasible1 and not feasible2:
+            feas, dist, accept = fleet.feasible()
+
+            if not feasible1 and not feasible2 and not accept:
                 # Not fasible
                 print('INCREASING FLEET SIZE BY 1...')
                 fleet.resize_fleet(len(fleet) + 1)
@@ -106,5 +111,5 @@ for instance in instances:
                 hyper_parameters.max_generations += 10
                 hyper_parameters_improve.max_generations += 10
             else:
-                # At least one is feasible
+                # At least one is acceptable
                 break

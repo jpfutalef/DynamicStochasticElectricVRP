@@ -211,7 +211,7 @@ class Fleet:
             if ev.state_reaching[0, -1] - ev.state_leaving[0, 0] > ev.max_tour_duration:
                 d = dist_fun(ev.max_tour_duration, ev.state_reaching[0, -1] - ev.state_leaving[0, 0])
                 dist += d
-                accept = False if d > 25 else True
+                accept = False if d > 25 else accept
 
             if ev.state_leaving[2, 0] > ev.max_payload and not online:
                 dist += dist_fun(ev.state_leaving[2, 0], ev.max_payload)
@@ -222,12 +222,12 @@ class Fleet:
                     if node.time_window_low > ev.state_reaching[0, k]:
                         d = dist_fun(ev.state_reaching[0, k], node.time_window_low)
                         dist += 20*d
-                        accept = False if d > 20 else True
+                        accept = False if d > 20 else accept
 
                     if node.time_window_upp < ev.state_leaving[0, k] - ev.waiting_times0[k]:
                         d = dist_fun(node.time_window_upp, ev.state_leaving[0, k] - ev.waiting_times0[k])
                         dist += 20*d
-                        accept = False if d > 20 else True
+                        accept = False if d > 20 else accept
 
                 if ev.state_reaching[1, k] < ev.alpha_down:
                     dist += dist_fun(ev.state_reaching[1, k], ev.alpha_down)
