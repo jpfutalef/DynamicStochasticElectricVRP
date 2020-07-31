@@ -488,7 +488,7 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
 
         # Crossover
         for child1, child2 in zip(offspring[::2], offspring[1::2]):
-            if random() < hp.MUTPB:
+            if random() < hp.CXPB:
                 toolbox.mate(child1, child2)
                 del child1.fitness.values
                 del child2.fitness.values

@@ -20,8 +20,7 @@ def decode(individual: IndividualType, indices: IndicesType, init_state: Startin
                 offset += 1
         Sk = tuple([0] + Sk + [0])
         Lk = tuple([0] + Lk + [0])
-        tw = fleet.network.nodes[Sk[1]].time_window_low if fleet.network.isCustomer(Sk[1]) else 7 * 60.
-        x0 = tw + individual[i2]
+        x0 = init_state[id_ev].x1_0 + individual[i2]
         routes[id_ev] = ((Sk, Lk), x0, init_state[id_ev].x2_0, init_state[id_ev].x3_0)
     return routes
 
@@ -207,7 +206,8 @@ def individual_from_routes(routes: RouteDict, fleet: Fleet) -> IndividualType:
             else:
                 cust.append(node)
                 chg_ops += [-1, uniform(5, 20)]
-        dep_time = x10 - fleet.network.nodes[Sk[1]].time_window_low if fleet.network.isCustomer(Sk[1]) else 6 * 60
+        #dep_time = x10 - fleet.network.nodes[Sk[1]].time_window_low if fleet.network.isCustomer(Sk[1]) else 6 * 60
+        dep_time = 0.
         ind += cust + chg_ops + [dep_time]
     return ind
 
@@ -216,8 +216,9 @@ def individual_from_routes(routes: RouteDict, fleet: Fleet) -> IndividualType:
 def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind: IndividualType = None,
                               savefig=False):
     customers_to_visit = {ev_id: ev.assigned_customers for ev_id, ev in fleet.vehicles.items()}
-    starting_points = {ev_id: InitialCondition(0, 0, 0, ev.alpha_up, sum([fleet.network.demand(x)
-                                                                          for x in ev.assigned_customers]))
+    starting_points = {ev_id: InitialCondition(0, 0, fleet.vehicles[ev_id].state_leaving[0,0],
+                                               ev.alpha_up, sum([fleet.network.demand(x)
+                                                                 for x in ev.assigned_customers]))
                        for ev_id, ev in fleet.vehicles.items()}
     indices = block_indices(customers_to_visit)
 
@@ -249,6 +250,7 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
         pop = [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals - 1)]
         pop.append(creator.Individual(best_ind))
 
+    toolbox.evaluate(best_ind)
     routes = toolbox.decode(best_ind)
 
     # Evaluate the initial population and get fitness of each individual
@@ -303,7 +305,7 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
 
         # Crossover
         for child1, child2 in zip(offspring[::2], offspring[1::2]):
-            if random() < hp.MUTPB:
+            if random() < hp.CXPB:
                 toolbox.mate(child1, child2)
                 del child1.fitness.values
                 del child2.fitness.values
