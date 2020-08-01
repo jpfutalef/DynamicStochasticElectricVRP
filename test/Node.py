@@ -77,8 +77,6 @@ class CustomerNode(NetworkNode):  # TODO add documentation
 
 
 class ChargeStationNode(NetworkNode):
-    # TODO add documentation
-    # TODO unit test
     def __init__(self, node_id, maximum_parallel_operations=4, time_points=(0.0, 120.0),
                  soc_points=(0.0, 100.0), *args, **kwargs):
         super().__init__(node_id, color='goldenrod', *args, **kwargs)
@@ -87,9 +85,6 @@ class ChargeStationNode(NetworkNode):
         self.socPoints = soc_points
 
     def calculateTimeSpent(self, init_soc, end_soc):
-        # FIXME actually, verify it is working properly
-        # TODO verify complexity
-        # TODO add documentation
         doInit = True
         doEnd = False
         initIndex = 0
@@ -114,6 +109,13 @@ class ChargeStationNode(NetworkNode):
         n = self.socPoints[endIndex] - m * self.timePoints[endIndex]
         endTime = (end_soc - n) / m
         return endTime - initTime
+
+    def setTechnology(self, tech_dict, techID):
+        tp = tuple(tech_dict.keys())
+        socp = tuple(tech_dict.values)
+        self.timePoints = tp
+        self.socPoints = socp
+        self.technology = techID
 
     def spentTime(self, init_soc, increment):
         return self.calculateTimeSpent(init_soc, init_soc + increment)

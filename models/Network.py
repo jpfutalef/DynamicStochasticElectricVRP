@@ -114,6 +114,7 @@ class Network:
                     for t, soc in zip(node.time_points, node.soc_points):
                         attrib = {'charging_time': str(t), 'battery_level': str(soc)}
                         _bp = ET.SubElement(_technology, 'breakpoint', attrib=attrib)
+                    technologies.append(node.technology)
         return _network
 
     def write_xml(self, path, print_pretty=False):
@@ -191,8 +192,9 @@ def from_element_tree(tree: ET.ElementTree, instance=True):
                     break
             time_points = tuple([float(bp.get('charging_time')) for bp in _technology])
             soc_points = tuple([float(bp.get('battery_level')) for bp in _technology])
+            price = float(_node.get('price'))
             node = ChargeStationNode(node_id, capacity, pos_x=pos_x, pos_y=pos_y, time_points=time_points,
-                                     soc_points=soc_points)
+                                     soc_points=soc_points, technology=technology, price=price)
         nodes[node_id] = node
 
     for _node_from in _network.find('edges'):
