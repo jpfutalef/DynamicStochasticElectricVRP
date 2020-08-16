@@ -7,10 +7,9 @@ from os import listdir
 from os.path import isfile, join
 
 # %% 1. Specify instance location and capacities to iterate
-data_folder = ['data/instances/400km2/']
+data_folder = ['data/instances/100km2/', 'data/instances/400km2/', 'data/instances/900km2/']
 instances = [join(d_f, f) for d_f in data_folder for f in listdir(d_f) if isfile(join(d_f, f))]
 # instances = ['c20cs1.xml']
-print(instances)
 
 capacities = [3]
 soc_policy = (20, 95)
@@ -40,7 +39,7 @@ for instance in instances:
         num_individuals = int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 50
         max_generations = num_individuals * 3
         penalization_constant = 100. * len(fleet.network) + 1000 * len(fleet)
-        weights = (.25, 1., .5, 1.4, 1.2)  # cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_wait_time
+        weights = (.25, 1., 0.5, 5e-4, 1.2)  # cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_wait_time
         keep_best = 1  # Keep the 'keep_best' best individuals
         tournament_size = 3
         r = 4

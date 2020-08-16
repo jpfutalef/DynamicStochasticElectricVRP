@@ -186,7 +186,7 @@ def fitness(individual: IndividualType, fleet: Fleet, indices: IndicesType, init
         penalization += penalization_constant
 
     if not accept:
-        penalization = penalization**2
+        penalization = penalization ** 2
 
     fit = np.dot(costs, np.asarray(weights)) + penalization
 
@@ -206,7 +206,7 @@ def individual_from_routes(routes: RouteDict, fleet: Fleet) -> IndividualType:
             else:
                 cust.append(node)
                 chg_ops += [-1, uniform(5, 20)]
-        #dep_time = x10 - fleet.network.nodes[Sk[1]].time_window_low if fleet.network.isCustomer(Sk[1]) else 6 * 60
+        # dep_time = x10 - fleet.network.nodes[Sk[1]].time_window_low if fleet.network.isCustomer(Sk[1]) else 6 * 60
         dep_time = 0.
         ind += cust + chg_ops + [dep_time]
     return ind
@@ -216,7 +216,7 @@ def individual_from_routes(routes: RouteDict, fleet: Fleet) -> IndividualType:
 def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind: IndividualType = None,
                               savefig=False):
     customers_to_visit = {ev_id: ev.assigned_customers for ev_id, ev in fleet.vehicles.items()}
-    starting_points = {ev_id: InitialCondition(0, 0, fleet.vehicles[ev_id].state_leaving[0,0],
+    starting_points = {ev_id: InitialCondition(0, 0, fleet.vehicles[ev_id].state_leaving[0, 0],
                                                ev.alpha_up, sum([fleet.network.demand(x)
                                                                  for x in ev.assigned_customers]))
                        for ev_id, ev in fleet.vehicles.items()}
