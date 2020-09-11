@@ -4,24 +4,24 @@ from res.GATools import *
 
 # FUNCTIONS
 def decode(individual: IndividualType, indices: IndicesType, init_state: StartingPointsType, fleet: Fleet) -> RouteDict:
-    """
-    """
     routes = {}
     for id_ev, (i0, i1, i2) in indices.items():
-        Sk = individual[i0:i1]
-        Lk = [0] * len(Sk)
-        chg_ops = individual[i1:i2]
+        S = individual[i0:i1]
+        charging_operations = individual[i1:i2]
+        x0_offset = individual[i2]
+
+        L = [0] * len(S)
         offset = 1
-        for i, _ in enumerate(Sk):
-            charging_station, amount = chg_ops[2 * i], chg_ops[2 * i + 1]
+        for i, _ in enumerate(S):
+            charging_station, amount = charging_operations[2 * i], charging_operations[2 * i + 1]
             if charging_station != -1:
-                Sk = Sk[:i + offset] + [charging_station] + Sk[i + offset:]
-                Lk = Lk[:i + offset] + [amount] + Lk[i + offset:]
+                S = S[:i + offset] + [charging_station] + S[i + offset:]
+                L = L[:i + offset] + [amount] + L[i + offset:]
                 offset += 1
-        Sk = tuple([0] + Sk + [0])
-        Lk = tuple([0] + Lk + [0])
-        x0 = init_state[id_ev].x1_0 + individual[i2]
-        routes[id_ev] = ((Sk, Lk), x0, init_state[id_ev].x2_0, init_state[id_ev].x3_0)
+        S = tuple([0] + S + [0])
+        L = tuple([0] + L + [0])
+        x1_0 = init_state[id_ev].x1_0 + x0_offset
+        routes[id_ev] = ((S, L), x1_0, init_state[id_ev].x2_0, init_state[id_ev].x3_0)
     return routes
 
 
@@ -214,7 +214,7 @@ def individual_from_routes(routes: RouteDict, fleet: Fleet) -> IndividualType:
 
 # THE ALGORITHM
 def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind: IndividualType = None,
-                              savefig=False):
+                              savefig=False, bf=0.0):
     customers_to_visit = {ev_id: ev.assigned_customers for ev_id, ev in fleet.vehicles.items()}
     starting_points = {ev_id: InitialCondition(0, 0, fleet.vehicles[ev_id].state_leaving[0, 0],
                                                ev.alpha_up, sum([fleet.network.demand(x)
@@ -250,9 +250,6 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
         pop = [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals - 1)]
         pop.append(creator.Individual(best_ind))
 
-    toolbox.evaluate(best_ind)
-    routes = toolbox.decode(best_ind)
-
     # Evaluate the initial population and get fitness of each individual
     for ind in pop:
         fit, feasible = toolbox.evaluate(ind)
@@ -265,6 +262,9 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
 
     # These will save statistics
     opt_data = OptimizationIterationsData([], [], [], [], [], [], fleet, hp, bestOfAll, bestOfAll.feasible)
+    print(-bf, bestOfAll.fitness.wvalues[0])
+    toolbox.evaluate(best_ind)
+    routes = toolbox.decode(best_ind)
 
     print("################  Start of evolution  ################")
     # Begin the evolution

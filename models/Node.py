@@ -93,13 +93,13 @@ class ChargeStationNode(NetworkNode):
 
         return end_time - init_time
 
-    def setTechnology(self, tech_dict, techID, price):
-        tp = tuple(tech_dict.keys())
-        socp = tuple(tech_dict.values())
+    def setTechnology(self, tech_dict):
+        tp = tuple(tech_dict['description'].keys())
+        socp = tuple(tech_dict['description'].values())
         self.time_points = tp
         self.soc_points = socp
-        self.technology = techID
-        self.price = price
+        self.technology = tech_dict['type']
+        self.price = tech_dict['price']
 
     def isChargeStation(self):
         return True

@@ -11,29 +11,32 @@ def decode(individual: IndividualType, indices: IndicesType, starting_points: St
     routes = {}
     for id_ev, (i0, i1, i2) in indices.items():
         initial_condition = starting_points[id_ev]
-        Sk = individual[i0:i1]
-        Lk = [0] * len(Sk)
+        S = individual[i0:i1]
         chg_block = individual[i1:i2]
+        offset = individual[i2]
+        
+        L = [0] * len(S)
         chg_ops = [(chg_block[3 * i], chg_block[3 * i + 1], chg_block[3 * i + 2]) for i in range(allowed_charging_operations)]
         for customer, charging_station, amount in chg_ops:
             if customer != -1:
-                i = Sk.index(customer) if customer != initial_condition.S0 else -1
-                Sk = Sk[:i + 1] + [charging_station] + Sk[i + 1:]
-                Lk = Lk[:i + 1] + [amount] + Lk[i + 1:]
-        offset = individual[i2]
+                i = S.index(customer) if customer != initial_condition.S0 else -1
+                S = S[:i + 1] + [charging_station] + S[i + 1:]
+                L = L[:i + 1] + [amount] + L[i + 1:]
 
         S0 = initial_condition.S0
         x30 = initial_condition.x3_0
-        if starting_points[id_ev].L0 > 0:  # This implies initial node is a CS
+        if starting_points[id_ev].L0 > 0:
+            # Initial node is a CS
             L0 = initial_condition.L0 + offset
             x10 = initial_condition.x1_0 + fleet.network.spent_time(S0, initial_condition.x2_0, L0)
             x20 = initial_condition.x2_0 + L0
         else:
-            L0 = initial_condition.L0
+            # Initial node is a customer
+            L0 = 0.0
             x10 = initial_condition.x1_0 + offset
             x20 = initial_condition.x2_0
-        S = tuple([S0] + Sk + [0])
-        L = tuple([L0] + Lk + [0])
+        S = tuple([S0] + S + [0])
+        L = tuple([L0] + L + [0])
         routes[id_ev] = ((S, L), x10, x20, x30)
     return routes
 
@@ -82,9 +85,9 @@ def mutate(individual: IndividualType, indices: IndicesType, starting_points: St
             else:
                 b = randint(0, 1)
                 if starting_points[id_ev].L0:
-                    amount = uniform(-8., 8.0)
+                    amount = uniform(-8., 8.)
                 else:
-                    amount = uniform(-5.0, 5.0)
+                    amount = uniform(-5., 5.)
                 individual[i2] = b * abs(individual[i2] + amount)
                 return individual
 
@@ -95,7 +98,7 @@ def crossover(ind1: IndividualType, ind2: IndividualType, indices: IndicesType, 
     if index is None:
         index = randint(0, len(ind1))
 
-    # Find blockp
+    # Find block
     for id_ev, (i0, i1, i2) in indices.items():
         if i0 <= index <= i2:
             # Case customer
@@ -167,26 +170,29 @@ def random_individual(indices: IndicesType, starting_points: StartingPointsType,
                       allowed_charging_operations=2):
     """
     Creates a random individual
+    :param indices:
+    :param starting_points:
+    :param customers_to_visit:
+    :param charging_stations:
     :param allowed_charging_operations:
-    :return: a random individual
+    :return:
     """
     individual = []
     for id_ev, (i0, i1, i2) in indices.items():
         init_point, customers = starting_points[id_ev], customers_to_visit[id_ev]
-        customer_sequence = sample(customers, len(customers))
+        customer_block = sample(customers, len(customers))
         sample_space = customers + (init_point.S0,) + (-1,) * allowed_charging_operations
         after_customers = sample(sample_space, allowed_charging_operations)
-        charging_sequence = [0.] * allowed_charging_operations * 3
+        charging_block = [0.] * allowed_charging_operations * 3
         for i, customer in enumerate(after_customers):
-            charging_sequence[3 * i] = customer
-            charging_sequence[3 * i + 1] = sample(charging_stations, 1)[0]
-            amount = uniform(0.0, 90.0)
-            charging_sequence[3 * i + 2] = float(f"{amount:.2f}")
+            charging_block[3 * i] = customer
+            charging_block[3 * i + 1] = sample(charging_stations, 1)[0]
+            charging_block[3 * i + 2] = uniform(10.0, 90.0)
         if init_point.L0:
-            offset = [uniform(0, 90)]
+            offset_block = [uniform(-8, 8)]
         else:
-            offset = [uniform(0, 15)]
-        individual += customer_sequence + charging_sequence + offset
+            offset_block = [uniform(0, 15)]
+        individual += customer_block + charging_block + offset_block
     return individual
 
 
