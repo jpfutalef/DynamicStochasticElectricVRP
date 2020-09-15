@@ -1,4 +1,4 @@
-from res.GA_Assignation import *
+from res.alphaGA import *
 from res.GATools import *
 from res.GA_AlreadyAssigned2 import optimal_route_assignation as improve_route
 from res.GA_AlreadyAssigned2 import individual_from_routes

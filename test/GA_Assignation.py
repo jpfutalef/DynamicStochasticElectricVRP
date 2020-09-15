@@ -1,4 +1,4 @@
-from res.GA_Assignation import *
+from res.alphaGA import *
 
 if __name__ == '__main__':
     m = 2

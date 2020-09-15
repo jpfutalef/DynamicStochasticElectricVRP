@@ -1,7 +1,16 @@
-from deap import base, creator, tools
-import datetime, os
+import datetime
+import os
+
+from deap import base
+import matplotlib.pyplot as plt
 import pandas as pd
-from models.OnlineFleet import *
+import numpy as np
+import xml.etree.ElementTree as ET
+
+from dataclasses import dataclass
+from typing import List, Tuple, Dict, NamedTuple, Union
+
+from models.OnlineFleet import Fleet, InitialCondition
 from res.IOTools import write_pretty_xml
 
 # TYPES
@@ -11,19 +20,39 @@ StartingPointsType = Dict[int, InitialCondition]
 RouteVector = Tuple[Tuple[int, ...], Tuple[float, ...]]
 RouteDict = Dict[int, Tuple[RouteVector, float, float, float]]
 
+'''
+class FitnessMin(base.Fitness):
+    weights = (-1.0,)
 
+
+class Individual(list):
+    feasible = False
+    acceptable = False
+
+    def __init__(self):
+        super().__init__()
+        self.fitness = FitnessMin()
+
+    def __getitem__(self, key):
+        return super(Individual, self).__getitem__(key - 1)
+        
+'''
+
+
+@dataclass
 class HyperParameters:
-    def __init__(self, num_individuals: int, max_generations: int, CXPB: float, MUTPB: float,
-                 weights: Tuple[float, ...], penalization_constant: float, keep_best: int, **kwargs):
-        self.num_individuals = num_individuals
-        self.max_generations = max_generations
-        self.CXPB = CXPB
-        self.MUTPB = MUTPB
-        self.weights = weights
-        self.penalization_constant = penalization_constant
-        self.keep_best = keep_best
-        for key, val in kwargs.items():
-            self.__dict__[key] = val
+    num_individuals: int
+    max_generations: int
+    CXPB: float
+    MUTPB: float
+    weights: Tuple[float, ...]
+    K1: float
+    K2: float
+    keep_best: int
+    tournament_size: int
+    r: int = 2
+    alpha_up: float = 80.
+    algorithm_name: str = 'Not specified'
 
     def __str__(self):
         string = 'Current hyper-parameters:\n'
@@ -31,9 +60,13 @@ class HyperParameters:
             string += f'  {key}:   {val}\n'
         return string
 
+    def write_csv(self, path=''):
+        s = pd.Series(self.__dict__)
+        s.to_csv(path)
+
 
 @dataclass
-class OptimizationIterationsData:
+class GenerationsData:
     generations: List
     best_fitness: List
     worst_fitness: List
@@ -44,18 +77,22 @@ class OptimizationIterationsData:
     hyper_parameters: HyperParameters
     bestOfAll: List
     feasible: bool
+    acceptable: bool
     algo_time: float = None
 
-    def save_opt_data(self, data_folder: str, method='ASSIGNATION', savefig=False):
+    def save_opt_data(self, data_folder: str = None, method='ASSIGNATION', savefig=False):
         # folder
-        now = datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S')
-        folder_name = f'{now}_FEASIBLE_{method}/' if self.feasible else f'{now}_INFEASIBLE_{method}/'
-        opt_path = data_folder + folder_name
+        if data_folder:
+            opt_path = data_folder
+        else:
+            now = datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S')
+            folder_name = f'{now}_FEASIBLE_{method}/' if self.feasible else f'{now}_INFEASIBLE_{method}/'
+            opt_path = data_folder + folder_name
 
-        try:
-            os.mkdir(opt_path)
-        except FileExistsError:
-            pass
+            try:
+                os.mkdir(opt_path)
+            except FileExistsError:
+                pass
 
         # files
         optimization_iterations_filepath = opt_path + 'optimization_iterations.csv'
@@ -149,7 +186,7 @@ class Individual(list):
 class OptimizationDataParser:
     fleet: Fleet
     hyper_parameter: HyperParameters
-    opt_data: OptimizationIterationsData
+    opt_data: GenerationsData
 
 
 def save_optimization_report(path, report: OptimizationReport, pretty=False) -> None:
@@ -178,28 +215,3 @@ def read_optimization_report(path, tree=None) -> Union[OptimizationReport, None]
                                     float(_report.get('execution_time')))
         return report
     return None
-
-
-def fitness(routes: RouteDict, fleet: Fleet, hyper_parameters: HyperParameters):
-    # weights and penalization constant
-    weights, penalization_constant = hyper_parameters.weights, hyper_parameters.penalization_constant
-
-    # Set routes
-    fleet.set_routes_of_vehicles(routes)
-
-    # Get optimization vector
-    fleet.create_optimization_vector()
-
-    # Cost
-    costs = fleet.cost_function()
-
-    # Check if the solution is feasible
-    feasible, penalization = fleet.feasible()
-
-    # penalization
-    if not feasible:
-        penalization += penalization_constant
-
-    # calculate and return
-    fit = np.dot(np.asarray(costs), np.asarray(weights)) + penalization
-    return fit, feasible

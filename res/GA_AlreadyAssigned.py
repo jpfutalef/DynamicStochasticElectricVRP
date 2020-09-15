@@ -347,7 +347,7 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
     bestOfAll = tools.selBest(pop, 1)[0]
 
     # These will save statistics
-    opt_data = OptimizationIterationsData([], [], [], [], [], [], fleet, hp, bestOfAll, bestOfAll.feasible)
+    opt_data = GenerationsData([], [], [], [], [], [], fleet, hp, bestOfAll, bestOfAll.feasible)
 
     print("################  Start of evolution  ################")
     # Begin the evolution

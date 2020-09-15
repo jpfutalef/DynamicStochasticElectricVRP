@@ -1,4 +1,4 @@
-from res.GA_Assignation import *
+from res.alphaGA import *
 
 # %% 1. Specify instance location, routing frequency, degradation threshold, and policies
 data_folder = 'data/instances_real_data/test_deg_methods/'

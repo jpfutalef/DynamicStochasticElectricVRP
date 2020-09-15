@@ -261,7 +261,7 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
     print(f"Best individual  : {bestOfAll}\n Fitness: {bestOfAll.fitness.wvalues[0]} Feasible: {bestOfAll.feasible}")
 
     # These will save statistics
-    opt_data = OptimizationIterationsData([], [], [], [], [], [], fleet, hp, bestOfAll, bestOfAll.feasible)
+    opt_data = GenerationsData([], [], [], [], [], [], fleet, hp, bestOfAll, bestOfAll.feasible)
     print(-bf, bestOfAll.fitness.wvalues[0])
     toolbox.evaluate(best_ind)
     routes = toolbox.decode(best_ind)
