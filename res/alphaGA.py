@@ -571,7 +571,9 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
     print(f"Best individual  : {bestOfAll}\n Fitness: {bestOfAll.fitness.wvalues[0]} Feasible: {bestOfAll.feasible}")
 
     # These will save statistics
-    opt_data = GenerationsData([], [], [], [], [], [], fleet, hp, bestOfAll, bestOfAll.feasible, bestOfAll.acceptable)
+    cs_capacity = fleet.network.nodes[fleet.network.charging_stations[0]].capacity
+    opt_data = GenerationsData([], [], [], [], [], [], fleet, hp, bestOfAll, bestOfAll.feasible, bestOfAll.acceptable,
+                               m, cs_capacity)
 
     print("################  Start of evolution  ################")
     # Begin the evolution
@@ -679,17 +681,19 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
     algo_time = t_end - t_init
     print('Algorithm time:', algo_time)
 
-    fit, feasible, accept = toolbox.evaluate(bestOfAll)
+    fit, feasible, acceptable = toolbox.evaluate(bestOfAll)
     routes = toolbox.decode(bestOfAll)
 
     opt_data.bestOfAll = bestOfAll
     opt_data.feasible = feasible
+    opt_data.acceptable = acceptable
     opt_data.algo_time = algo_time
 
     if save_to:
+        path = save_to + hp.algorithm_name + f'_fleetsize{m}/'
         try:
-            os.mkdir(save_to)
+            os.mkdir(path)
         except FileExistsError:
             pass
-        opt_data.save_opt_data(save_to, savefig=savefig)
-    return routes, fleet, bestOfAll, feasible, accept, toolbox, opt_data
+        opt_data.save_opt_data(path, savefig=savefig)
+    return routes, fleet, bestOfAll, feasible, acceptable, toolbox, opt_data

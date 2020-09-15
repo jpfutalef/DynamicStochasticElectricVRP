@@ -5,7 +5,7 @@ import os
 
 # %% 1. Specify instance location and capacities to iterate
 folder = 'data/test/'
-instance = 'c50cs5_10x10km'
+instance = 'c10cs2_10x10km'
 full_path = folder + instance + '.xml'
 
 cs_capacity = 3
@@ -46,25 +46,17 @@ except FileExistsError:
     pass
 
 # Main optimization folder
-opt_folder = instance_folder + 'opt1/'   # TODO read all opt folders and update number
+opt_folder = instance_folder + 'opt1/'  # TODO read all opt folders and update number
 try:
     os.mkdir(opt_folder)
 except FileExistsError:
     pass
 
-# Algorithm+FleetSize folder
-algorithm_folder = opt_folder + f'{hyper_parameters.algorithm_name}/'  # TODO update fleet size
-try:
-    os.mkdir(algorithm_folder)
-except FileExistsError:
-    pass
-
 # %% 6. Run algorithm
-feasible = False
 bestOfAll = None
-routes, fleet, bestOfAll, feasible, toolbox, optData = optimal_route_assignation(fleet,
-                                                                                 hyper_parameters,
-                                                                                 algorithm_folder,
-                                                                                 best_ind=bestOfAll,
-                                                                                 savefig=True,
-                                                                                 plot_best_generation=False)
+routes, fleet, bestOfAll, feasible, acceptable, toolbox, optData = optimal_route_assignation(fleet,
+                                                                                             hyper_parameters,
+                                                                                             opt_folder,
+                                                                                             best_ind=bestOfAll,
+                                                                                             savefig=True,
+                                                                                             plot_best_generation=False)

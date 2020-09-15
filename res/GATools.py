@@ -78,6 +78,8 @@ class GenerationsData:
     bestOfAll: List
     feasible: bool
     acceptable: bool
+    m: int
+    cs_capacity: int
     algo_time: float = None
 
     def save_opt_data(self, data_folder: str = None, method='ASSIGNATION', savefig=False):
@@ -138,6 +140,8 @@ class GenerationsData:
         info = self.hyper_parameters.__str__()
         info += f'Algorithm Time: {self.algo_time}'
         info += f'\nBest individual: {self.bestOfAll}'
+        info += f'\nm: {self.m}'
+        info += f'\ncs_capacity: {self.cs_capacity}'
         with open(info_filepath, 'w') as file:
             file.write(info)
 
