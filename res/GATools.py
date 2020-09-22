@@ -59,12 +59,11 @@ class HyperParameters:
     def __str__(self):
         string = 'Current hyper-parameters:\n'
         for key, val in self.__dict__.items():
-            string += f'  {key}:   {val}\n'
+            string += f'{key}:   {val}\n'
         return string
 
-    def write_csv(self, path=''):
-        s = pd.Series(self.__dict__)
-        s.to_csv(path)
+    def get_dataframe(self):
+        return pd.Series(self.__dict__)
 
 
 @dataclass
@@ -102,7 +101,7 @@ class GenerationsData:
         # files
         optimization_iterations_filepath = opt_path + 'optimization_iterations.csv'
         theta_vector_filepath = opt_path + 'nodes_occupation.csv'
-        info_filepath = opt_path + 'hyper-parameters.txt'
+        info_filepath = opt_path + 'hyper-parameters.csv'
 
         # optimization results
         df_op_gens = pd.DataFrame({'best_fitness': self.best_fitness, 'worst_fitness': self.worst_fitness,
@@ -140,16 +139,15 @@ class GenerationsData:
         df_costs.to_csv(cost_filepath)
 
         # save hyper-parameters
-        info = self.hyper_parameters.__str__()
-        info += f'Algorithm Time: {self.algo_time}\n'
-        info += f'Best individual: {self.bestOfAll}\n'
-        info += f'm: {self.m}\n'
-        info += f'cs_capacity: {self.cs_capacity}\n'
-        if self.additional_info:
-            for key, val in self.additional_info.items():
-                info += f'{key}: {val}\n'
-        with open(info_filepath, 'w') as file:
-            file.write(info)
+        info_df = self.hyper_parameters.get_dataframe()
+        additional_info = {'Algorithm time': self.algo_time,
+                           'Best individual': [i for i in self.bestOfAll],
+                           'm': self.m,
+                           'cs_capacity': self.cs_capacity}
+        additional_info.update(self.additional_info)
+        info_df = info_df.append(pd.Series(additional_info))
+        info_df.to_csv(info_filepath)
+
 
         # Edit assignation file
         self.fleet.assign_customers_in_route()
@@ -160,17 +158,21 @@ class GenerationsData:
             fig, g = self.fleet.network.draw(save_to=f'{opt_path}network', width=0.02,
                                              edge_color='grey',
                                              markeredgecolor='black', markeredgewidth=2.0)
+            fig.savefig(f'{opt_path}network.pdf')
 
             figs = self.fleet.plot_operation_pyplot()
             for ev_id, fig in enumerate(figs[:-1]):
                 fig.savefig(f'{opt_path}operation_EV{ev_id}')
+                fig.savefig(f'{opt_path}operation_EV{ev_id}.pdf')
             figs[-1].savefig(f'{opt_path}cs_occupation')
+            figs[-1].savefig(f'{opt_path}cs_occupation.pdf')
 
             fig, g = self.fleet.draw_operation(color_route=('r', 'b', 'g', 'c', 'y'), save_to=None, width=0.02,
                                                edge_color='grey',
                                                markeredgecolor='black', markeredgewidth=2.0)
 
             fig.savefig(f'{opt_path}network_operation')
+            fig.savefig(f'{opt_path}network_operation.pdf')
             plt.close('all')
 
 

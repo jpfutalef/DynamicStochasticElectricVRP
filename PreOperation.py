@@ -30,7 +30,7 @@ for instance in instances:
         fleet.new_soc_policy(soc_policy[0], soc_policy[1])
 
         # %% 4. GA hyper-parameters
-        num_individuals = int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 50
+        num_individuals = int(len(fleet.network) * 1.5) #+ int(len(fleet) * 10) + 50
         K1 = 100. * len(fleet.network) + 1000 * len(fleet)
         hp_alpha = HyperParameters(num_individuals=num_individuals,
                                    max_generations=num_individuals * 3,
@@ -92,15 +92,16 @@ for instance in instances:
                                                                                     savefig=True,
                                                                                     mi=mi,
                                                                                     plot_best_generation=False)
-            routes_beta, opt_data_beta, toolbox_beta = improve_route(fleet, hp_beta, opt_folder,
-                                                                     best_ind=best_beta,
-                                                                     savefig=True)
+            #routes_beta, opt_data_beta, toolbox_beta = improve_route(fleet, hp_beta, opt_folder,
+            #                                                         best_ind=best_beta,
+            #                                                         savefig=True)
             mi = opt_data_alpha.additional_info['mi']
 
-            if not opt_data_alpha.acceptable and not opt_data_beta.acceptable:
+            if not opt_data_alpha.acceptable: # and not opt_data_beta.acceptable:
                 # Not feasible
                 print('INCREASING FLEET SIZE BY 1...')
                 mi += 1
+                '''
                 fleet.resize_fleet(len(fleet) + 1)
                 best_alpha = opt_data_alpha.bestOfAll
 
@@ -112,6 +113,7 @@ for instance in instances:
                     index = -len(fleet)
                     bestOfAll1 = best_alpha[:index] + chg_op + best_alpha[index:]
 
+                '''
                 hp_alpha.num_individuals += 15
                 hp_beta.num_individuals += 10
                 hp_alpha.max_generations += 10
