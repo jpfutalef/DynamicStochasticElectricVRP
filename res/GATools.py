@@ -53,6 +53,8 @@ class HyperParameters:
     r: int = 2
     alpha_up: float = 80.
     algorithm_name: str = 'Not specified'
+    crossover_repeat: int = 1
+    mutation_repeat: int = 1
 
     def __str__(self):
         string = 'Current hyper-parameters:\n'
@@ -81,6 +83,7 @@ class GenerationsData:
     m: int
     cs_capacity: int
     algo_time: float = None
+    additional_info: Dict = None
 
     def save_opt_data(self, data_folder: str = None, method='ASSIGNATION', savefig=False):
         # folder
@@ -138,17 +141,20 @@ class GenerationsData:
 
         # save hyper-parameters
         info = self.hyper_parameters.__str__()
-        info += f'Algorithm Time: {self.algo_time}'
-        info += f'\nBest individual: {self.bestOfAll}'
-        info += f'\nm: {self.m}'
-        info += f'\ncs_capacity: {self.cs_capacity}'
+        info += f'Algorithm Time: {self.algo_time}\n'
+        info += f'Best individual: {self.bestOfAll}\n'
+        info += f'm: {self.m}\n'
+        info += f'cs_capacity: {self.cs_capacity}\n'
+        if self.additional_info:
+            for key, val in self.additional_info.items():
+                info += f'{key}: {val}\n'
         with open(info_filepath, 'w') as file:
             file.write(info)
 
         # Edit assignation file
         self.fleet.assign_customers_in_route()
-        assigned_path = f'{opt_path}assigned.xml'
-        self.fleet.write_xml(assigned_path, False, True, True, False)
+        assigned_path = f'{opt_path}result_instance.xml'
+        self.fleet.write_xml(assigned_path, True, True, True, False, False)
 
         if savefig:
             fig, g = self.fleet.network.draw(save_to=f'{opt_path}network', width=0.02,

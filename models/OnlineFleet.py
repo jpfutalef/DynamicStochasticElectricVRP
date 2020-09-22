@@ -189,7 +189,7 @@ class Fleet:
     def cost_function(self) -> Tuple:
         cost_tt = sum([sum(ev.travel_times) for ev in self.vehicles.values()])
         cost_ec = sum([sum(ev.energy_consumption) for ev in self.vehicles.values()])
-        cost_chg_op = sum([sum(ev.charging_times) for ev in self.vehicles.values()])
+        cost_chg_time = sum([sum(ev.charging_times) for ev in self.vehicles.values()])
         cost_wait_time = sum([sum(ev.waiting_times) for ev in self.vehicles.values()])
         # cost_chg_cost = sum([sum(xi * ev.route[1]) for ev in self.vehicles.values()])
 
@@ -200,7 +200,7 @@ class Fleet:
                     xi = self.network.nodes[Sk].price
                     cost_chg_cost += xi*Lk*ev.battery_capacity
 
-        return cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_wait_time
+        return cost_tt, cost_ec, cost_chg_time, cost_chg_cost, cost_wait_time
 
     def feasible(self, online=False) -> Tuple[bool, Union[int, float], bool]:
         # 1. Variables to return

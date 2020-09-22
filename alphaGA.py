@@ -1,7 +1,7 @@
-from res.alphaGA import optimal_route_assignation, HyperParameters, Fleet, heuristic_population
-from models.OnlineFleet import from_xml
-
 import os
+
+from models.OnlineFleet import from_xml
+from res.alphaGA import optimal_route_assignation, HyperParameters
 
 # %% 1. Specify instance location and capacities to iterate
 folder = 'data/test/'
@@ -28,7 +28,7 @@ hyper_parameters = HyperParameters(num_individuals=num_individuals,
                                    max_generations=num_individuals * 3,
                                    CXPB=0.7,
                                    MUTPB=0.9,
-                                   weights=(.25, 1., 0.5, 5e-4, 1.2),
+                                   weights=(0.5/2.218, 1./0.4364, 1./8, 1./80, 1.2),
                                    K1=K1,
                                    K2=K1 * 2.5,
                                    keep_best=1,
@@ -46,7 +46,12 @@ except FileExistsError:
     pass
 
 # Main optimization folder
-opt_folder = instance_folder + 'opt1/'  # TODO read all opt folders and update number
+opt_folders = [d for d in os.listdir(instance_folder) if os.path.isdir(os.path.join(instance_folder, d))]
+if opt_folders:
+    opt_num = str(max([int(i[-1]) for i in opt_folders]) + 1)
+else:
+    opt_num = '1'
+opt_folder = instance_folder + f'opt{opt_num}/'
 try:
     os.mkdir(opt_folder)
 except FileExistsError:
@@ -54,9 +59,11 @@ except FileExistsError:
 
 # %% 6. Run algorithm
 bestOfAll = None
+mi = None
 routes, fleet, bestOfAll, feasible, acceptable, toolbox, optData = optimal_route_assignation(fleet,
                                                                                              hyper_parameters,
                                                                                              opt_folder,
                                                                                              best_ind=bestOfAll,
                                                                                              savefig=True,
+                                                                                             mi=mi,
                                                                                              plot_best_generation=False)

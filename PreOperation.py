@@ -1,114 +1,121 @@
-from res.alphaGA import *
-from res.GATools import *
-from res.GA_AlreadyAssigned2 import optimal_route_assignation as improve_route
-from res.GA_AlreadyAssigned2 import individual_from_routes
-
+import os
 from os import listdir
 from os.path import isfile, join
 
-# %% 1. Specify instance location and capacities to iterate
-data_folder = ['data/instances/100km2/', 'data/instances/400km2/', 'data/instances/900km2/']
-instances = [join(d_f, f) for d_f in data_folder for f in listdir(d_f) if isfile(join(d_f, f))]
-# instances = ['c20cs1.xml']
+import numpy as np
+from random import sample, uniform
 
-capacities = [3]
+from models.OnlineFleet import from_xml
+from res.alphaGA import optimal_route_assignation
+from res.betaGA import HyperParameters
+from res.betaGA import optimal_route_assignation as improve_route
+
+# %% 1. Specify instances location
+folder = 'data/test/'
+instances = [join(folder, f) for f in listdir(folder) if isfile(join(folder, f))]
+
+# %% 2. CS capacities and SOC policy
+cs_capacity = 3
 soc_policy = (20, 95)
 
-# %% 2. Instances iteration
+# %% Number of optimizations
+opt_range = 1
+
+# %% 3. Solve instances
 for instance in instances:
-    #instance_filename = instance
-    path = instance
-    print(f'Opening:\n {path}')
-    for cap in capacities:
-        fleet = from_xml(path, assign_customers=False, with_routes=False)
-        '''
-        fleet.network.draw(save_to=None, width=0.02,
-                           edge_color='grey', markeredgecolor='black',
-                           markeredgewidth=2.0)
-        '''
-        # %% 3. Modify CS capacities and set initial fleet size
-        weight_sum = sum([fleet.network.demand(i) for i in fleet.network.customers])
-        max_weight = fleet.vehicles[0].max_payload
-        init_fleet_size = int(weight_sum / max_weight) + 1
-        fleet.resize_fleet(init_fleet_size)
-        fleet.modify_cs_capacities(cap)
+    for _ in range(opt_range):
+        fleet = from_xml(instance, assign_customers=False, with_routes=False)
+
+        fleet.modify_cs_capacities(cs_capacity)
         fleet.new_soc_policy(soc_policy[0], soc_policy[1])
 
         # %% 4. GA hyper-parameters
-        CXPB, MUTPB = 0.7, 0.9
         num_individuals = int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 50
-        max_generations = num_individuals * 3
-        penalization_constant = 100. * len(fleet.network) + 1000 * len(fleet)
-        weights = (.25, 1., 0.5, 5e-4, 1.2)  # cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_wait_time
-        keep_best = 1  # Keep the 'keep_best' best individuals
-        tournament_size = 3
-        r = 4
-        hyper_parameters = HyperParameters(num_individuals, max_generations, CXPB, MUTPB,
-                                           tournament_size=tournament_size,
-                                           penalization_constant=penalization_constant,
-                                           keep_best=keep_best,
-                                           weights=weights,
-                                           r=r)
+        K1 = 100. * len(fleet.network) + 1000 * len(fleet)
+        hp_alpha = HyperParameters(num_individuals=num_individuals,
+                                   max_generations=num_individuals * 3,
+                                   CXPB=0.7,
+                                   MUTPB=0.9,
+                                   weights=(0.5 / 2.218, 1. / 0.4364, 1. / 8, 1. / 80, 1.2),
+                                   K1=K1,
+                                   K2=K1 * 2.5,
+                                   keep_best=1,
+                                   tournament_size=3,
+                                   r=4,
+                                   alpha_up=soc_policy[1],
+                                   algorithm_name='alphaGA')
 
-        CXPB, MUTPB = 0.7, 0.9
         num_individuals = int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 50
-        max_generations = num_individuals * 2
-        # penalization_constant = 0.
-        # weights = (.2, 1.2, 20., 20., .3)  # cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_wait_time
-        keep_best = 1  # Keep the 'keep_best' best individuals
-        tournament_size = 3
-        crossover_repeat = 1
-        mutation_repeat = 2
-        hyper_parameters_improve = HyperParameters(num_individuals, max_generations, CXPB, MUTPB,
-                                                   tournament_size=tournament_size,
-                                                   penalization_constant=penalization_constant,
-                                                   keep_best=keep_best,
-                                                   weights=weights,
-                                                   crossover_repeat=crossover_repeat,
-                                                   mutation_repeat=mutation_repeat)
+        K1 = 100. * len(fleet.network) + 1000 * len(fleet)
+        hp_beta = HyperParameters(num_individuals=num_individuals,
+                                  max_generations=num_individuals * 3,
+                                  CXPB=0.7,
+                                  MUTPB=0.9,
+                                  weights=(0.5 / 2.218, 1. / 0.4364, 1. / 8, 1. / 80, 1.2),
+                                  K1=K1,
+                                  K2=K1 * 2.5,
+                                  keep_best=1,
+                                  tournament_size=3,
+                                  r=4,
+                                  alpha_up=soc_policy[1],
+                                  algorithm_name='betaGA',
+                                  crossover_repeat=1,
+                                  mutation_repeat=1)
 
         # %% 5. Specify data folder
-        instance_name = instance[:-4]
+        # Main instance folder
+        instance_folder = instance[:-4] + '/'
         try:
-            #os.mkdir(f'{data_folder}{instance_name}/')
-            os.mkdir(f'{instance_name}/')
+            os.mkdir(instance_folder)
         except FileExistsError:
             pass
-        #save_to = f'{data_folder}{instance_name}/{cap}/'
-        save_to = f'{instance_name}/{cap}/'
+
+        # Main optimization folder
+        opt_folders = [d for d in os.listdir(instance_folder) if os.path.isdir(os.path.join(instance_folder, d))]
+        if opt_folders:
+            opt_num = str(max([int(i[-1]) for i in opt_folders]) + 1)
+        else:
+            opt_num = '1'
+        opt_folder = instance_folder + f'opt{opt_num}/'
+        try:
+            os.mkdir(opt_folder)
+        except FileExistsError:
+            pass
 
         # %% 6. Run algorithm
-        feasible1, feasible2 = False, False
-        bestOfAll1, bestOfAll2 = None, None
-        for k in range(6):
-            routes, fleet, bestOfAll1, feasible1, toolbox1, optData1 = optimal_route_assignation(fleet,
-                                                                                                 hyper_parameters,
-                                                                                                 save_to,
-                                                                                                 best_ind=bestOfAll1,
-                                                                                                 savefig=True,
-                                                                                                 plot_best_generation=False)
+        best_alpha = None
+        best_beta = None
+        mi = None
+        for k in range(5):
+            routes_alpha, opt_data_alpha, toolbox_alpha = optimal_route_assignation(fleet, hp_alpha, opt_folder,
+                                                                                    best_ind=best_alpha,
+                                                                                    savefig=True,
+                                                                                    mi=mi,
+                                                                                    plot_best_generation=False)
+            routes_beta, opt_data_beta, toolbox_beta = improve_route(fleet, hp_beta, opt_folder,
+                                                                     best_ind=best_beta,
+                                                                     savefig=True)
+            mi = opt_data_alpha.additional_info['mi']
 
-            bestOfAll2 = individual_from_routes(routes, fleet)
-            routes, fleet, bestOfAll2, feasible2, toolbox2, optData2 = improve_route(fleet, hyper_parameters_improve,
-                                                                                     save_to, bestOfAll2, savefig=True)
-            best_fitness, best_is_feasible = toolbox2.evaluate(bestOfAll2)
-            feas, dist, accept = fleet.feasible()
-
-            if not feasible1 and not feasible2 and not accept:
-                # Not fasible
+            if not opt_data_alpha.acceptable and not opt_data_beta.acceptable:
+                # Not feasible
                 print('INCREASING FLEET SIZE BY 1...')
+                mi += 1
                 fleet.resize_fleet(len(fleet) + 1)
+                best_alpha = opt_data_alpha.bestOfAll
+
                 pos = np.random.randint(len(fleet.network.customers) + len(fleet))
-                bestOfAll1.insert(pos, '|')
-                bestOfAll1.append(np.random.uniform(7 * 60, 10 * 60))
-                for i in range(hyper_parameters.r):
+                best_alpha.insert(pos, '|')
+                best_alpha.append(np.random.uniform(7 * 60, 10 * 60))
+                for i in range(hp_alpha.r):
                     chg_op = [-1, sample(fleet.network.charging_stations, 1)[0], uniform(10, 20)]
                     index = -len(fleet)
-                    bestOfAll1 = bestOfAll1[:index] + chg_op + bestOfAll1[index:]
-                hyper_parameters.num_individuals += 15
-                hyper_parameters_improve.num_individuals += 10
-                hyper_parameters.max_generations += 10
-                hyper_parameters_improve.max_generations += 10
+                    bestOfAll1 = best_alpha[:index] + chg_op + best_alpha[index:]
+
+                hp_alpha.num_individuals += 15
+                hp_beta.num_individuals += 10
+                hp_alpha.max_generations += 10
+                hp_beta.max_generations += 10
             else:
                 # At least one is acceptable
                 break

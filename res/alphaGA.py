@@ -377,11 +377,11 @@ def random_individual(num_customers, num_cs, m, r):
 
 def construct_individuals(r: int, fleet: Fleet):
     net = fleet.network
-    m = len(fleet)
+    m = int(sum([fleet.network.demand(i) for i in fleet.network.customers])/fleet.vehicles[0].max_payload) + 1
     tw = {i: net.nodes[i].time_window_low for i in net.customers}
     sorted_tw = sorted(tw, key=tw.__getitem__)
 
-    inds = []
+    pop = []
     for j in range(m):
         customers = [[] for _ in range(m)]
         off = 0
@@ -402,12 +402,12 @@ def construct_individuals(r: int, fleet: Fleet):
             cust, cs, amount = -1, sample(net.charging_stations, 1)[0], uniform(20, 30)
             charging_operation_blocks += [cust, cs, amount]
 
-        dep_time_block = list(np.random.uniform(-10, 10, m))
+        dep_time_block = list(np.random.uniform(60*10, 60*12, m))
 
         ind = customer_block + charging_operation_blocks + dep_time_block
-        inds.append(ind)
+        pop.append(ind)
 
-    return inds
+    return pop, m
 
 
 def heuristic_population(r: int, fleet: Fleet):
@@ -447,8 +447,8 @@ def heuristic_population(r: int, fleet: Fleet):
         charging_operation_block += [cust, cs, amount]
 
     dep_time_block = [net.nodes[i].time_window_low for i in [j[0] for j in routes]]
-    ind = [customer_block + charging_operation_block + dep_time_block]
-    return ind, m
+    pop = [customer_block + charging_operation_block + dep_time_block]
+    return pop, m
 
 
 '''
@@ -514,19 +514,40 @@ def random_block_index(m, ics, idt, block_probability):
         return randint(idt, idt + m - 1)
 
 
+def resize_individual(individual, old_m, new_m, r, customers, charging_stations):
+    n = len(customers)
+    customer_insertion = ['|'] * (new_m - old_m)
+    cs_insertion = []
+    for i in range((new_m - old_m) * r):
+        cust, cs, amount = sample(customers + (-1,) * (new_m - old_m) * r, 1)[0], sample(charging_stations, 1)[
+            0], uniform(20, 30)
+        cs_insertion += [cust, cs, amount]
+    dep_time_insertion = [individual[-1] for _ in range(new_m - old_m)]
+    return individual[:n + old_m] + customer_insertion + cs_insertion + individual[n + old_m:] + dep_time_insertion
+
+
 '''
 MAIN ALGORITHM
 '''
 
 
 def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind=None, savefig=False,
-                              plot_best_generation=False):
+                              mi=None, plot_best_generation=False):
     # OBJECTS
     creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
     creator.create("Individual", list, fitness=creator.FitnessMin, feasible=False, acceptable=False)
 
     # INIT SIZES
-    pop, m = heuristic_population(hp.r, fleet)
+    pop, mh = heuristic_population(hp.r, fleet)
+    #pop, mh = construct_individuals(hp.r, fleet)
+    if mi:
+        mi = mi if mi > mh else mh
+        m = mi
+        for k, _ in enumerate(pop):
+            pop[k] = resize_individual(pop[k], mh, mi, hp.r, fleet.network.customers, fleet.network.charging_stations)
+    else:
+        m = mh
+        mi = mh
     fleet.resize_fleet(m)
     init_size = len(pop)
     random_inds_num = int(hp.num_individuals / 3)
@@ -545,7 +566,7 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
 
     # BEGIN ALGORITHM
     t_init = time.time()
-    #pop = [creator.Individual(i) for i in construct_individuals(hp.r, fleet)]
+    # pop = [creator.Individual(i) for i in construct_individuals(hp.r, fleet)]
 
     # Population from first candidates
     pop = [creator.Individual(i) for i in pop]
@@ -643,10 +664,12 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
             bestOfAll = bestInd
 
         # Real-time info
-        print(f"Best individual  : {bestInd}\n Fitness: {bestInd.fitness.wvalues[0]} Feasible: {bestInd.feasible} Acceptable: {bestInd.acceptable}")
+        print(
+            f"Best individual  : {bestInd}\n Fitness: {bestInd.fitness.wvalues[0]} Feasible: {bestInd.feasible} Acceptable: {bestInd.acceptable}")
 
         worstInd = tools.selWorst(pop, 1)[0]
-        print(f"Worst individual : {worstInd}\n Fitness: {worstInd.fitness.wvalues[0]} Feasible: {worstInd.feasible}  Acceptable: {worstInd.acceptable}")
+        print(
+            f"Worst individual : {worstInd}\n Fitness: {worstInd.fitness.wvalues[0]} Feasible: {worstInd.feasible}  Acceptable: {worstInd.acceptable}")
 
         print(
             f"Curr. best-of-all: {bestOfAll}\n Fitness: {bestOfAll.fitness.wvalues[0]} Feasible: {bestOfAll.feasible}  Acceptable: {bestOfAll.acceptable}")
@@ -688,12 +711,14 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
     opt_data.feasible = feasible
     opt_data.acceptable = acceptable
     opt_data.algo_time = algo_time
+    opt_data.fleet = fleet
+    opt_data.additional_info = {'mi': mi, 'mh': mh}
 
     if save_to:
-        path = save_to + hp.algorithm_name + f'_fleetsize{m}/'
+        path = save_to + hp.algorithm_name + f'_fleetsize_{m}/'
         try:
             os.mkdir(path)
         except FileExistsError:
             pass
         opt_data.save_opt_data(path, savefig=savefig)
-    return routes, fleet, bestOfAll, feasible, acceptable, toolbox, opt_data
+    return routes, opt_data, toolbox
