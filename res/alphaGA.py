@@ -1,9 +1,11 @@
+import os
+import time
 from random import randint, uniform, sample, random
-from deap import tools, base, creator
-import numpy as np
 from typing import Tuple
-import time, os
+
 import matplotlib.pyplot as plt
+import numpy as np
+from deap import tools, base, creator
 
 from res.GATools import HyperParameters, GenerationsData, Fleet, RouteDict, IndividualType
 
@@ -257,7 +259,8 @@ def mutate_charging_operation1(individual: IndividualType, index: int, m: int, n
 
     individual[op_index] = sample(range(1, num_customers + 1), 1)[0] if randint(0, 1) else -1
     individual[op_index + 1] = sample(range(num_customers + 1, num_customers + num_cs + 1), 1)[0]
-    individual[op_index + 2] = abs(individual[op_index + 2] + uniform(-10, 10))
+    #individual[op_index + 2] = abs(individual[op_index + 2] + uniform(-10, 10))
+    individual[op_index + 2] = abs(individual[op_index + 2] + np.random.normal(0, 10))
 
 
 def mutate_charging_operation2(individual: IndividualType, index: int, m: int, num_customers: int, num_cs: int, r: int):
@@ -278,7 +281,8 @@ def mutate_charging_operation2(individual: IndividualType, index: int, m: int, n
 
 
 def mutate_departure_time1(individual: IndividualType, index: int, m: int, num_customers: int, num_cs: int, r: int):
-    individual[index] += uniform(-60, 60)
+    #individual[index] += uniform(-60, 60)
+    individual[index] += np.random.normal(0, 60)
 
 
 '''
