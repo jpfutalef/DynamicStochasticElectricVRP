@@ -34,19 +34,19 @@ def decode(individual: IndividualType, fleet: Fleet, hp: HyperParameters) -> Rou
     depart_times = individual[idt:]
 
     # Insert charging operations
-    for customer, cs, amount in charging_operations:
+    for customer, charging_station, amount in charging_operations:
         if customer == -1:
             continue
         for S, L in zip(customer_sequences, charging_sequences):
             try:
                 index = S.index(customer) + 1
                 if index == len(S):
-                    S.insert(index, cs)
+                    S.insert(index, charging_station)
                     L.insert(index, amount)
-                elif S[index] == cs:
+                elif S[index] == charging_station:
                     L[index] += amount
                 else:
-                    S.insert(index, cs)
+                    S.insert(index, charging_station)
                     L.insert(index, amount)
             except ValueError:
                 continue

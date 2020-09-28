@@ -110,8 +110,9 @@ class Fleet:
         self.network = network
 
     def drop_vehicle(self, ev_id: int) -> None:
-        del self.vehicles[ev_id]
-        self.vehicles_to_route = tuple(i for i in self.vehicles.keys())
+        if ev_id in self.vehicles.keys():
+            del self.vehicles[ev_id]
+            self.vehicles_to_route = tuple(i for i in self.vehicles.keys())
 
     def resize_fleet(self, new_size, as_new=True, based_on=0, auto=False):
         if auto:
@@ -168,6 +169,10 @@ class Fleet:
                 self.vehicles[id_ev].step(self.network)
         if iterate_cs:
             self.iterate_cs_capacities(init_theta)
+
+    def update_from_another_fleet(self, new_fleet):
+        for id_ev, ev in new_fleet.vehicles.items():
+            self.vehicles[id_ev] = ev
 
     def iterate_cs_capacities(self, init_theta: ndarray = None):
         sum_si = sum([len(ev.route[0]) for ev in self.vehicles.values()])
