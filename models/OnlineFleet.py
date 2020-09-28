@@ -246,31 +246,31 @@ class Fleet:
                     if node.time_window_upp < ev.state_leaving[0, k] - ev.waiting_times0[k]:
                         d = dist_fun(node.time_window_upp, ev.state_leaving[0, k] - ev.waiting_times0[k])
                         dist += 20*d
-                        accept = False
+                        accept = False if d > 20 else accept
 
                 # SOC BOUND LOWER - REACHING
                 if ev.state_reaching[1, k] < ev.alpha_down:
                     d = dist_fun(ev.state_reaching[1, k], ev.alpha_down)
                     dist += d
-                    accept = False if d > 25 else accept
+                    accept = False if d > 36 else accept
 
                 # SOC BOUND UPPER - REACHING
                 if ev.state_reaching[1, k] > ev.alpha_up:
                     d = dist_fun(ev.state_reaching[1, k], ev.alpha_up)
                     dist += d
-                    accept = False if d > 25 else accept
+                    accept = False if d > 36 else accept
 
                 # SOC BOUND LOWER - LEAVING
                 if ev.state_leaving[1, k] < ev.alpha_down:
                     d = dist_fun(ev.state_leaving[1, k], ev.alpha_down)
                     dist += d
-                    accept = False if d > 25 else accept
+                    accept = False if d > 36 else accept
 
                 # SOC BOUND UPPER - LEAVING
                 if ev.state_leaving[1, k] > ev.alpha_up:
                     d = dist_fun(ev.state_leaving[1, k], ev.alpha_up)
                     dist += d
-                    accept = False if d > 25 else accept
+                    accept = False if d > 36 else accept
 
                 if ev.state_reaching[1, k] < 0:
                     dist += dist_fun(ev.state_reaching[1, k], ev.alpha_down) + 1000

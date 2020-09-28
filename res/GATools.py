@@ -143,7 +143,9 @@ class GenerationsData:
         additional_info = {'Algorithm time': self.algo_time,
                            'Best individual': [i for i in self.bestOfAll],
                            'm': self.m,
-                           'cs_capacity': self.cs_capacity}
+                           'cs_capacity': self.cs_capacity,
+                           'feasible': self.feasible,
+                           'acceptable': self.acceptable}
         if self.additional_info:
             additional_info.update(self.additional_info)
         info_df = info_df.append(pd.Series(additional_info))
