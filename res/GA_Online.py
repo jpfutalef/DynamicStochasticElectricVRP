@@ -1,40 +1,57 @@
-from res.GATools import *
+import os
+import time
 from random import randint, uniform, sample
+from typing import Tuple, Dict
 
 import numpy as np
-import models.OnlineFleet as Fleet
+from deap import tools, base, creator
+
+from res.GATools import HyperParameters, GenerationsData, Fleet, RouteDict, IndividualType, IndicesType, \
+    StartingPointsType, InitialCondition
 
 
 # FUNCTIONS
-def decode(individual: IndividualType, indices: IndicesType, starting_points: StartingPointsType, fleet: Fleet.Fleet,
-           allowed_charging_operations=2) -> RouteDict:
+def decode(individual: IndividualType, indices: IndicesType, critical_points: StartingPointsType, fleet: Fleet,
+           hp: HyperParameters) -> RouteDict:
     routes = {}
     for id_ev, (i0, i1, i2) in indices.items():
-        initial_condition = starting_points[id_ev]
+        initial_condition = critical_points[id_ev]
         S = individual[i0:i1]
         chg_block = individual[i1:i2]
         offset = individual[i2]
-        
+
         L = [0] * len(S)
-        chg_ops = [(chg_block[3 * i], chg_block[3 * i + 1], chg_block[3 * i + 2]) for i in range(allowed_charging_operations)]
+        chg_ops = [(chg_block[3 * i], chg_block[3 * i + 1], chg_block[3 * i + 2]) for i in range(hp.r)]
         for customer, charging_station, amount in chg_ops:
             if customer != -1:
-                i = S.index(customer) if customer != initial_condition.S0 else -1
+                '''
+                i = S.index(customer) if customer != initial_condition.S0 else -1  # finds where customers is
+                # check for repeated
                 S = S[:i + 1] + [charging_station] + S[i + 1:]
                 L = L[:i + 1] + [amount] + L[i + 1:]
+                '''
+                index = S.index(customer) + 1 if customer != initial_condition.S0 else 0
+                if index == len(S):
+                    S.insert(index, charging_station)
+                    L.insert(index, amount)
+                elif S[index] == charging_station:
+                    L[index] += amount
+                else:
+                    S.insert(index, charging_station)
+                    L.insert(index, amount)
 
         S0 = initial_condition.S0
-        x30 = initial_condition.x3_0
-        if starting_points[id_ev].L0 > 0:
+        if critical_points[id_ev].L0 > 0:
             # Initial node is a CS
             L0 = initial_condition.L0 + offset
             x10 = initial_condition.x1_0 + fleet.network.spent_time(S0, initial_condition.x2_0, L0)
             x20 = initial_condition.x2_0 + L0
         else:
             # Initial node is a customer
-            L0 = 0.0
-            x10 = initial_condition.x1_0 + offset
+            L0 = initial_condition.L0
+            x10 = initial_condition.x1_0 + fleet.network.spent_time(S0, initial_condition.x2_0, L0) + offset
             x20 = initial_condition.x2_0
+        x30 = initial_condition.x3_0 - fleet.network.demand(S0)
         S = tuple([S0] + S + [0])
         L = tuple([L0] + L + [0])
         routes[id_ev] = ((S, L), x10, x20, x30)
@@ -196,22 +213,15 @@ def random_individual(indices: IndicesType, starting_points: StartingPointsType,
     return individual
 
 
-def fitness(individual: IndividualType, fleet: Fleet, indices: IndicesType, starting_points: StartingPointsType,
-            weights=(1.0, 1.0, 1.0, 1.0), penalization_constant=500000, allowed_charging_operations=2):
+def fitness(individual: IndividualType, indices: IndicesType, critical_points: StartingPointsType,
+            fleet: Fleet, hp: HyperParameters):
     """
     Calculates fitness of individual.
-    :param indices:
-    :param individual: The individual to decode
-    :param fleet: dictionary with vehicle instances. They must have been assigned to customers_per_vehicle
-    :param starting_points: dictionary with info of the initial state {id_vehicle:(S0, L0, x1_0, x2_0)}
-    :param allowed_charging_operations: maximum charging operations per ev
-    :param weights: tuple with weights of each variable in cost function (w1, w2, w3, w4)
-    :param penalization_constant: positive number that represents the penalization of unfeasible individual
-    :return: the fitness of the individual
     """
 
     # Decode
-    routes = decode(individual, indices, starting_points, fleet, allowed_charging_operations)
+    m = len(fleet.vehicles)
+    routes = decode(individual, indices, critical_points, fleet, hp)
 
     # Set routes
     fleet.set_routes_of_vehicles(routes)
@@ -219,35 +229,47 @@ def fitness(individual: IndividualType, fleet: Fleet, indices: IndicesType, star
     # Cost
     costs = np.array(fleet.cost_function())
 
-    # Check if the solution is feasible
-    feasible, penalization = fleet.feasible()
+    # Calculate penalization
+    feasible, distance, accept = fleet.feasible()
 
-    # penalization
-    if not feasible:
-        penalization += penalization_constant
+    penalization = 0
+    if not accept:
+        penalization = distance + hp.K1 + hp.K2
+    elif accept and not feasible:
+        penalization = distance + hp.K1
 
-    fit = np.dot(costs, np.asarray(weights)) + penalization
+    # Calculate fitness
+    fit = np.dot(costs, np.asarray(hp.weights)) + penalization
 
-    return fit, feasible
+    return fit, feasible, accept
 
 
-def code(fleet: Fleet.Fleet, allowed_charging_operations=2) -> Tuple[IndividualType, StartingPointsType]:
+def code(fleet: Fleet, ahead_routes: RouteDict, allowed_charging_operations=2) -> Tuple[
+    IndividualType, StartingPointsType]:
     ind = []
-    for id_ev in fleet.vehicles_to_route:
-        Sk, Lk = fleet.vehicles[id_ev].route
-        cust_seq = [x for x in Sk[1:] if fleet.network.isCustomer(x)]
-        ch_seq, ch_count = [], 0
-        for k, lk in enumerate(Lk[1:]):
-            if lk > 0.:
-                ch_seq += [Sk[k], Sk[k + 1], lk]
-                ch_count += 1
+    critical_points = {}
+    for id_ev, ahead_route in ahead_routes.items():
+        # Get the route starting from the critical point
+        (S, L), x1, x2, x3 = ahead_route
 
-        for i in range(allowed_charging_operations - ch_count):
-            ch_seq += [-1, sample(fleet.network.charging_stations, 1)[0], uniform(10, 90)]
+        # Save critical points
+        critical_points[id_ev] = InitialCondition(S[0], L[0], x1, x2, x3)
 
-        ind += cust_seq + ch_seq + [0.]
-        fleet.vehicles[id_ev].assigned_customers = tuple(cust_seq)
+        # Create individual from ahead route
+        customer_sequence = [x for x in S[1:] if fleet.network.isCustomer(x)]
+        charging_operations, charging_operations_count = [], 0
+        for k, LK in enumerate(L[1:]):
+            if LK > 0.:
+                charging_operations += [S[k], S[k + 1], LK]
+                charging_operations_count += 1
 
+        for i in range(allowed_charging_operations - charging_operations_count):
+            charging_operations += [-1, sample(fleet.network.charging_stations, 1)[0], uniform(10, 90)]
+
+        ind += customer_sequence + charging_operations + [0.]
+        fleet.vehicles[id_ev].assigned_customers = tuple(customer_sequence)
+
+    '''
     starting_points = {}
     for ev_id in fleet.vehicles_to_route:
         ev = fleet.vehicles[ev_id]
@@ -262,37 +284,35 @@ def code(fleet: Fleet.Fleet, allowed_charging_operations=2) -> Tuple[IndividualT
             x20 = ev.state_leaving[1, 0]
         x30 = ev.state_leaving[2, 0]
         starting_points[ev_id] = InitialCondition(S0, L0, x10, x20, x30)
+    '''
 
-    return ind, starting_points
+    return ind, critical_points
 
 
 # THE ALGORITHM
-def optimal_route_assignation(fleet: Fleet.Fleet, hp: HyperParameters, starting_points: StartingPointsType,
+def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, critical_points: StartingPointsType,
                               save_to: str = None, best_ind: IndividualType = None, savefig=False):
     customers_to_visit = {ev_id: fleet.vehicles[ev_id].assigned_customers for ev_id in fleet.vehicles_to_route}
     indices = block_indices(customers_to_visit, hp.r)
 
     # Fitness objects
     creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
-    creator.create("Individual", list, fitness=creator.FitnessMin, feasible=False)
+    creator.create("Individual", list, fitness=creator.FitnessMin, feasible=False, acceptable=False)
 
     # Toolbox
     toolbox = base.Toolbox()
 
-    toolbox.register("individual", random_individual, indices=indices, starting_points=starting_points,
+    toolbox.register("individual", random_individual, indices=indices, starting_points=critical_points,
                      customers_to_visit=customers_to_visit, charging_stations=fleet.network.charging_stations,
                      allowed_charging_operations=hp.r)
-    toolbox.register("evaluate", fitness, fleet=fleet, indices=indices, starting_points=starting_points,
-                     weights=hp.weights, penalization_constant=hp.penalization_constant,
-                     allowed_charging_operations=hp.r)
+    toolbox.register("evaluate", fitness, indices=indices, critical_points=critical_points, fleet=fleet, hp=hp)
     toolbox.register("mate", crossover, indices=indices, allowed_charging_operations=hp.r, index=None)
-    toolbox.register("mutate", mutate, indices=indices, starting_points=starting_points,
+    toolbox.register("mutate", mutate, indices=indices, starting_points=critical_points,
                      customers_to_visit=customers_to_visit, charging_stations=fleet.network.charging_stations,
                      allowed_charging_operations=hp.r, index=None)
     toolbox.register("select", tools.selTournament, tournsize=hp.tournament_size)
     toolbox.register("select_worst", tools.selWorst)
-    toolbox.register("decode", decode, indices=indices, starting_points=starting_points, fleet=fleet,
-                     allowed_charging_operations=hp.r)
+    toolbox.register("decode", decode, indices=indices, critical_points=critical_points, fleet=fleet, hp=hp)
 
     # BEGIN ALGORITHM
     t_init = time.time()
@@ -301,22 +321,24 @@ def optimal_route_assignation(fleet: Fleet.Fleet, hp: HyperParameters, starting_
     if best_ind is None:
         pop = [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals)]
     else:
-        pop = [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals - 1)]
-        pop.append(creator.Individual(best_ind))
+        pop = [creator.Individual(best_ind)]
+        pop += [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals - 1)]
 
     # Evaluate the initial population and get fitness of each individual
     for ind in pop:
-        fit, feasible = toolbox.evaluate(ind)
+        fit, feasible, acceptable = toolbox.evaluate(ind)
         ind.fitness.values = (fit,)
         ind.feasible = feasible
+        ind.acceptable = acceptable
 
     print(f'  Evaluated {len(pop)} individuals')
     bestOfAll = tools.selBest(pop, 1)[0]
     print(f"Best individual  : {bestOfAll}\n Fitness: {bestOfAll.fitness.wvalues[0]} Feasible: {bestOfAll.feasible}")
 
     # These will save statistics
-    opt_data = GenerationsData([], [], [], [], [], [], fleet, hp, bestOfAll, bestOfAll.feasible)
-
+    cs_capacity = fleet.network.nodes[fleet.network.charging_stations[0]].capacity
+    opt_data = GenerationsData([], [], [], [], [], [], fleet, hp, bestOfAll, bestOfAll.feasible, bestOfAll.acceptable,
+                               len(fleet), cs_capacity)
     print("################  Start of evolution  ################")
     # Begin the evolution
     for g in range(hp.max_generations):
@@ -348,9 +370,10 @@ def optimal_route_assignation(fleet: Fleet.Fleet, hp: HyperParameters, starting_
         # Evaluate the individuals with invalid fitness
         invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
         for ind in invalid_ind:
-            fit, feasible = toolbox.evaluate(ind)
+            fit, feasible, acceptable = toolbox.evaluate(ind)
             ind.fitness.values = (fit,)
             ind.feasible = feasible
+            ind.acceptable = acceptable
 
         print(f'  Evaluated {len(invalid_ind)} individuals')
 
@@ -400,17 +423,20 @@ def optimal_route_assignation(fleet: Fleet.Fleet, hp: HyperParameters, starting_
     algo_time = t_end - t_init
     print('Algorithm time:', algo_time)
 
-    fit, feasible = toolbox.evaluate(bestOfAll)
+    fit, feasible, acceptable = toolbox.evaluate(bestOfAll)
     routes = toolbox.decode(bestOfAll)
 
     opt_data.bestOfAll = bestOfAll
     opt_data.feasible = feasible
+    opt_data.acceptable = acceptable
     opt_data.algo_time = algo_time
+    opt_data.fleet = fleet
 
     if save_to:
+        path = save_to
         try:
-            os.mkdir(save_to)
+            os.mkdir(path)
         except FileExistsError:
             pass
-        opt_data.save_opt_data(save_to, method='ASSIGNED', savefig=savefig)
-    return routes, fleet, bestOfAll, feasible, toolbox, opt_data
+        opt_data.save_opt_data(path, savefig=savefig)
+    return routes, opt_data, toolbox

@@ -99,7 +99,7 @@ def create_fleet(save_to: str) -> Fleet.Fleet:
 
 class Simulator:
     def __init__(self, network_loc: str, fleet_loc: str, mat_file_loc: str, collection_file_loc: str,
-                 sample_time: float, report_folder: str):
+                 sample_time: float, create_collection: bool = True, continue_operation: bool = False):
         self.network = Network.from_xml(network_loc, instance=False)
         self.fleet = Fleet.from_xml(fleet_loc, True, True, instance=False)
         self.data = loadmat(mat_file_loc)
@@ -112,13 +112,15 @@ class Simulator:
 
         self.fleet_path = fleet_loc
         self.fleet_path_temp = f'{fleet_loc[:-4]}_temp.xml'
-        self.fleet.write_xml(self.fleet_path_temp, False, True, True, True, print_pretty=True)
+        if not continue_operation:
+            self.fleet.write_xml(self.fleet_path_temp, False, True, True, True, print_pretty=True)
 
         self.collection_path = collection_file_loc
-        obs.create_collection_file(self.fleet, collection_file_loc)
+        if create_collection:
+            obs.create_collection_file(self.fleet, collection_file_loc)
 
-        self.observer = obs.Observer(self.network_path_temp, self.fleet_path_temp, self.collection_path, report_folder,
-                                     ga_time, offset_time, 2)
+        self.observer = obs.Observer(self.network_path_temp, self.fleet_path_temp, self.collection_path, ga_time,
+                                     offset_time, 2)
         self.sample_time = sample_time
 
     def disturb_network(self):
@@ -136,107 +138,165 @@ class Simulator:
         self.observer.time += self.sample_time
         for id_ev, measurement in self.observer.collection.items():
             measurement.time += self.sample_time
-            measurement.time_since_start += self.sample_time
             if measurement.done:
                 continue
+            i, j, tod = measurement.node_from, measurement.node_to, measurement.time
+            measurement.time_since_start += self.sample_time
             ev = self.fleet.vehicles[id_ev]
             (S, L) = ev.route
+
+            # CASE - PREVIOUS MEASUREMENT IN NODE I
             if measurement.is_in_node_from:
-                if measurement.time >= measurement.end_service:
-                    i, j, tod = measurement.node_from, measurement.node_to, measurement.time
-                    measurement.payload -= self.fleet.network.demand(i)
-                    tij = self.network.t(i, j, measurement.end_service)
-                    Eij = self.network.e(i, j, measurement.payload, ev.weight, measurement.end_service, tij)
-                    eij = 100*Eij / ev.battery_capacity
+                # CASE - SERVICE AT NODE I ENDS AND VEHICLE STARTS MOVING AGAIN
+                k = S.index(i)
+                if measurement.time >= measurement.end_time + ev.waiting_times1[k]:
+                    measurement.payload -= self.fleet.network.demand(i)  # Unload when stop ends
+                    tij = self.network.t(i, j, measurement.end_time)
+                    Eij = self.network.e(i, j, measurement.payload, ev.weight, measurement.end_time, tij)
+                    eij = 100 * Eij / ev.battery_capacity
 
                     measurement.is_in_node_from = False
-                    measurement.eta = (measurement.time - measurement.end_service) / tij
+                    measurement.eta = (measurement.time - measurement.end_time) / tij
                     measurement.soc = measurement.end_soc - measurement.eta * eij
                     measurement.consumption_since_start += Eij * measurement.eta
-            else:
-                i, j, tod = measurement.node_from, measurement.node_to, measurement.time
-                tij = self.network.t(i, j, measurement.end_service)
-                Eij = self.network.e(i, j, measurement.payload, ev.weight, measurement.end_service, tij)
-                eij = 100*Eij / ev.battery_capacity
-                delta = self.sample_time / tij
-                if delta > 1 - measurement.eta:
-                    k = S.index(j)
-                    L_node_to = L[k]
-                    reach_time = measurement.time + tij * (1 - measurement.eta) + ev.waiting_times1[k] - self.sample_time
-                    reach_soc = measurement.soc - eij * (1 - measurement.eta)
-                    spent_time = self.network.spent_time(j, reach_soc, L_node_to)
 
+            # CASE - MOVING ACROSS NODE I AND NODE J
+            else:
+                tij = self.network.t(i, j, measurement.end_time)
+                Eij = self.network.e(i, j, measurement.payload, ev.weight, measurement.end_time, tij)
+                eij = 100 * Eij / ev.battery_capacity
+                delta = self.sample_time / tij
+                # CASE - VEHICLE REACHES J
+                if delta > 1 - measurement.eta:
                     measurement.is_in_node_from = True
                     measurement.node_from = j
-                    measurement.node_to = S[k + 1]
-                    measurement.soc = reach_soc
-                    measurement.end_soc = reach_soc + L_node_to
-                    measurement.end_service = reach_time + spent_time
+                    k = S.index(j)
+
+                    # CASE - J IS THE DEPOT (END TOUR)
+                    if j == 0:
+                        measurement.done = True
+                        measurement.node_to = 0
+
+                    else:
+                        measurement.node_to = S[k + 1]
+
+                    reach_time = measurement.time - self.sample_time + tij * (1 - measurement.eta) + ev.waiting_times0[
+                        k]
+                    reach_soc = measurement.soc - eij * (1 - measurement.eta)
+                    spent_time = self.network.spent_time(j, reach_soc, L[k])
+
+                    measurement.arrival_time = reach_time
+                    measurement.arrival_soc = reach_soc
+                    measurement.arrival_payload = measurement.end_payload
+
+                    measurement.end_soc = reach_soc + L[k]
+                    measurement.end_time = reach_time + spent_time
                     measurement.end_payload -= self.network.demand(j)
+
                     measurement.consumption_since_start += Eij * (1 - measurement.eta)
+
                     ev.route = (S[k:], L[k:])
-                    self.fleet.write_xml(self.fleet_path_temp, False, True, True, False)
+                    self.fleet.write_xml(self.fleet_path_temp, online=True, assign_customers=True)
+
+
+                # CASE - VEHICLE CONTINUES MOVING ACROSS ARC
                 else:
                     measurement.eta += delta
                     measurement.soc -= delta * eij
                     measurement.consumption_since_start += delta * Eij
+        now = datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S')
+        # self.observer.write_collection(f'{self.report_folder}{now}.xml')
         self.observer.write_collection()
 
 
+def create_folder(path):
+    try:
+        os.mkdir(path)
+    except FileExistsError:
+        pass
+
+
 if __name__ == '__main__':
-    net_path = '../data/online/21nodes/network.xml'
-    fleet_path = '../data/online/21nodes/fleet_assigned.xml'
-    collection_path = '../data/online/21nodes/collection.xml'
-    mat_path = '../data/online/21nodes/21_nodes.mat'
-    report_folder = '../data/online/21nodes/online_no_opt/'
+    main_folder = '../data/online/instance21/'
+    mat_path = '../data/online/instance21/21_nodes.mat'
+    net_path = '../data/online/instance21/network.xml'
+    fleet_path = '../data/online/instance21/fleet.xml'
+    num_iterations = 5
+
     ga_time = 1.
     offset_time = 2.
     sample_time = 5.
-    sim = Simulator(net_path, fleet_path, mat_path, collection_path, sample_time, report_folder)
+    soc_policy = (20, 95)
 
-    while not sim.observer.done():
-        # Observe
-        n, f, current_routes = sim.observer.observe()
+    for i in range(num_iterations):
+        iteration_folder = f'{main_folder}iteration_{i + 1}/'
+        no_opt_folder = f'{iteration_folder}no_opt/'
+        opt_folder = f'{iteration_folder}opt/'
+        collection_no_opt_path = f'{no_opt_folder}collection.xml'
+        collection_opt_path = f'{opt_folder}collection.xml'
 
-        if sim.observer.done():
-            break
-        '''
-        # Optimize
-        CXPB, MUTPB = 0.7, 0.9
-        num_individuals = int(len(f.network)) + int(len(f) * 8) + 30
-        max_generations = int(num_individuals * 1.2)
-        penalization_constant = 10. * len(f.network)
-        weights = (0.25, 1.0, 0.5, 1.4, 1.2)  # cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_wait_time
-        keep_best = 1  # Keep the 'keep_best' best individuals
-        tournament_size = 3
-        r = 3
-        hp = HyperParameters(num_individuals, max_generations, CXPB, MUTPB,
-                             tournament_size=tournament_size,
-                             penalization_constant=penalization_constant,
-                             keep_best=keep_best,
-                             weights=weights,
-                             r=r)
-        try:
-            os.mkdir(f'../data/online/21nodes/online/')
-        except FileExistsError:
-            pass
-        save_to = f'../data/online/21nodes/online/'
-        prev_best, sp = ga.code(f, hp.r)
-        routes, f, bestInd, feas, tbb, data = ga.optimal_route_assignation(f, hp, sp, save_to, best_ind=prev_best,
-                                                                           savefig=True)
-        for ev in f.vehicles.values():
-            if len(ev.route[0]) != len(current_routes[ev.id][0]):
-                k = current_routes[ev.id][0].index(ev.route[0][0])
-                S = current_routes[ev.id][0][:k] + ev.route[0]
-                L = current_routes[ev.id][1][:k] + ev.route[1]
-                ev.route = (S, L)
-                ev.assigned_customers = tuple(i for i in S if f.network.isCustomer(i))
+        create_folder(iteration_folder)
+        create_folder(no_opt_folder)
+        create_folder(opt_folder)
 
-        f.write_xml(sim.fleet_path_temp, False, True, True, False)
-        sim.fleet = f
-        '''
+        # operate without optimization
 
-        # Move vehicles and modify network
-        sim.disturb_network()
-        sim.forward_fleet()
+        sim = Simulator(net_path, fleet_path, mat_path, collection_no_opt_path, sample_time)
+        while not sim.observer.done():
+            # Disturb network
+            sim.disturb_network()
 
+            # Forward vehicles
+            sim.forward_fleet()
+
+        # operate with optimization
+        sim = Simulator(net_path, fleet_path, mat_path, collection_opt_path, sample_time)
+        while not sim.observer.done():
+            # Disturb network
+            sim.disturb_network()
+
+            # Observe
+            n, f, f_original, current_routes, ahead_routes = sim.observer.observe()
+
+            if not ahead_routes:
+                break
+
+            # Optimize
+            num_individuals = int(len(f.network) * 1.5) + int(len(f) * 10) + 50
+            K1 = 100. * len(f.network) + 1000 * len(f)
+            hp = HyperParameters(num_individuals=num_individuals,
+                                 max_generations=num_individuals * 3,
+                                 CXPB=0.7,
+                                 MUTPB=0.9,
+                                 weights=(0.5 / 2.218, 1. / 0.4364, 1. / 8, 1. / 80, 1.2),
+                                 K1=K1,
+                                 K2=K1 * 2.5,
+                                 keep_best=1,
+                                 tournament_size=3,
+                                 r=4,
+                                 alpha_up=soc_policy[1],
+                                 algorithm_name='onGA',
+                                 crossover_repeat=1,
+                                 mutation_repeat=1)
+
+            prev_best, critical_points = ga.code(f, ahead_routes, hp.r)
+            now = datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S')
+            save_opt_to = f'{opt_folder}{now}/'
+            routes, opt_data, toolbox = ga.optimal_route_assignation(f, hp, critical_points, save_opt_to,
+                                                                     best_ind=prev_best, savefig=True)
+
+            # Modify current route
+            new_routes = {}
+            for id_ev, ((S_old, L_old), x10, x20, x30) in current_routes.items():
+                if id_ev in routes.keys():
+                    S_new, L_new = routes[id_ev][0]
+                    k = S_old.index(S_new[0])
+                    new_routes[id_ev] = ((S_old[:k] + S_new, L_old[:k] + L_new), x10, x20, x30)
+
+            # Send routes to vehicles
+            f.set_routes_of_vehicles(new_routes, iterate=False)
+            f_original.update_from_another_fleet(f)
+            f_original.write_xml(sim.observer.fleet_path, online=True, assign_customers=True)
+
+            # Forward vehicles
+            sim.forward_fleet()

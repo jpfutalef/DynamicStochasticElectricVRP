@@ -11,7 +11,7 @@ from res.betaGA import HyperParameters
 from res.betaGA import optimal_route_assignation as improve_route
 
 # %% 1. Specify instances location
-folder = 'data/instances/100km2'
+folder = 'data/test/'
 instances = [join(folder, f) for f in listdir(folder) if isfile(join(folder, f))]
 
 # %% 2. CS capacities and SOC policy
@@ -31,13 +31,13 @@ for instance in instances:
     hp_alpha = HyperParameters(num_individuals=num_individuals,
                                max_generations=num_individuals * 3,
                                CXPB=0.65,
-                               MUTPB=0.95,
-                               weights=(1. / 2.218, 1. / 0.4364, 1. / 10, 0.*1. / 180, 1.*0.5), # cost_tt, cost_ec, cost_chg_time, cost_chg_cost, cost_wait_time
+                               MUTPB=0.8,
+                               weights=(0.5 / 2.218, 1. / 0.4364, 1. / 80, 1. / 100, 1.*0.5),
                                K1=K1,
                                K2=K1 * 2.5,
                                keep_best=1,
-                               tournament_size=5,
-                               r=4,
+                               tournament_size=3,
+                               r=2,
                                alpha_up=soc_policy[1],
                                algorithm_name='alphaGA')
 
@@ -45,9 +45,9 @@ for instance in instances:
     K1 = 100. * len(fleet.network) + 1000 * len(fleet)
     hp_beta = HyperParameters(num_individuals=num_individuals,
                               max_generations=num_individuals * 3,
-                              CXPB=0.55,
-                              MUTPB=0.85,
-                              weights=(0. / 2.218, 1. / 0.4364, 1. / 10, 0.*1. / 180, 1.*0.5),
+                              CXPB=0.7,
+                              MUTPB=0.9,
+                              weights=(0.5 / 2.218, 1. / 0.4364, 1. / 8, 1. / 100, 1.*0.5),
                               K1=K1,
                               K2=K1 * 2.5,
                               keep_best=1,
@@ -81,7 +81,8 @@ for instance in instances:
     # %% 6. Run algorithm
     best_alpha = None
     best_beta = None
-    mi = None
+    #mi = None
+    mi = int(sum([fleet.network.demand(i) for i in fleet.network.customers])/fleet.vehicles[0].max_payload) + 1
     for k in range(3):
         routes_alpha, opt_data_alpha, toolbox_alpha = optimal_route_assignation(fleet, hp_alpha, opt_folder,
                                                                                 best_ind=best_alpha,
