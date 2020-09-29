@@ -259,7 +259,7 @@ def mutate_charging_operation1(individual: IndividualType, index: int, m: int, n
 
     individual[op_index] = sample(range(1, num_customers + 1), 1)[0] if randint(0, 1) else -1
     individual[op_index + 1] = sample(range(num_customers + 1, num_customers + num_cs + 1), 1)[0]
-    #individual[op_index + 2] = abs(individual[op_index + 2] + uniform(-10, 10))
+    # individual[op_index + 2] = abs(individual[op_index + 2] + uniform(-10, 10))
     individual[op_index + 2] = abs(individual[op_index + 2] + np.random.normal(0, 10))
 
 
@@ -281,7 +281,7 @@ def mutate_charging_operation2(individual: IndividualType, index: int, m: int, n
 
 
 def mutate_departure_time1(individual: IndividualType, index: int, m: int, num_customers: int, num_cs: int, r: int):
-    #individual[index] += uniform(-60, 60)
+    # individual[index] += uniform(-60, 60)
     individual[index] += np.random.normal(0, 60)
 
 
@@ -379,42 +379,7 @@ def random_individual(num_customers, num_cs, m, r):
     return individual
 
 
-def construct_individuals(r: int, fleet: Fleet):
-    net = fleet.network
-    m = int(sum([fleet.network.demand(i) for i in fleet.network.customers])/fleet.vehicles[0].max_payload) + 1
-    tw = {i: net.nodes[i].time_window_low for i in net.customers}
-    sorted_tw = sorted(tw, key=tw.__getitem__)
-
-    pop = []
-    for j in range(m):
-        customers = [[] for _ in range(m)]
-        off = 0
-        for cust_id in sorted_tw[j:] + sorted_tw[:j]:
-            customers[j + off].append(cust_id)
-            off += 1
-            if j + off == m:
-                off = 0
-
-        customer_block = []
-        for c in customers:
-            customer_block += c + ['|']
-
-        charging_operation_blocks = []
-        sample_space = tuple(net.customers) + tuple([-1] * m * r)
-        for j in range(m * r):
-            # cust, cs, amount = sample(sample_space, 1)[0], sample(net.charging_stations, 1)[0], uniform(20, 30)
-            cust, cs, amount = -1, sample(net.charging_stations, 1)[0], uniform(20, 30)
-            charging_operation_blocks += [cust, cs, amount]
-
-        dep_time_block = list(np.random.uniform(60*10, 60*12, m))
-
-        ind = customer_block + charging_operation_blocks + dep_time_block
-        pop.append(ind)
-
-    return pop, m
-
-
-def heuristic_population(r: int, fleet: Fleet):
+def heuristic_population_1(r: int, fleet: Fleet):
     net = fleet.network
     tw = {i: net.nodes[i].time_window_low for i in net.customers}
     sorted_customers = sorted(tw, key=tw.__getitem__)
@@ -452,6 +417,34 @@ def heuristic_population(r: int, fleet: Fleet):
 
     dep_time_block = [net.nodes[i].time_window_low for i in [j[0] for j in routes]]
     pop = [customer_block + charging_operation_block + dep_time_block]
+    return pop, m
+
+
+def heuristic_population_2(m: int, r: int, fleet: Fleet):
+    net = fleet.network
+    customers_per_vehicle = int(len(net.customers) / m)
+
+    tw = {i: net.nodes[i].time_window_low for i in net.customers}
+    sorted_tw = sorted(tw, key=tw.__getitem__)
+
+    customers_block = []
+    for j in range(m):
+        if j == m - 1:
+            customers_per_vehicle = len(sorted_tw)
+        customers_block += [sorted_tw.pop(0) for _ in range(customers_per_vehicle)] + ['|']
+
+    charging_operations_block = []
+    sample_space = tuple(net.customers) + tuple([-1] * m * r)
+    for j in range(m * r):
+        # cust, cs, amount = sample(sample_space, 1)[0], sample(net.charging_stations, 1)[0], uniform(20, 30)
+        customer, charging_station, amount = -1, sample(net.charging_stations, 1)[0], uniform(20, 30)
+        charging_operations_block += [customer, charging_station, amount]
+
+    departure_times_block = list(np.random.uniform(60 * 10, 60 * 12, m))
+
+    ind = customers_block + charging_operations_block + departure_times_block
+    pop = [ind]
+
     return pop, m
 
 
@@ -536,22 +529,20 @@ MAIN ALGORITHM
 
 
 def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind=None, savefig=False,
-                              mi=None, plot_best_generation=False):
+                              mi: int = None, plot_best_generation=False):
     # OBJECTS
     creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
     creator.create("Individual", list, fitness=creator.FitnessMin, feasible=False, acceptable=False)
 
     # INIT SIZES
-    pop, mh = heuristic_population(hp.r, fleet)
-    #pop, mh = construct_individuals(hp.r, fleet)
     if mi:
-        mi = mi if mi > mh else mh
+        pop, mh = heuristic_population_2(mi, hp.r, fleet)
         m = mi
-        for k, _ in enumerate(pop):
-            pop[k] = resize_individual(pop[k], mh, mi, hp.r, fleet.network.customers, fleet.network.charging_stations)
     else:
+        pop, mh = heuristic_population_1(hp.r, fleet)
         m = mh
         mi = mh
+
     fleet.resize_fleet(m)
     init_size = len(pop)
     random_inds_num = int(hp.num_individuals / 3)

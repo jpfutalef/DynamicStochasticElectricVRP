@@ -11,7 +11,7 @@ from res.betaGA import HyperParameters
 from res.betaGA import optimal_route_assignation as improve_route
 
 # %% 1. Specify instances location
-folder = 'data/instances/400km2'
+folder = 'data/test/'
 instances = [join(folder, f) for f in listdir(folder) if isfile(join(folder, f))]
 
 # %% 2. CS capacities and SOC policy
@@ -81,7 +81,8 @@ for instance in instances:
     # %% 6. Run algorithm
     best_alpha = None
     best_beta = None
-    mi = None
+    #mi = None
+    mi = int(sum([fleet.network.demand(i) for i in fleet.network.customers])/fleet.vehicles[0].max_payload) + 1
     for k in range(3):
         routes_alpha, opt_data_alpha, toolbox_alpha = optimal_route_assignation(fleet, hp_alpha, opt_folder,
                                                                                 best_ind=best_alpha,
