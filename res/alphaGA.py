@@ -257,10 +257,12 @@ def mutate_charging_operation1(individual: IndividualType, index: int, m: int, n
     offset = int((index - ics) / 3)
     op_index = ics + 3 * offset
 
-    individual[op_index] = sample(range(1, num_customers + 1), 1)[0] if randint(0, 1) else -1
-    individual[op_index + 1] = sample(range(num_customers + 1, num_customers + num_cs + 1), 1)[0]
+    a0 = list(range(1, num_customers + 1)) + [-1]*num_customers
+    a1 = range(num_customers + 1, num_customers + num_cs + 1)
+    individual[op_index] = sample(a0, 1)[0] if randint(0, 1) else individual[op_index]
+    individual[op_index + 1] = sample(a1, 1)[0] if randint(0, 1) else individual[op_index + 1]
     # individual[op_index + 2] = abs(individual[op_index + 2] + uniform(-10, 10))
-    individual[op_index + 2] = abs(individual[op_index + 2] + np.random.normal(0, 10))
+    individual[op_index + 2] = abs(individual[op_index + 2] + np.random.normal(0, 5))
 
 
 def mutate_charging_operation2(individual: IndividualType, index: int, m: int, num_customers: int, num_cs: int, r: int):
