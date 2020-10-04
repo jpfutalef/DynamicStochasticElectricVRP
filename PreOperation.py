@@ -11,7 +11,7 @@ from res.betaGA import HyperParameters
 from res.betaGA import optimal_route_assignation as improve_route
 
 # %% 1. Specify instances location
-folder = 'data/test/'
+folder = 'data/instances/400km2/'
 instances = [join(folder, f) for f in listdir(folder) if isfile(join(folder, f))]
 
 # %% 2. CS capacities and SOC policy
@@ -32,7 +32,7 @@ for instance in instances:
                                max_generations=num_individuals * 3,
                                CXPB=0.65,
                                MUTPB=0.8,
-                               weights=(0.5 / 2.218, 1. / 0.4364, 1. / 80, 1. / 100, 1.*0.5),
+                               weights=(0.1 / 2.218, 1. / 0.4364, 1. / 100, 1. / 500, 1.*0.5),
                                K1=K1,
                                K2=K1 * 2.5,
                                keep_best=1,
@@ -47,7 +47,7 @@ for instance in instances:
                               max_generations=num_individuals * 3,
                               CXPB=0.7,
                               MUTPB=0.9,
-                              weights=(0.5 / 2.218, 1. / 0.4364, 1. / 8, 1. / 100, 1.*0.5),
+                              weights=(0.1 / 2.218, 1. / 0.4364, 1. / 100, 1. / 500, 1.*0.5),
                               K1=K1,
                               K2=K1 * 2.5,
                               keep_best=1,
@@ -55,8 +55,8 @@ for instance in instances:
                               r=2,
                               alpha_up=soc_policy[1],
                               algorithm_name='betaGA',
-                              crossover_repeat=3,
-                              mutation_repeat=3)
+                              crossover_repeat=2,
+                              mutation_repeat=2)
 
     # %% 5. Specify data folder
     # Main instance folder
@@ -69,10 +69,10 @@ for instance in instances:
     # Main optimization folder
     opt_folders = [d for d in os.listdir(instance_folder) if os.path.isdir(os.path.join(instance_folder, d))]
     if opt_folders:
-        opt_num = str(max([int(i[-1]) for i in opt_folders]) + 1)
+        opt_num = str(max([int(i.split('_')[-1]) for i in opt_folders if os.path.isdir(i)]) + 1)
     else:
         opt_num = '1'
-    opt_folder = instance_folder + f'opt{opt_num}/'
+    opt_folder = instance_folder + f'opt_{opt_num}/'
     try:
         os.mkdir(opt_folder)
     except FileExistsError:
@@ -81,9 +81,9 @@ for instance in instances:
     # %% 6. Run algorithm
     best_alpha = None
     best_beta = None
-    #mi = None
-    mi = int(sum([fleet.network.demand(i) for i in fleet.network.customers])/fleet.vehicles[0].max_payload) + 1
-    for k in range(3):
+    mi = None
+    # mi = int(sum([fleet.network.demand(i) for i in fleet.network.customers])/fleet.vehicles[0].max_payload) + 1
+    for k in range(8):
         routes_alpha, opt_data_alpha, toolbox_alpha = optimal_route_assignation(fleet, hp_alpha, opt_folder,
                                                                                 best_ind=best_alpha,
                                                                                 savefig=True,
@@ -98,19 +98,6 @@ for instance in instances:
             # Not feasible
             print('INCREASING FLEET SIZE BY 1...')
             mi += 1
-            '''
-            fleet.resize_fleet(len(fleet) + 1)
-            best_alpha = opt_data_alpha.bestOfAll
-
-            pos = np.random.randint(len(fleet.network.customers) + len(fleet))
-            best_alpha.insert(pos, '|')
-            best_alpha.append(np.random.uniform(7 * 60, 10 * 60))
-            for i in range(hp_alpha.r):
-                chg_op = [-1, sample(fleet.network.charging_stations, 1)[0], uniform(10, 20)]
-                index = -len(fleet)
-                bestOfAll1 = best_alpha[:index] + chg_op + best_alpha[index:]
-
-            '''
             hp_alpha.num_individuals += 15
             hp_beta.num_individuals += 10
             hp_alpha.max_generations += 10

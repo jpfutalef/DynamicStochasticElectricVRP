@@ -225,7 +225,7 @@ class Fleet:
             if ev.state_reaching[0, -1] - ev.state_leaving[0, 0] > ev.max_tour_duration:
                 d = dist_fun(ev.max_tour_duration, ev.state_reaching[0, -1] - ev.state_leaving[0, 0])
                 dist += d
-                accept = False if d > 25 else accept
+                accept = False #if d > 25 else accept
 
             # MAX PAYLOAD
             if ev.state_leaving[2, 0] > ev.max_payload and not online:
@@ -240,37 +240,37 @@ class Fleet:
                     if node.time_window_low > ev.state_reaching[0, k]:
                         d = dist_fun(ev.state_reaching[0, k], node.time_window_low)
                         dist += 20*d
-                        accept = False if d > 20 else accept
+                        accept = False #if d > 20 else accept
 
                     # TIME WINDOW UPPER BOUND
                     if node.time_window_upp < ev.state_leaving[0, k] - ev.waiting_times0[k]:
                         d = dist_fun(node.time_window_upp, ev.state_leaving[0, k] - ev.waiting_times0[k])
                         dist += 20*d
-                        accept = False if d > 20 else accept
+                        accept = False #if d > 20 else accept
 
                 # SOC BOUND LOWER - REACHING
                 if ev.state_reaching[1, k] < ev.alpha_down:
                     d = dist_fun(ev.state_reaching[1, k], ev.alpha_down)
                     dist += d
-                    accept = False if d > 36 else accept
+                    accept = False #if d > 36 else accept
 
                 # SOC BOUND UPPER - REACHING
                 if ev.state_reaching[1, k] > ev.alpha_up:
                     d = dist_fun(ev.state_reaching[1, k], ev.alpha_up)
                     dist += d
-                    accept = False if d > 36 else accept
+                    accept = False #if d > 36 else accept
 
                 # SOC BOUND LOWER - LEAVING
                 if ev.state_leaving[1, k] < ev.alpha_down:
                     d = dist_fun(ev.state_leaving[1, k], ev.alpha_down)
                     dist += d
-                    accept = False if d > 36 else accept
+                    accept = False #if d > 36 else accept
 
                 # SOC BOUND UPPER - LEAVING
                 if ev.state_leaving[1, k] > ev.alpha_up:
                     d = dist_fun(ev.state_leaving[1, k], ev.alpha_up)
                     dist += d
-                    accept = False if d > 36 else accept
+                    accept = False #if d > 36 else accept
 
                 if ev.state_reaching[1, k] < 0:
                     dist += dist_fun(ev.state_reaching[1, k], ev.alpha_down) + 1000

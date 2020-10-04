@@ -56,8 +56,8 @@ def mutate(individual: IndividualType, indices: IndicesType, charging_stations: 
                 elif i1 <= index < i2:
                     # Case CS
                     i = i1 + 2 * int((index - i1) / 2)
-                    sample_space = [-1] * len(charging_stations) + list(charging_stations)
-                    individual[i] = sample(sample_space, 1)[0]
+                    sample_space = list(charging_stations) + [-1]*len(charging_stations)
+                    individual[i] = sample(sample_space, 1)[0] if randint(0, 1) else individual[i]
                     individual[i + 1] = abs(individual[i + 1] + uniform(-10, 10))
 
                 else:

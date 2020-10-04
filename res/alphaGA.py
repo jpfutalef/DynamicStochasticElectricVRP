@@ -550,6 +550,10 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
     random_inds_num = int(hp.num_individuals / 3)
     mutate_num = hp.num_individuals - init_size - random_inds_num
 
+    # MODIFY HYPER-PARAMETERS
+    hp.num_individuals = int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 50
+    hp.max_generations = hp.num_individuals * 3
+
     # TOOLBOX
     toolbox = base.Toolbox()
     toolbox.register("individual", random_individual, num_customers=len(fleet.network.customers),
