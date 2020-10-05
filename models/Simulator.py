@@ -23,7 +23,7 @@ def measure(data, i, j, day_points):
         ec_data = 1.8 * data['starting_time'][0][t]['origin'][0][i]['destination'][0][j]['soc'][0] * 24
         tt_data = 1.8 * data['starting_time'][0][t]['origin'][0][i]['destination'][0][j]['time'][0] / 60
 
-        tt_average, tt_std = np.mean(tt_data), np.std(tt_data)
+        tt_average, tt_std = np.mean(tt_data), 20*np.std(tt_data)
         ec_average, ec_std, = np.mean(ec_data), np.std(ec_data)
 
         tt[t] = tt_average + np.random.normal(0, tt_std)
@@ -221,7 +221,7 @@ if __name__ == '__main__':
     mat_path = '../data/online/instance21/21_nodes.mat'
     net_path = '../data/online/instance21/network.xml'
     fleet_path = '../data/online/instance21/fleet.xml'
-    num_iterations = 5
+    num_iterations = 50
 
     ga_time = 1.
     offset_time = 2.
