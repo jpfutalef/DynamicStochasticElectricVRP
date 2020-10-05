@@ -1,12 +1,16 @@
 from scipy.io import loadmat
-import numpy as np
 
-import res.GA_Online as ga
-from res.GATools import *
 import models.Network as Network
-import models.OnlineFleet as Fleet
 import models.Observer as obs
-import time
+import models.OnlineFleet as Fleet
+import res.GA_Online as ga
+from res.GATools import HyperParameters
+from random import randint
+import numpy as np
+import datetime
+import os
+
+import pandas as pd
 
 
 def measure(data, i, j, day_points):
@@ -23,7 +27,7 @@ def measure(data, i, j, day_points):
         ec_data = 1.8 * data['starting_time'][0][t]['origin'][0][i]['destination'][0][j]['soc'][0] * 24
         tt_data = 1.8 * data['starting_time'][0][t]['origin'][0][i]['destination'][0][j]['time'][0] / 60
 
-        tt_average, tt_std = np.mean(tt_data), 20*np.std(tt_data)
+        tt_average, tt_std = np.mean(tt_data), 20 * np.std(tt_data)
         ec_average, ec_std, = np.mean(ec_data), np.std(ec_data)
 
         tt[t] = tt_average + np.random.normal(0, tt_std)
@@ -82,7 +86,7 @@ def create_network_from_data(data_path: str, save_to: str) -> Network.Network:
     return network
 
 
-def create_fleet(save_to: str) -> Fleet.Fleet:
+def create_fleet(save_to: str) -> Fleet:
     ev_id = 0
     alpha_down, alpha_upp = 0, 100
     battery_capacity = 24  # kWh
@@ -123,10 +127,15 @@ class Simulator:
                                      offset_time, 2)
         self.sample_time = sample_time
 
+        self.violations = {'time_window_low': [],
+                           'time_window_upp': [],
+                           'soc_low': [],
+                           'soc_upp': []}
+
     def disturb_network(self):
         for i in self.network.edges.keys():
             for j in self.network.edges.keys():
-                if i == j or self.network.edges[i][j].travel_time[0] == 0.:
+                if i == j or self.network.edges[i][j].travel_time[0] == 0. or randint(0, 1):
                     continue
                 tt, ec = measure(self.data, i, j, self.day_points)
                 self.network.edges[i][j].travel_time = tt
@@ -159,6 +168,17 @@ class Simulator:
                     measurement.eta = (measurement.time - measurement.end_time) / tij
                     measurement.soc = measurement.end_soc - measurement.eta * eij
                     measurement.consumption_since_start += Eij * measurement.eta
+
+                    if self.fleet.network.isCustomer(measurement.node_from):
+                        if self.fleet.network.nodes[measurement.node_from].time_window_upp < measurement.end_time:
+                            self.violations['time_window_upp'].append(1)
+
+                    if measurement.end_soc > self.fleet.vehicles[id_ev].alpha_up:
+                        self.violations['soc_upp'].append(1)
+
+                    if measurement.end_soc < self.fleet.vehicles[id_ev].alpha_down:
+                        self.violations['soc_low'].append(1)
+
 
             # CASE - MOVING ACROSS NODE I AND NODE J
             else:
@@ -197,6 +217,16 @@ class Simulator:
 
                     ev.route = (S[k:], L[k:])
                     self.fleet.write_xml(self.fleet_path_temp, online=True, assign_customers=True)
+
+                    if self.fleet.network.isCustomer(j):
+                        if self.fleet.network.nodes[j].time_window_low > measurement.arrival_time:
+                            self.violations['time_window_low'].append(1)
+
+                    if measurement.arrival_soc > self.fleet.vehicles[id_ev].alpha_up:
+                        self.violations['soc_upp'].append(1)
+
+                    if measurement.arrival_soc < self.fleet.vehicles[id_ev].alpha_down:
+                        self.violations['soc_low'].append(1)
 
 
                 # CASE - VEHICLE CONTINUES MOVING ACROSS ARC
@@ -239,7 +269,7 @@ if __name__ == '__main__':
         create_folder(no_opt_folder)
         create_folder(opt_folder)
 
-        # operate without optimization
+        # OPERATE WITHOUT OPTIMIZATION
 
         sim = Simulator(net_path, fleet_path, mat_path, collection_no_opt_path, sample_time)
         while not sim.observer.done():
@@ -249,7 +279,9 @@ if __name__ == '__main__':
             # Forward vehicles
             sim.forward_fleet()
 
-        # operate with optimization
+        nopt_df = pd.DataFrame({i: [sum(j)] for i, j in sim.violations.items()})
+
+        # OPERATE WITH OPTIMIZATION
         sim = Simulator(net_path, fleet_path, mat_path, collection_opt_path, sample_time)
         while not sim.observer.done():
             # Disturb network
@@ -300,3 +332,10 @@ if __name__ == '__main__':
 
             # Forward vehicles
             sim.forward_fleet()
+
+        opt_df = pd.DataFrame({i: [sum(j)] for i, j in sim.violations.items()})
+
+        # SAVE RESULTS
+        with pd.ExcelWriter(f'{iteration_folder}violations.xlsx') as writer:
+            nopt_df.to_excel(writer, sheet_name='NoOpt')
+            opt_df.to_excel(writer, sheet_name='Opt')
