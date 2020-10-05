@@ -112,12 +112,12 @@ class Simulator:
 
         self.network_path = network_loc
         self.network_path_temp = f'{network_loc[:-4]}_temp.xml'
-        self.network.write_xml(self.network_path_temp, print_pretty=True)
+        self.network.write_xml(self.network_path_temp)
 
         self.fleet_path = fleet_loc
         self.fleet_path_temp = f'{fleet_loc[:-4]}_temp.xml'
         if not continue_operation:
-            self.fleet.write_xml(self.fleet_path_temp, False, True, True, True, print_pretty=True)
+            self.fleet.write_xml(self.fleet_path_temp, False, True, True, True)
 
         self.collection_path = collection_file_loc
         if create_collection:
@@ -141,7 +141,7 @@ class Simulator:
                 self.network.edges[i][j].travel_time = tt
                 self.network.edges[i][j].energy_consumption = ec
         self.fleet.set_network(self.network)
-        self.network.write_xml(self.network_path)
+        self.network.write_xml(self.network_path_temp)
 
     def forward_fleet(self):
         self.observer.time += self.sample_time
