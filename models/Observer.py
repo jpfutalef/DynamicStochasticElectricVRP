@@ -155,6 +155,7 @@ class Observer:
             # iteration
             else:
                 (S, L) = ev.route
+                print(meas.node_to)
                 k = S.index(meas.node_to)
 
                 # SUB CASE - There are no more customers ahead
