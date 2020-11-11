@@ -12,9 +12,9 @@ from res.betaGA import HyperParameters
 from res.betaGA import optimal_route_assignation as improve_route
 
 # %% 1. Specify instances location
-folder = 'data/instances/100km2/'
+folder = 'data/instances/'
 #instances = [join(folder, f) for f in listdir(folder) if isfile(join(folder, f))]
-instances = ['c50cs2_10x10km.xml']
+instances = ['c25cs3_10x10km.xml']
 
 # %% 2. CS capacities and SOC policy
 cs_capacity = 3
