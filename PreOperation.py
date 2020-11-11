@@ -12,9 +12,9 @@ from res.betaGA import HyperParameters
 from res.betaGA import optimal_route_assignation as improve_route
 
 # %% 1. Specify instances location
-folder = 'data/online/'
+folder = 'data/instances/100km2/'
 #instances = [join(folder, f) for f in listdir(folder) if isfile(join(folder, f))]
-instances = ['santiago6.xml']
+instances = ['c50cs2_10x10km.xml']
 
 # %% 2. CS capacities and SOC policy
 cs_capacity = 3
@@ -22,9 +22,7 @@ soc_policy = (20, 95)
 
 # %% 3. Solve instances
 for instance in instances:
-    net = net_from_xml(folder+'santiago6.xml')
-    fleet = from_xml(folder+'fleet.xml', assign_customers=False, with_routes=False, instance=False)
-    fleet.set_network(net)
+    fleet = from_xml(folder+instance, False, False, True, False)
 
     fleet.modify_cs_capacities(cs_capacity)
     fleet.new_soc_policy(soc_policy[0], soc_policy[1])
@@ -85,7 +83,7 @@ for instance in instances:
     # %% 6. Run algorithm
     best_alpha = None
     best_beta = None
-    mi = 1
+    mi = None
     # mi = int(sum([fleet.network.demand(i) for i in fleet.network.customers])/fleet.vehicles[0].max_payload) + 1
     for k in range(8):
         routes_alpha, opt_data_alpha, toolbox_alpha = optimal_route_assignation(fleet, hp_alpha, opt_folder,
