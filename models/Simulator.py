@@ -136,7 +136,7 @@ class Simulator:
 
     def forward_fleet(self):
         self.observer.time += self.sample_time
-        for id_ev, measurement in self.observer.collection.items():
+        for id_ev, measurement in self.observer.measurements.items():
             measurement.time += self.sample_time
             if measurement.done:
                 continue

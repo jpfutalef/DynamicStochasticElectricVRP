@@ -192,7 +192,7 @@ def from_element_tree(tree: ET.ElementTree, instance=True):
                     break
             time_points = tuple([float(bp.get('charging_time')) for bp in _technology])
             soc_points = tuple([float(bp.get('battery_level')) for bp in _technology])
-            price = float(_node.get('price'))
+            price = float(_node.get('price')) if _node.get('price') else 60.
             node = ChargeStationNode(node_id, capacity, pos_x=pos_x, pos_y=pos_y, time_points=time_points,
                                      soc_points=soc_points, technology=technology, price=price)
         nodes[node_id] = node
@@ -212,7 +212,7 @@ def from_element_tree(tree: ET.ElementTree, instance=True):
                 tt = np.array([float(bp.get('value')) for bp in _tt])
                 ec = np.array([float(bp.get('value')) for bp in _ec])
                 s = int(float(_tt[1].get('time_of_day'))) - int(float(_tt[0].get('time_of_day')))
-                distance = float(_node_to.get('distance'))
+                distance = float(_node_to.get('distance')) if _node_to.get('distance') else 0.
                 d_from[node_to_id] = DynamicEdge(node_from_id, node_to_id, s, tt, ec, distance)
     return Network(nodes, edges)
 

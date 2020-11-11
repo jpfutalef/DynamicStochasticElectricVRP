@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import datetime
 import copy
+import numpy as np
 
 
 @dataclass
@@ -58,54 +59,53 @@ def create_collection_file(f: fleet.Fleet, save_to: str):
 class Observer:
     network_path: str
     fleet_path: str
-    measure_path: str
-    ga_time: float
-    offset_time: float
-    num_of_last_nodes: int
-    collection: Dict[int, ElectricVehicleMeasurement] = None
+    measurements_path: str
+    ga_time: float = 5.  # min
+    offset_time: float = 1.  # min
+    measurements: Dict[int, ElectricVehicleMeasurement] = None
     init_time: float = None
     time: float = None
 
     def __post_init__(self):
-        if self.collection is None:
+        if self.measurements is None:
             self.set_collection()
-        t = 1000000000.
-        for meas in self.collection.values():
-            t = meas.end_time if meas.end_time < t else t
+        t = np.infty
+        for measurement in self.measurements.values():
+            t = measurement.end_time if measurement.end_time < t else t
         self.init_time = t
         self.time = t
 
-        for meas in self.collection.values():
-            meas.time = t
+        for measurement in self.measurements.values():
+            measurement.time = t
 
         self.write_collection()
 
     def set_collection(self):
-        self.collection = {}
-        root = ET.parse(self.measure_path).getroot()
+        self.measurements = {}
+        root = ET.parse(self.measurements_path).getroot()
         for _measurement in root:
-            self.collection[int(_measurement.get('id'))] = ElectricVehicleMeasurement()
-            self.collection[int(_measurement.get('id'))].update(_measurement)
+            self.measurements[int(_measurement.get('id'))] = ElectricVehicleMeasurement()
+            self.measurements[int(_measurement.get('id'))].update(_measurement)
 
     def read_measurements(self):
-        root = ET.parse(self.measure_path).getroot()
+        root = ET.parse(self.measurements_path).getroot()
         for _measurement in root:
-            self.collection[int(_measurement.get('id'))].update(_measurement)
+            self.measurements[int(_measurement.get('id'))].update(_measurement)
 
     def done(self):
-        for meas in self.collection.values():
+        for meas in self.measurements.values():
             if not meas.done:
                 return False
         return True
 
     def write_collection(self, path=None):
         root = ET.Element('measurements')
-        for measurement in self.collection.values():
+        for measurement in self.measurements.values():
             root.append(measurement.xml_element())
         if path:
             ET.ElementTree(root).write(path)
         else:
-            ET.ElementTree(root).write(self.measure_path)
+            ET.ElementTree(root).write(self.measurements_path)
 
     def observe(self) -> Tuple[
         net.Network, fleet.Fleet, fleet.Fleet, Dict[int, Tuple[Tuple[Tuple, Tuple], float, float, float]], Dict[
@@ -118,7 +118,7 @@ class Observer:
         current_routes = {}
         ahead_routes = {}
 
-        for id_ev, meas in self.collection.items():
+        for id_ev, meas in self.measurements.items():
             # MAIN CASE - Vehicle finished the operation
             if meas.done:
                 f.drop_vehicle(id_ev)
@@ -164,7 +164,8 @@ class Observer:
                 # CASE - There are customers ahead
                 else:
                     t_reach = meas.time + (1 - meas.eta) * n.t(meas.node_from, meas.node_to, meas.time)
-                    e_reach = meas.soc - 100. * (1 - meas.eta) * n.e(meas.node_from, meas.node_to, meas.payload, ev.weight,
+                    e_reach = meas.soc - 100. * (1 - meas.eta) * n.e(meas.node_from, meas.node_to, meas.payload,
+                                                                     ev.weight,
                                                                      meas.time) / ev.battery_capacity
                     w_reach = meas.payload
 

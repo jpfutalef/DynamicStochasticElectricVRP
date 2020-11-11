@@ -56,7 +56,7 @@ def mutate(individual: IndividualType, indices: IndicesType, charging_stations: 
                 elif i1 <= index < i2:
                     # Case CS
                     i = i1 + 2 * int((index - i1) / 2)
-                    sample_space = list(charging_stations) + [-1]*len(charging_stations)
+                    sample_space = list(charging_stations) + [-1] * len(charging_stations)
                     individual[i] = sample(sample_space, 1)[0] if randint(0, 1) else individual[i]
                     individual[i + 1] = abs(individual[i + 1] + uniform(-10, 10))
 
@@ -201,20 +201,22 @@ def fitness(individual: IndividualType, indices: IndicesType, init_state: Starti
 def individual_from_routes(fleet: Fleet) -> IndividualType:
     routes = {ev_id: (ev.route, ev.x1_0, ev.x2_0, ev.x3_0) for ev_id, ev in fleet.vehicles.items()}
     ind = []
-    for (Sk, Lk), x10, x20, x3 in routes.values():
-        cust, chg_ops = [], []
-        for node, chg_amount in zip(Sk[1:-1], Lk[1:-1]):
-            if chg_amount > 0:
-                if chg_ops:
-                    chg_ops[-2:] = [node, chg_amount]
+    for (S, L), x10, x20, x30 in routes.values():
+        customer_block, CBP1 = [], []
+        old_amount = 0
+        for node, chg_amount in zip(S[1:-1], L[1:-1]):
+            if chg_amount:
+                if old_amount:
+                    CBP1[-2:] = [node, chg_amount]
                 else:
-                    chg_ops = [node, chg_amount]
+                    CBP1 += [node, chg_amount]
+                old_amount += chg_amount
             else:
-                cust.append(node)
-                chg_ops += [-1, uniform(5, 20)]
-        # dep_time = x10 - fleet.network.nodes[Sk[1]].time_window_low if fleet.network.isCustomer(Sk[1]) else 6 * 60
+                customer_block.append(node)
+                CBP1 += [-1, uniform(5, 20)]
+                old_amount = 0
         dep_time = 0.
-        ind += cust + chg_ops + [dep_time]
+        ind += customer_block + CBP1 + [dep_time]
     return ind
 
 
@@ -239,7 +241,7 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
                      charging_stations=fleet.network.charging_stations)
     toolbox.register("evaluate", fitness, indices=indices, init_state=starting_points, fleet=fleet, hp=hp)
     toolbox.register("mate", crossover, indices=indices, hp=hp)
-    toolbox.register("mutate", mutate, indices=indices, charging_stations=fleet.network.charging_stations,hp=hp)
+    toolbox.register("mutate", mutate, indices=indices, charging_stations=fleet.network.charging_stations, hp=hp)
     toolbox.register("select", tools.selTournament, tournsize=hp.tournament_size)
     toolbox.register("select_worst", tools.selWorst)
     toolbox.register("decode", decode, indices=indices, init_state=starting_points, fleet=fleet)
@@ -254,7 +256,7 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
         pop = []
 
     pop.append(creator.Individual(individual_from_routes(fleet)))
-    pop = pop + [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals-len(pop))]
+    pop = pop + [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals - len(pop))]
 
     # Evaluate the initial population and get fitness of each individual
     for ind in pop:
