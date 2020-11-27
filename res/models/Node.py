@@ -15,6 +15,8 @@ class NetworkNode:
     demand: float = 0.0
     pos_x: float = 0.0
     pos_y: float = 0.0
+    time_window_low: float = -np.infty
+    time_window_upp: float = np.infty
 
     def spentTime(self, p, q, eta=None):
         """
@@ -51,8 +53,6 @@ class DepotNode(NetworkNode):
 
 @dataclass
 class CustomerNode(NetworkNode):
-    time_window_low: float = 0.0
-    time_window_upp: float = 239.0
     type: int = 1
 
     def isCustomer(self):

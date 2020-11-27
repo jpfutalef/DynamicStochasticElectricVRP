@@ -1,4 +1,4 @@
-from models.Node import *
+from res.models.Node import *
 from dataclasses import dataclass
 
 
@@ -105,13 +105,13 @@ class DynamicEdge:
             done_time -= 1440
 
         # Waiting time in Sk1
-        wt1 = max(0, t_low - self.get_travel_time(done_time) - done_time)
+        tt_leaving_now = self.get_travel_time(done_time)
+        wt1 = max(0, t_low - tt_leaving_now - done_time)
         ec1 = self.get_energy_consumption(payload_after, vehicle_weight, done_time)
 
         if wt1 == 0:
-            # Do not wait anywhere
-            tt = self.get_travel_time(done_time)
-            return tt, ec1, 0., 0.
+            # Do not wait at all because leaving right now accomplishes time window
+            return tt_leaving_now, ec1, 0., 0.
 
         # Waiting time in SK0
         j = int(done_time / self.sample_time) + 1
@@ -132,7 +132,7 @@ class DynamicEdge:
         # Choose
         if ec0 >= ec1:
             ec = ec1
-            tt = self.get_travel_time(done_time)
+            tt = tt_leaving_now
             wt0 = 0.
         else:
             ec = ec0

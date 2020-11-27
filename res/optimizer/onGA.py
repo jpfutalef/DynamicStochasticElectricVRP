@@ -6,7 +6,7 @@ from typing import Tuple, Dict
 import numpy as np
 from deap import tools, base, creator
 
-from optimizer.GATools import HyperParameters, GenerationsData, Fleet, RouteDict, IndividualType, IndicesType, \
+from res.optimizer.GATools import HyperParameters, GenerationsData, Fleet, RouteDict, IndividualType, IndicesType, \
     StartingPointsType, InitialCondition
 
 
@@ -224,7 +224,8 @@ def fitness(individual: IndividualType, indices: IndicesType, critical_points: S
     routes = decode(individual, indices, critical_points, fleet, hp)
 
     # Set routes
-    fleet.set_routes_of_vehicles(routes)
+    reaching_states = {id_ev: (r.x1_0, r.x2_0, r.x3_0) for id_ev, r in critical_points.items()}
+    fleet.set_routes_of_vehicles(routes, reaching_states=reaching_states)
 
     # Cost
     costs = np.array(fleet.cost_function())
@@ -244,13 +245,13 @@ def fitness(individual: IndividualType, indices: IndicesType, critical_points: S
     return fit, feasible, accept
 
 
-def code(fleet: Fleet, ahead_routes: RouteDict, allowed_charging_operations=2) -> Tuple[
+def code(fleet: Fleet, routes_with_critical_point: RouteDict, allowed_charging_operations=2) -> Tuple[
     IndividualType, StartingPointsType]:
     ind = []
     critical_points = {}
-    for id_ev, ahead_route in ahead_routes.items():
+    for id_ev, route in routes_with_critical_point.items():
         # Get the route starting from the critical point
-        (S, L), x1, x2, x3 = ahead_route
+        (S, L), x1, x2, x3 = route
 
         # Save critical points
         critical_points[id_ev] = InitialCondition(S[0], L[0], x1, x2, x3)
@@ -269,29 +270,12 @@ def code(fleet: Fleet, ahead_routes: RouteDict, allowed_charging_operations=2) -
         ind += customer_sequence + charging_operations + [0.]
         fleet.vehicles[id_ev].assigned_customers = tuple(customer_sequence)
 
-    '''
-    starting_points = {}
-    for ev_id in fleet.vehicles_to_route:
-        ev = fleet.vehicles[ev_id]
-        (S, L) = ev.route
-        S0 = S[0]
-        L0 = L[0]
-        if L0 > 0:
-            x10 = ev.state_reaching[0, 0]
-            x20 = ev.state_reaching[1, 0]
-        else:
-            x10 = ev.state_leaving[0, 0]
-            x20 = ev.state_leaving[1, 0]
-        x30 = ev.state_leaving[2, 0]
-        starting_points[ev_id] = InitialCondition(S0, L0, x10, x20, x30)
-    '''
-
     return ind, critical_points
 
 
 # THE ALGORITHM
-def onGA(fleet: Fleet, hp: HyperParameters, critical_points: StartingPointsType,
-         save_to: str = None, best_ind: IndividualType = None, savefig=False):
+def onGA(fleet: Fleet, hp: HyperParameters, critical_points: StartingPointsType, save_to: str = None,
+         best_ind: IndividualType = None, savefig=False):
     customers_to_visit = {ev_id: fleet.vehicles[ev_id].assigned_customers for ev_id in fleet.vehicles_to_route}
     indices = block_indices(customers_to_visit, hp.r)
 
@@ -325,7 +309,7 @@ def onGA(fleet: Fleet, hp: HyperParameters, critical_points: StartingPointsType,
         pop += [creator.Individual(toolbox.individual()) for i in range(hp.num_individuals - 1)]
 
     # Evaluate the initial population and get fitness of each individual
-    for ind in pop:
+    for k, ind in enumerate(pop):
         fit, feasible, acceptable = toolbox.evaluate(ind)
         ind.fitness.values = (fit,)
         ind.feasible = feasible

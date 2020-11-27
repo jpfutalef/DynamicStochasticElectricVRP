@@ -12,9 +12,10 @@ from bokeh.models.annotations import Arrow, Label
 from bokeh.models.arrow_heads import VeeHead
 from bokeh.plotting import figure, show
 
-import models.Network as net
-from models.ElectricVehicle import *
-from tools.IOTools import write_pretty_xml
+import res.models.Network as net
+from res.models.ElectricVehicle import *
+from res.tools.IOTools import read_write_pretty_xml, read_routes, write_routes
+import os
 
 '''
 THETA VECTOR METHODS AND UTILITIES
@@ -145,8 +146,8 @@ class Fleet:
 
     def relax_time_windows(self):
         for cust in self.network.customers:
-            self.network.nodes[cust].time_window_low = 0.
-            self.network.nodes[cust].time_window_upp = 60 * 24
+            self.network.nodes[cust].time_window_low = -np.infty
+            self.network.nodes[cust].time_window_upp = np.infty
 
     def modify_cs_capacities(self, new_capacity):
         for cs in self.network.charging_stations:
@@ -169,9 +170,12 @@ class Fleet:
         self.iterate_cs_capacities(None)
 
     def set_routes_of_vehicles(self, routes: RouteDict, iterate=True, iterate_cs=True,
-                               init_theta: ndarray = None) -> None:
+                               init_theta: ndarray = None, reaching_states: Dict[int, np.ndarray] = None) -> None:
         for id_ev, (route, dep_time, dep_soc, dep_pay) in routes.items():
-            self.vehicles[id_ev].set_route(route, dep_time, dep_soc, dep_pay)
+            if reaching_states:
+                self.vehicles[id_ev].set_route(route, dep_time, dep_soc, dep_pay, reaching_states[id_ev])
+            else:
+                self.vehicles[id_ev].set_route(route, dep_time, dep_soc, dep_pay)
             if iterate:
                 self.vehicles[id_ev].step(self.network)
         if iterate_cs:
@@ -203,7 +207,6 @@ class Fleet:
         cost_ec = sum([sum(ev.energy_consumption) for ev in self.vehicles.values()])
         cost_chg_time = sum([sum(ev.charging_times) for ev in self.vehicles.values()])
         cost_wait_time = sum([sum(ev.waiting_times) for ev in self.vehicles.values()])
-        # cost_chg_cost = sum([sum(xi * ev.route[1]) for ev in self.vehicles.values()])
 
         cost_chg_cost = 0.
         for ev in self.vehicles.values():
@@ -340,7 +343,7 @@ class Fleet:
 
         tree.write(path)
         if pretty:
-            write_pretty_xml(path)
+            read_write_pretty_xml(path)
         return tree
 
     def update_from_xml(self, path, do_network=False) -> ET:
@@ -384,6 +387,32 @@ class Fleet:
         self.set_vehicles_to_route(vehicles_to_route)
 
         return tree
+
+    def xml_tree(self, assign_customers=False, with_routes=False, online=False):
+        _fleet = ET.Element('fleet')
+        for vehicle in self.vehicles.values():
+            _fleet.append(vehicle.xml_element(assign_customers, with_routes, None, online))
+        return _fleet
+
+    def write_xml(self, filepath: str, network_in_file=False, assign_customers=False, with_routes=False, online=False,
+                  print_pretty=False):
+        tree = self.xml_tree(assign_customers, with_routes, online)
+        if network_in_file:
+            instance_tree = ET.Element('instance')
+            instance_tree.append(self.network.xml_tree())
+            instance_tree.append(tree)
+            tree = instance_tree
+
+        if print_pretty:
+            xml_pretty = xml.dom.minidom.parseString(ET.tostring(tree, 'utf-8')).toprettyxml()
+            with open(filepath, 'w') as file:
+                file.write(xml_pretty)
+        else:
+            try:
+                ET.ElementTree(tree).write(filepath)
+            except FileNotFoundError:
+                os.makedirs('/'.join(filepath.split('/')[:-1]) + '/')
+                ET.ElementTree(tree).write(filepath)
 
     def plot_operation_pyplot(self, arrow_colors=('SteelBlue', 'Crimson', 'SeaGreen'), fig_size=(16, 5),
                               label_offset=(.15, -6), subplots=True, save_to=None):
@@ -786,28 +815,6 @@ class Fleet:
             time.sleep(0.5)
         return
 
-    def xml_tree(self, assign_customers=False, with_routes=False, online=False):
-        _fleet = ET.Element('fleet')
-        for vehicle in self.vehicles.values():
-            _fleet.append(vehicle.xml_element(assign_customers, with_routes, None, online))
-        return _fleet
-
-    def write_xml(self, path, network_in_file=False, assign_customers=False, with_routes=False, online=False,
-                  print_pretty=False):
-        tree = self.xml_tree(assign_customers, with_routes, online)
-        if network_in_file:
-            instance_tree = ET.Element('instance')
-            instance_tree.append(self.network.xml_tree())
-            instance_tree.append(tree)
-            tree = instance_tree
-
-        if print_pretty:
-            xml_pretty = xml.dom.minidom.parseString(ET.tostring(tree, 'utf-8')).toprettyxml()
-            with open(path, 'w') as file:
-                file.write(xml_pretty)
-        else:
-            ET.ElementTree(tree).write(path)
-
 
 def from_xml(path, assign_customers=False, with_routes=True, instance=True, from_online=False):
     # Open XML file
@@ -887,3 +894,21 @@ def routes_from_xml(path: str, fleet: Fleet) -> RouteDict:
         x10, x20, x30 = float(_cp.get('x1')), float(_cp.get('x2')), float(_cp.get('x3'))
         routes[int(_ev.get('id'))] = ((Sk, Lk), x10, x20, x30)
     return routes
+
+
+if __name__ == '__main__':
+    from res.dispatcher import Dispatcher
+
+    f = from_xml('../../data/online/instance21/init_files/fleet.xml', assign_customers=False, with_routes=False,
+                 instance=False)
+    n = net.from_xml('../../data/online/instance21/init_files/network.xml', instance=False)
+    f.set_network(n)
+
+    routes, depart_info = Dispatcher.read_routes('../../data/online/instance21/init_files/routes.xml', True)
+
+    routes = {i: ((r[0], r[1]), info[0], info[1], info[2]) for (i, r), info in zip(routes.items(), depart_info.values())}
+
+    f.set_routes_of_vehicles(routes)
+
+    f.feasible()
+

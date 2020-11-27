@@ -3,8 +3,9 @@ from typing import Dict
 import matplotlib.pyplot as plt
 import networkx as nx
 import xml.dom.minidom
+import os
 
-from models.Edge import *
+from res.models.Edge import *
 
 NodeDict = Dict[int, Union[CustomerNode, ChargeStationNode, DepotNode]]
 EdgeDict = Dict[int, Dict[int, Union[Edge, DynamicEdge]]]
@@ -86,6 +87,12 @@ class Network:
             return tt, ec, 0.0, 0.0
         return self.edges[i][j].waiting_time(done_time, self.nodes[j].time_window_low, payload_after, vehicle_weight)
 
+    def time_window_low(self, node: int):
+        return self.nodes[node].time_window_low
+
+    def time_window_upp(self, node: int):
+        return self.nodes[node].time_window_upp
+
     def isDepot(self, node: int):
         return self.nodes[node].isDepot()
 
@@ -117,14 +124,18 @@ class Network:
                     technologies.append(node.technology)
         return _network
 
-    def write_xml(self, path, print_pretty=False):
+    def write_xml(self, filepath: str, print_pretty=False):
         tree = self.xml_tree()
         if print_pretty:
             xml_pretty = xml.dom.minidom.parseString(ET.tostring(tree, 'utf-8')).toprettyxml()
-            with open(path, 'w') as file:
+            with open(filepath, 'w') as file:
                 file.write(xml_pretty)
         else:
-            ET.ElementTree(tree).write(path)
+            try:
+                ET.ElementTree(tree).write(filepath)
+            except FileNotFoundError:
+                os.makedirs('/'.join(filepath.split('/')[:-1]) + '/')
+                ET.ElementTree(tree).write(filepath)
 
     def draw(self, color=('lightskyblue', 'limegreen', 'goldenrod'), shape=('s', 'o', '^'),
              fig: plt.Figure = None, save_to=None, **kwargs):
@@ -183,7 +194,8 @@ def from_element_tree(tree: ET.ElementTree, instance=True):
             time_window_low = float(_node.get('time_window_low'))
             time_window_upp = float(_node.get('time_window_upp'))
             demand = float(_node.get('demand'))
-            node = CustomerNode(node_id, spent_time, demand, pos_x, pos_y, time_window_low, time_window_upp)
+            node = CustomerNode(node_id, spent_time=spent_time, demand=demand, pos_x=pos_x, pos_y=pos_y,
+                                time_window_low=time_window_low, time_window_upp=time_window_upp)
         else:
             capacity = int(_node.get('capacity'))
             technology = int(_node.get('technology'))
@@ -193,7 +205,7 @@ def from_element_tree(tree: ET.ElementTree, instance=True):
             time_points = tuple([float(bp.get('charging_time')) for bp in _technology])
             soc_points = tuple([float(bp.get('battery_level')) for bp in _technology])
             price = float(_node.get('price')) if _node.get('price') else 60.
-            node = ChargeStationNode(node_id, capacity, pos_x=pos_x, pos_y=pos_y, time_points=time_points,
+            node = ChargeStationNode(node_id, capacity=capacity, pos_x=pos_x, pos_y=pos_y, time_points=time_points,
                                      soc_points=soc_points, technology=technology, price=price)
         nodes[node_id] = node
 

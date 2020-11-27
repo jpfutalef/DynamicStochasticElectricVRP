@@ -13,21 +13,27 @@ def decode(individual: IndividualType, indices: IndicesType, init_state: Startin
     routes = {}
     for id_ev, (i0, i1, i2) in indices.items():
         S = individual[i0:i1]
-        charging_operations = individual[i1:i2]
+        L = [0] * len(S)
         x0_offset = individual[i2]
 
-        L = [0] * len(S)
+        charging_operations = individual[i1:i2]
         offset = 1
-        for i, _ in enumerate(S):
+        for i in range(len(S)):
             charging_station, amount = charging_operations[2 * i], charging_operations[2 * i + 1]
             if charging_station != -1:
-                S = S[:i + offset] + [charging_station] + S[i + offset:]
-                L = L[:i + offset] + [amount] + L[i + offset:]
+                # S = S[:i + offset] + [charging_station] + S[i + offset:]
+                # L = L[:i + offset] + [amount] + L[i + offset:]
+                S.insert(i + offset, charging_station)
+                L.insert(i + offset, amount)
                 offset += 1
+
         S = tuple([0] + S + [0])
         L = tuple([0] + L + [0])
         x1_0 = init_state[id_ev].x1_0 + x0_offset
-        routes[id_ev] = ((S, L), x1_0, init_state[id_ev].x2_0, init_state[id_ev].x3_0)
+        x2_0 = init_state[id_ev].x2_0
+        x3_0 = init_state[id_ev].x3_0
+
+        routes[id_ev] = ((S, L), x1_0, x2_0, x3_0)
     return routes
 
 
@@ -202,26 +208,29 @@ def individual_from_routes(fleet: Fleet) -> IndividualType:
     ind = []
     for (S, L), x10, x20, x30 in routes.values():
         customer_block, CBP1 = [], []
-        old_amount = 0
-        for node, chg_amount in zip(S[1:-1], L[1:-1]):
-            if chg_amount:
-                if old_amount:
-                    CBP1[-2:] = [node, chg_amount]
-                else:
-                    CBP1 += [node, chg_amount]
-                old_amount += chg_amount
-            else:
-                customer_block.append(node)
+        charging_path = False
+        charging_station, soc_increment = None, None
+
+        for Sk, Lk in zip(S[1:-1], L[1:-1]):
+            if fleet.network.isCustomer(Sk):
+                customer_block.append(Sk)
+                if charging_path:
+                    CBP1[-2:] = [charging_station, soc_increment]
+                    charging_path = False
                 CBP1 += [-1, uniform(5, 20)]
-                old_amount = 0
-        dep_time = 0.
-        ind += customer_block + CBP1 + [dep_time]
+            elif fleet.network.isChargingStation(Sk):
+                charging_station, soc_increment = Sk, Lk
+                charging_path = True
+
+        offset_time = 0.
+        ind += customer_block + CBP1 + [offset_time]
     return ind
 
 
 # THE ALGORITHM
 def betaGA(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind: IndividualType = None,
-                              savefig=False):
+           savefig=False):
+    fleet.assign_customers_in_route()
     customers_to_visit = {ev_id: ev.assigned_customers for ev_id, ev in fleet.vehicles.items()}
     starting_points = {ev_id: InitialCondition(0, 0, fleet.vehicles[ev_id].state_leaving[0, 0],
                                                ev.alpha_up, sum([fleet.network.demand(x)
@@ -390,4 +399,5 @@ def betaGA(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind: Ind
         except FileExistsError:
             pass
         opt_data.save_opt_data(path, savefig=savefig)
+
     return routes, opt_data, toolbox

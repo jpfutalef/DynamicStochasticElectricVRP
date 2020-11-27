@@ -9,33 +9,16 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import List, Tuple, Dict, NamedTuple, Union
 
-from models.Fleet import Fleet, InitialCondition
-from tools.IOTools import write_pretty_xml
+from res.models.Fleet import Fleet, InitialCondition
+from res.tools.IOTools import read_write_pretty_xml
+from res.dispatcher import Dispatcher
 
 # TYPES
 IndividualType = List
-IndicesType = Dict[int, Tuple[int, int]]
+IndicesType = Dict[int, Tuple[int, int, int]]
 StartingPointsType = Dict[int, InitialCondition]
 RouteVector = Tuple[Tuple[int, ...], Tuple[float, ...]]
 RouteDict = Dict[int, Tuple[RouteVector, float, float, float]]
-
-'''
-class FitnessMin(base.Fitness):
-    weights = (-1.0,)
-
-
-class Individual(list):
-    feasible = False
-    acceptable = False
-
-    def __init__(self):
-        super().__init__()
-        self.fitness = FitnessMin()
-
-    def __getitem__(self, key):
-        return super(Individual, self).__getitem__(key - 1)
-        
-'''
 
 
 @dataclass
@@ -150,12 +133,6 @@ class GenerationsData:
         info_df = info_df.append(pd.Series(additional_info))
         info_df.to_csv(info_filepath)
 
-
-        # Edit assignation file
-        self.fleet.assign_customers_in_route()
-        assigned_path = f'{opt_path}result_instance.xml'
-        self.fleet.write_xml(assigned_path, True, True, True, False, False)
-
         if savefig:
             fig, g = self.fleet.network.draw(save_to=f'{opt_path}network', width=0.02,
                                              edge_color='grey',
@@ -176,6 +153,19 @@ class GenerationsData:
             fig.savefig(f'{opt_path}network_operation')
             fig.savefig(f'{opt_path}network_operation.pdf')
             plt.close('all')
+
+        # write routes file for alphaGA
+        routes_to_save = {i: (ev.route[0], ev.route[1], ev.waiting_times0) for i, ev in self.fleet.vehicles.items()}
+        depart_info = {i: (r.x1_0, r.x2_0, r.x3_0) for i, r in self.fleet.vehicles.items()}
+        Dispatcher.write_routes(opt_path+'routes.xml', routes_to_save, depart_info)
+
+        # write fleet
+        fleet_path = f'{opt_path}fleet.xml'
+        self.fleet.write_xml(fleet_path, network_in_file=False, assign_customers=False, with_routes=False, online=False,
+                             print_pretty=False)
+        # write network
+        network_path = f'{opt_path}network.xml'
+        self.fleet.network.write_xml(network_path, print_pretty=False)
 
 
 class OptimizationReport(NamedTuple):
@@ -215,7 +205,7 @@ def save_optimization_report(path, report: OptimizationReport, pretty=False) -> 
 
     tree.write(path)
     if pretty:
-        write_pretty_xml(path)
+        read_write_pretty_xml(path)
     return
 
 

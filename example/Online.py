@@ -1,122 +1,101 @@
-import os
+import pandas as pd
+import datetime
 
-from models import from_xml
-from models import from_xml as net_from_xml
-from optimizer import optimal_route_assignation
-from optimizer import HyperParameters
-from optimizer import optimal_route_assignation as improve_route
+from res.optimizer.GATools import HyperParameters
+from res.tools.IOTools import create_folder
+from res.simulator import Simulator
+import res.optimizer.onGA as ga
 
 # %% 1. Specify instances location
-folder = 'data/online/'
-fleet_path = f'{folder}fleet21.xml'
-network_path = f'{folder}network21.xml'
-results_folder = f'{folder}instance21/'
+main_folder = 'data/online/instance21/'
+mat_path = 'data/online/instance21/21_nodes.mat'
+net_path = 'data/online/instance21/network.xml'
+fleet_path = 'data/online/instance21/fleet.xml'
+num_iterations = 50
 
-# %% 2. CS capacities and SOC policy
-cs_capacity = 3
+ga_time = 1.
+offset_time = 2.
+sample_time = 5.
 soc_policy = (20, 95)
 
-# %% Number of optimizations
-opt_range = 1
+for i in range(num_iterations):
+    iteration_folder = f'{main_folder}iteration_{i + 1}/'
+    no_opt_folder = f'{iteration_folder}no_opt/'
+    opt_folder = f'{iteration_folder}opt/'
+    collection_no_opt_path = f'{no_opt_folder}collection.xml'
+    collection_opt_path = f'{opt_folder}collection.xml'
 
-# %% 3. Solve instances
-for _ in range(opt_range):
-    fleet = from_xml(fleet_path, assign_customers=False, with_routes=False, instance=False)
-    net = net_from_xml(network_path, instance=False)
-    fleet.set_network(net)
+    create_folder(iteration_folder)
+    create_folder(no_opt_folder)
+    create_folder(opt_folder)
 
-    fleet.modify_cs_capacities(cs_capacity)
-    fleet.new_soc_policy(soc_policy[0], soc_policy[1])
+    # OPERATE WITHOUT OPTIMIZATION
 
-    # %% 4. GA hyper-parameters
-    num_individuals = int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 50
-    K1 = 100. * len(fleet.network) + 1000 * len(fleet)
-    hp_alpha = HyperParameters(num_individuals=num_individuals,
-                               max_generations=num_individuals * 3,
-                               CXPB=0.7,
-                               MUTPB=0.9,
-                               weights=(0.5 / 2.218, 1. / 0.4364, 1. / 8, 1. / 80, 1.2),
-                               K1=K1,
-                               K2=K1 * 2.5,
-                               keep_best=1,
-                               tournament_size=3,
-                               r=4,
-                               alpha_up=soc_policy[1],
-                               algorithm_name='alphaGA')
+    sim = Simulator(net_path, fleet_path, collection_no_opt_path, mat_path, sample_time)
+    while not sim.dispatcher.done():
+        # Disturb network
+        sim.disturb_network()
 
-    num_individuals = int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 50
-    K1 = 100. * len(fleet.network) + 1000 * len(fleet)
-    hp_beta = HyperParameters(num_individuals=num_individuals,
-                              max_generations=num_individuals * 3,
-                              CXPB=0.7,
-                              MUTPB=0.9,
-                              weights=(0.5 / 2.218, 1. / 0.4364, 1. / 8, 1. / 80, 1.2),
-                              K1=K1,
-                              K2=K1 * 2.5,
-                              keep_best=1,
-                              tournament_size=3,
-                              r=4,
-                              alpha_up=soc_policy[1],
-                              algorithm_name='betaGA',
-                              crossover_repeat=1,
-                              mutation_repeat=1)
+        # Forward vehicles
+        sim.forward_fleet()
 
-    # %% 5. Specify data folder
-    # Main instance folder
-    instance_folder = results_folder + '/'
-    try:
-        os.mkdir(instance_folder)
-    except FileExistsError:
-        pass
+    nopt_df = pd.DataFrame({i: [sum(j)] for i, j in sim.violations.items()})
 
-    # Main optimization folder
-    opt_folders = [d for d in os.listdir(instance_folder) if os.path.isdir(os.path.join(instance_folder, d))]
-    if opt_folders:
-        opt_num = str(max([int(i[-1]) for i in opt_folders]) + 1)
-    else:
-        opt_num = '1'
-    opt_folder = instance_folder + f'opt{opt_num}/'
-    try:
-        os.mkdir(opt_folder)
-    except FileExistsError:
-        pass
+    # OPERATE WITH OPTIMIZATION
+    sim = Simulator(net_path, fleet_path, collection_opt_path, mat_path, sample_time)
+    while not sim.dispatcher.done():
+        # Disturb network
+        sim.disturb_network()
 
-    # %% 6. Run algorithm
-    best_alpha = None
-    best_beta = None
-    mi = None
-    for k in range(5):
-        routes_alpha, opt_data_alpha, toolbox_alpha = optimal_route_assignation(fleet, hp_alpha, opt_folder,
-                                                                                best_ind=best_alpha,
-                                                                                savefig=True,
-                                                                                mi=mi,
-                                                                                plot_best_generation=False)
-        routes_beta, opt_data_beta, toolbox_beta = improve_route(fleet, hp_beta, opt_folder,
-                                                                 best_ind=best_beta,
-                                                                 savefig=True)
-        mi = opt_data_alpha.additional_info['mi']
+        # Observe
+        n, f, f_original, current_routes, ahead_routes = sim.dispatcher.synchronization()
 
-        if not opt_data_alpha.acceptable: # and not opt_data_beta.acceptable:
-            # Not feasible
-            print('INCREASING FLEET SIZE BY 1...')
-            mi += 1
-            '''
-            fleet.resize_fleet(len(fleet) + 1)
-            best_alpha = opt_data_alpha.bestOfAll
-
-            pos = np.random.randint(len(fleet.network.customers) + len(fleet))
-            best_alpha.insert(pos, '|')
-            best_alpha.append(np.random.uniform(7 * 60, 10 * 60))
-            for i in range(hp_alpha.r):
-                chg_op = [-1, sample(fleet.network.charging_stations, 1)[0], uniform(10, 20)]
-                index = -len(fleet)
-                bestOfAll1 = best_alpha[:index] + chg_op + best_alpha[index:]
-
-            '''
-            hp_alpha.num_individuals += 15
-            hp_beta.num_individuals += 10
-            hp_alpha.max_generations += 10
-            hp_beta.max_generations += 10
-        else:
-            # At least one is acceptable
+        if not ahead_routes:
             break
+
+        # Optimize
+        num_individuals = int(len(f.network) * 1.5) + int(len(f) * 10) + 50
+        K1 = 100. * len(f.network) + 1000 * len(f)
+        hp = HyperParameters(num_individuals=num_individuals,
+                             max_generations=num_individuals * 3,
+                             CXPB=0.7,
+                             MUTPB=0.9,
+                             weights=(0.5 / 2.218, 1. / 0.4364, 1. / 8, 1. / 80, 1.2),
+                             K1=K1,
+                             K2=K1 * 2.5,
+                             keep_best=1,
+                             tournament_size=3,
+                             r=4,
+                             alpha_up=soc_policy[1],
+                             algorithm_name='onGA',
+                             crossover_repeat=1,
+                             mutation_repeat=1)
+
+        prev_best, critical_points = ga.code(f, ahead_routes, hp.r)
+        now = datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S')
+        save_opt_to = f'{opt_folder}{now}/'
+        routes, opt_data, toolbox = ga.onGA(f, hp, critical_points, save_opt_to,
+                                            best_ind=prev_best, savefig=True)
+
+        # Modify current route
+        new_routes = {}
+        for id_ev, ((S_old, L_old), x10, x20, x30) in current_routes.items():
+            if id_ev in routes.keys():
+                S_new, L_new = routes[id_ev][0]
+                k = S_old.index(S_new[0])
+                new_routes[id_ev] = ((S_old[:k] + S_new, L_old[:k] + L_new), x10, x20, x30)
+
+        # Send routes to vehicles
+        f.set_routes_of_vehicles(new_routes, iterate=False)
+        f_original.update_from_another_fleet(f)
+        f_original.write_xml(sim.dispatcher.fleet_path, online=True, assign_customers=True)
+
+        # Forward vehicles
+        sim.forward_fleet()
+
+    opt_df = pd.DataFrame({i: [sum(j)] for i, j in sim.violations.items()})
+
+    # SAVE RESULTS
+    with pd.ExcelWriter(f'{iteration_folder}violations.xlsx') as writer:
+        nopt_df.to_excel(writer, sheet_name='NoOpt')
+        opt_df.to_excel(writer, sheet_name='Opt')

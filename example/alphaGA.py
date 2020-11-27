@@ -1,7 +1,7 @@
 import os
 
-from models import from_xml
-from optimizer import optimal_route_assignation, HyperParameters
+from res.models.Fleet import from_xml
+from res.optimizer.alphaGA import alphaGA, HyperParameters
 
 # %% 1. Specify instance location and capacities to iterate
 folder = 'data/example/'
@@ -28,7 +28,7 @@ hyper_parameters = HyperParameters(num_individuals=num_individuals,
                                    max_generations=num_individuals * 3,
                                    CXPB=0.7,
                                    MUTPB=0.9,
-                                   weights=(0.5/2.218, 1./0.4364, 1./8, 1./80, 1.2),
+                                   weights=(0.5 / 2.218, 1. / 0.4364, 1. / 8, 1. / 80, 1.2),
                                    K1=K1,
                                    K2=K1 * 2.5,
                                    keep_best=1,
@@ -60,10 +60,10 @@ except FileExistsError:
 # %% 6. Run algorithm
 bestOfAll = None
 mi = None
-routes, fleet, bestOfAll, feasible, acceptable, toolbox, optData = optimal_route_assignation(fleet,
-                                                                                             hyper_parameters,
-                                                                                             opt_folder,
-                                                                                             best_ind=bestOfAll,
-                                                                                             savefig=True,
-                                                                                             mi=mi,
-                                                                                             plot_best_generation=False)
+routes, fleet, bestOfAll, feasible, acceptable, toolbox, optData = alphaGA(fleet,
+                                                                           hyper_parameters,
+                                                                           opt_folder,
+                                                                           best_ind=bestOfAll,
+                                                                           savefig=True,
+                                                                           mi=mi,
+                                                                           plot_best_generation=False)
