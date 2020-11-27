@@ -2,7 +2,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, NamedTuple, Union
 from res.tools.IOTools import write_pretty_xml
-from res.optimizer.onGA import HyperParameters
+from res.optimizer.GATools import HyperParameters
 
 import numpy as np
 from scipy.io import loadmat
@@ -40,20 +40,19 @@ def disturb_network(data: dict, network: Network.Network, std_factor=(1., 1.)):
     for i in network.nodes.keys():
         for j in network.nodes.keys():
             for t in range(len(network.edges[i][j].energy_consumption)):
-                tt_data = 1.8 * data['starting_time'][0][t]['origin'][0][i]['destination'][0][j]['time'][0] / 60
-                ec_data = 1.8 * data['starting_time'][0][t]['origin'][0][i]['destination'][0][j]['soc'][0] * 24
+                tt_average, tt_std = data[i][j][t]['time'][0], data[i][j][t]['time'][1]
+                ec_average, ec_std = data[i][j][t]['ec'][0], data[i][j][t]['ec'][1]
 
-                tt_average, tt_std = np.mean(tt_data), std_factor[0] * np.std(tt_data)
-                ec_average, ec_std = np.mean(ec_data), std_factor[1] * np.std(ec_data)
-
-                network.edges[i][j].travel_time[t] = tt_average + np.random.normal(0, tt_std)
-                network.edges[i][j].energy_consumption[t] = ec_average + np.random.normal(0, ec_std)
+                network.edges[i][j].travel_time[t] = tt_average + np.random.normal(0, std_factor[0] * tt_std)
+                network.edges[i][j].energy_consumption[t] = ec_average + np.random.normal(0, std_factor[1] * ec_std)
 
 
 class ConstraintViolation(NamedTuple):
     type: str = 'generic'
     constraint_value: Union[int, float] = None
     real_value: Union[int, float] = None
+    where: Union[int, float] = None
+    when: str = None
 
 
 @dataclass
@@ -140,13 +139,9 @@ class FleetHistory:
         self.violated_constraints.append(violation)
 
 
-def history_from_file(filepath: str) -> FleetHistory:
-    return
-
-
 class Simulator:
     def __init__(self, network_path: str, fleet_path: str, measurements_path: str, routes_path: str, history_path: str,
-                 mat_path: str, sample_time: float, main_folder: str = None):
+                 mat_path: str, sample_time: float, main_folder: str = None, std_factor: Tuple = (1., 1.)):
         if main_folder:
             self.network_path = f'{main_folder}{network_path.split("/")[-1][:-4]}_temp.xml'
             self.fleet_path = f'{main_folder}{fleet_path.split("/")[-1][:-4]}_temp.xml'
@@ -168,7 +163,7 @@ class Simulator:
 
         self.day_points = int(1440 / self.network.edges[0][0].sample_time)
 
-        self.data = loadmat(self.mat_path)
+        self.data = self.data_from_mat_file()
 
         if main_folder:
             self.routes_path = f'{main_folder}{routes_path.split("/")[-1]}'
@@ -182,6 +177,27 @@ class Simulator:
         self.history = FleetHistory().create_from_routes(self.routes)
         self.save_history()
 
+        self.std_factor = std_factor
+
+    def data_from_mat_file(self) -> Dict:
+        raw_data = loadmat(self.mat_path)
+        data = {}
+        for i in self.network.nodes.keys():
+            data[i] = data_i = {}
+            for j in self.network.nodes.keys():
+                data_i[j] = data_j = {}
+                for t in range(len(self.network.edges[i][j].energy_consumption)):
+                    data_j[t] = data_t = {}
+                    tt_data = 1.8 * raw_data['starting_time'][0][t]['origin'][0][i]['destination'][0][j]['time'][0] / 60
+                    ec_data = 1.8 * raw_data['starting_time'][0][t]['origin'][0][i]['destination'][0][j]['soc'][0] * 24
+
+                    tt_average, tt_std = np.mean(tt_data), np.std(tt_data)
+                    ec_average, ec_std = np.mean(ec_data), np.std(ec_data)
+
+                    data_t['time'] = (tt_average, tt_std)
+                    data_t['ec'] = (ec_average, ec_std)
+        return data
+
     def create_measurements_file(self):
         return Dispatcher.create_measurements_file(self.measurements_path, self.routes_path)
 
@@ -189,7 +205,7 @@ class Simulator:
         self.history.save(self.history_path, write_pretty=False)
 
     def disturb_network(self):
-        disturb_network(self.data, self.network)
+        disturb_network(self.data, self.network, std_factor=self.std_factor)
         self.network.write_xml(self.network_path, print_pretty=False)
 
     def write_measurements(self):
@@ -239,15 +255,18 @@ class Simulator:
                 self.history.update_consumed_energy(id_ev, eta * Eij)
 
                 if self.network.time_window_upp(S0) < departure_time_from_S0:
-                    v = ConstraintViolation('time_window_upp', self.network.time_window_upp(S0), departure_time_from_S0)
+                    v = ConstraintViolation('time_window_upp', self.network.time_window_upp(S0), departure_time_from_S0,
+                                            S0, 'leaving')
                     self.history.add_vehicle_constraint_violation(id_ev, v)
 
                 if ev.alpha_up < measurement.soc_finishing_service:
-                    v = ConstraintViolation('alpha_up', ev.alpha_up, measurement.soc_finishing_service)
+                    v = ConstraintViolation('alpha_up', ev.alpha_up, measurement.soc_finishing_service, S0,
+                                            'finishing_service')
                     self.history.add_vehicle_constraint_violation(id_ev, v)
 
                 if ev.alpha_down > measurement.soc_finishing_service:
-                    v = ConstraintViolation('alpha_down', ev.down, measurement.soc_finishing_service)
+                    v = ConstraintViolation('alpha_down', ev.alpha_down, measurement.soc_finishing_service, S0,
+                                            'finishing_service')
                     self.history.add_vehicle_constraint_violation(id_ev, v)
 
         # Vehicle is moving across an arc
@@ -307,11 +326,11 @@ class Simulator:
                         self.history.update_recharging_time(id_ev, service_time)
 
                 if ev.alpha_up < soc_reaching:
-                    v = ConstraintViolation('alpha_up', ev.alpha_up, measurement.soc)
+                    v = ConstraintViolation('alpha_up', ev.alpha_up, soc_reaching, S1, 'arriving')
                     self.history.add_vehicle_constraint_violation(id_ev, v)
 
                 if ev.alpha_down > soc_reaching:
-                    v = ConstraintViolation('alpha_down', ev.alpha_down, measurement.soc)
+                    v = ConstraintViolation('alpha_down', ev.alpha_down, soc_reaching, S1, 'arriving')
                     self.history.add_vehicle_constraint_violation(id_ev, v)
 
             # Vehicle continues moving across the arc
@@ -339,12 +358,11 @@ class Simulator:
 
 
 if __name__ == '__main__':
-    simulation_number = 40
-    online = True
-    traffic_factor = (1., 1.)
+    simulation_number = 15
+    std_factor = (12., 12.)
     soc_policy = (20, 95)
 
-    onGA_hyper_parameters = HyperParameters(num_individuals=80, max_generations=15, CXPB=0.7, MUTPB=0.6,
+    onGA_hyper_parameters = HyperParameters(num_individuals=80, max_generations=150, CXPB=0.7, MUTPB=0.6,
                                             weights=(0.1 / 2.218, 1. / 0.4364, 1. / 100, 1. / 500, 1. * 0.5),
                                             K1=1000, K2=2000, keep_best=1, tournament_size=3, r=2,
                                             alpha_up=soc_policy[1], algorithm_name='onGA', crossover_repeat=1,
@@ -354,19 +372,53 @@ if __name__ == '__main__':
     fleet_path = '../../data/online/instance21/init_files/fleet.xml'
     routes_path = '../../data/online/instance21/init_files/routes.xml'
     mat_path = '../../data/online/instance21/init_files/21_nodes.mat'
+
+    """
+    WITHOUT OPTIMIZATION
+
+    online = False
     stage = 'online' if online else 'offline'
 
     for i in range(simulation_number):
+        print(f'--- Simulation ({stage}) #{i} ---')
         main_folder = f'../../data/online/instance21/{stage}/simulation_{i}/'
         measurements_path = f'../../data/online/instance21/{stage}/simulation_{i}/measurements.xml'
         history_path = f'../../data/online/instance21/{stage}/simulation_{i}/history.xml'
 
-        sim = Simulator(net_path, fleet_path, measurements_path, routes_path, history_path, mat_path, 5., main_folder)
+        sim = Simulator(net_path, fleet_path, measurements_path, routes_path, history_path, mat_path, 5., main_folder,
+                        std_factor=std_factor)
         dispatcher = Dispatcher.Dispatcher(sim.network_path, sim.fleet_path, sim.measurements_path, sim.routes_path,
                                            onGA_hyper_parameters=onGA_hyper_parameters)
 
         while not sim.done():
-            # sim.disturb_network()
+            sim.disturb_network()
+            if online:
+                dispatcher.update()
+                dispatcher.optimize_online()
+            sim.forward_fleet()
+            sim.save_history()
+            
+    """
+
+    """ 
+    WITH OPTIMIZATION
+    """
+    online = True
+    stage = 'online' if online else 'offline'
+
+    for i in range(simulation_number):
+        print(f'--- Simulation ({stage}) #{i} ---')
+        main_folder = f'../../data/online/instance21/{stage}/simulation_{i}/'
+        measurements_path = f'../../data/online/instance21/{stage}/simulation_{i}/measurements.xml'
+        history_path = f'../../data/online/instance21/{stage}/simulation_{i}/history.xml'
+
+        sim = Simulator(net_path, fleet_path, measurements_path, routes_path, history_path, mat_path, 5., main_folder,
+                        std_factor=std_factor)
+        dispatcher = Dispatcher.Dispatcher(sim.network_path, sim.fleet_path, sim.measurements_path, sim.routes_path,
+                                           onGA_hyper_parameters=onGA_hyper_parameters)
+
+        while not sim.done():
+            sim.disturb_network()
             if online:
                 dispatcher.update()
                 dispatcher.optimize_online()

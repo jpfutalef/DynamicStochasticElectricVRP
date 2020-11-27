@@ -55,6 +55,7 @@ class ElectricVehicle:
     waiting_times1: ndarray = None
     state_reaching: ndarray = None
     state_leaving: ndarray = None
+    with_state_reaching: bool = False
 
     def reset(self):
         self.battery_capacity = self.battery_capacity_nominal
@@ -71,6 +72,7 @@ class ElectricVehicle:
         self.waiting_times1 = None
         self.state_reaching = None
         self.state_leaving = None
+        self.with_state_reaching = False
 
     def set_customers_to_visit(self, new_customers: Tuple[int, ...]):
         self.assigned_customers = new_customers
@@ -100,6 +102,7 @@ class ElectricVehicle:
         self.state_leaving[:, 0] = np.array(init_state)
         self.state_leaving[2, -1] = self.weight
         if reaching_state is not None:
+            self.with_state_reaching = True
             self.state_reaching[:, 0] = reaching_state
         else:
             self.state_reaching[:, 0] = np.array(init_state)

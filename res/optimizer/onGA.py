@@ -24,12 +24,6 @@ def decode(individual: IndividualType, indices: IndicesType, critical_points: St
         chg_ops = [(chg_block[3 * i], chg_block[3 * i + 1], chg_block[3 * i + 2]) for i in range(hp.r)]
         for customer, charging_station, amount in chg_ops:
             if customer != -1:
-                '''
-                i = S.index(customer) if customer != initial_condition.S0 else -1  # finds where customers is
-                # check for repeated
-                S = S[:i + 1] + [charging_station] + S[i + 1:]
-                L = L[:i + 1] + [amount] + L[i + 1:]
-                '''
                 index = S.index(customer) + 1 if customer != initial_condition.S0 else 0
                 if index == len(S):
                     S.insert(index, charging_station)
@@ -41,7 +35,12 @@ def decode(individual: IndividualType, indices: IndicesType, critical_points: St
                     L.insert(index, amount)
 
         S0 = initial_condition.S0
-        if critical_points[id_ev].L0 > 0:
+        if S0 == 0:
+            # Initial node is the depot
+            L0 = initial_condition.L0
+            x10 = initial_condition.x1_0
+            x20 = initial_condition.x2_0
+        elif critical_points[id_ev].L0 > 0:
             # Initial node is a CS
             L0 = initial_condition.L0 + offset
             x10 = initial_condition.x1_0 + fleet.network.spent_time(S0, initial_condition.x2_0, L0)
@@ -90,7 +89,7 @@ def mutate(individual: IndividualType, indices: IndicesType, starting_points: St
             elif i1 <= index < i2:
                 i = i1 + 3 * int((index - i1) / 3)
                 if randint(0, 1):
-                    individual[i] = sample(individual[i0:i1], 1)[0]
+                    individual[i] = sample(individual[i0:i1] + [starting_points[id_ev].S0], 1)[0]
                 else:
                     individual[i] = -1
                 individual[i + 1] = sample(charging_stations, 1)[0]
@@ -100,13 +99,12 @@ def mutate(individual: IndividualType, indices: IndicesType, starting_points: St
 
             # Case offset of initial condition
             else:
-                b = randint(0, 1)
                 if starting_points[id_ev].L0:
-                    amount = uniform(-8., 8.)
+                    amount = individual[i2] + uniform(-8., 8.)
                 else:
-                    amount = uniform(-5., 5.)
-                individual[i2] = b * abs(individual[i2] + amount)
-                return individual
+                    amount = abs(individual[i2] + uniform(-2., 2.))
+                individual[i2] = amount
+    return individual
 
 
 def crossover(ind1: IndividualType, ind2: IndividualType, indices: IndicesType, allowed_charging_operations=2,
@@ -407,6 +405,7 @@ def onGA(fleet: Fleet, hp: HyperParameters, critical_points: StartingPointsType,
     algo_time = t_end - t_init
     print('Algorithm time:', algo_time)
 
+    fit, feasible, acceptable = toolbox.evaluate(bestOfAll)
     fit, feasible, acceptable = toolbox.evaluate(bestOfAll)
     routes = toolbox.decode(bestOfAll)
 

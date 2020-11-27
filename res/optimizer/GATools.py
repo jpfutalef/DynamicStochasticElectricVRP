@@ -11,7 +11,6 @@ from typing import List, Tuple, Dict, NamedTuple, Union
 
 from res.models.Fleet import Fleet, InitialCondition
 from res.tools.IOTools import read_write_pretty_xml
-from res.dispatcher import Dispatcher
 
 # TYPES
 IndividualType = List
@@ -67,6 +66,8 @@ class GenerationsData:
     additional_info: Dict = None
 
     def save_opt_data(self, data_folder: str = None, method='ASSIGNATION', savefig=False):
+        from res.dispatcher.Dispatcher import write_routes
+
         # folder
         if data_folder:
             opt_path = data_folder
@@ -157,7 +158,7 @@ class GenerationsData:
         # write routes file for alphaGA
         routes_to_save = {i: (ev.route[0], ev.route[1], ev.waiting_times0) for i, ev in self.fleet.vehicles.items()}
         depart_info = {i: (r.x1_0, r.x2_0, r.x3_0) for i, r in self.fleet.vehicles.items()}
-        Dispatcher.write_routes(opt_path+'routes.xml', routes_to_save, depart_info)
+        write_routes(opt_path+'routes.xml', routes_to_save, depart_info)
 
         # write fleet
         fleet_path = f'{opt_path}fleet.xml'

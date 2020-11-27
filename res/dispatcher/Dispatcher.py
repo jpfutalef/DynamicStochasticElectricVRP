@@ -8,8 +8,8 @@ import res.models.Fleet as Fleet
 import res.models.Network as Network
 from res.tools.IOTools import RouteDict, DepartDict, write_routes, read_routes, write_pretty_xml
 
-from res.optimizer import onGA
 from res.optimizer.GATools import HyperParameters
+from res.optimizer import onGA
 
 
 @dataclass
@@ -46,8 +46,8 @@ class ElectricVehicleMeasurement:
             self.__dict__[key] = type(self.__dict__[key])(attrib)
 
 
-def create_measurements_file(filepath: str, routes_path:str) -> Tuple[Dict[int, ElectricVehicleMeasurement],
-                                                                      ET.Element]:
+def create_measurements_file(filepath: str, routes_path: str) -> Tuple[Dict[int, ElectricVehicleMeasurement],
+                                                                       ET.Element]:
     routes, departure_info = read_routes(routes_path, read_depart_info=True)
     collection = {}
     root = ET.Element('measurements')
@@ -191,7 +191,8 @@ class Dispatcher:
             FIRST - Find next node the EV will visit and iterate from there
             """
             j_start = meas.visited_nodes - 1
-            (S, L, w1) = self.routes[id_ev][0][j_start:], self.routes[id_ev][1][j_start:], self.routes[id_ev][2][j_start:]
+            (S, L, w1) = self.routes[id_ev][0][j_start:], self.routes[id_ev][1][j_start:], self.routes[id_ev][2][
+                                                                                           j_start:]
             j_next = S.index(meas.node_to)
             S0, S1 = meas.node_from, meas.node_to
 
@@ -207,22 +208,29 @@ class Dispatcher:
                 departure_soc = meas.soc_finishing_service
                 departure_payload = meas.payload_finishing_service
 
-                # Arrival state at next node
-                arrival_time_S1 = departure_time + self.network.t(S0, S1, departure_time)
-                arrival_soc_S1 = departure_soc - self.network.e(S0, S1, departure_payload,
-                                                             ev.weight, departure_time)*100/ev.battery_capacity
-                arrival_payload_S1 = departure_payload
+                if S0 == 0:
+                    # Vehicle is at depot, consider this as the next node
+                    j_next = 0
+                    S1 = 0
+                    arrival_time_S1 = departure_time
+                    arrival_soc_S1 = departure_soc
+                    arrival_payload_S1 = departure_payload
+
+                else:
+                    # Arrival state at next node
+                    arrival_time_S1 = departure_time + self.network.t(S0, S1, departure_time)
+                    arrival_soc_S1 = departure_soc - self.network.e(S0, S1, departure_payload, ev.weight,
+                                                                    departure_time) * 100 / ev.battery_capacity
+                    arrival_payload_S1 = departure_payload
 
             else:
                 ev = self.fleet.vehicles[id_ev]
-
                 eta = meas.eta
-                S0, S1 = meas.node_from, meas.node_to
 
                 # Arrival state at next node
                 arrival_time_S1 = meas.time + (1 - eta) * self.network.t(S0, S1, meas.time)
                 arrival_soc_S1 = meas.soc - 100. * (1 - eta) * self.network.e(S0, S1, meas.payload, ev.weight,
-                                                                      meas.time) / ev.battery_capacity
+                                                                              meas.time) / ev.battery_capacity
                 arrival_payload_S1 = meas.payload
 
             S_ahead = S[j_next:]
@@ -242,7 +250,7 @@ class Dispatcher:
             ev.set_route((S_ahead, L_ahead), x1_0, x2_0, x3_0, reaching_state=reaching_state)
             ev.step(self.network)
 
-            #ev.state_reaching[:, 0] = np.asarray([time_at_start_of_service, arrival_soc_S1, arrival_payload_S1])
+            # ev.state_reaching[:, 0] = np.asarray([time_at_start_of_service, arrival_soc_S1, arrival_payload_S1])
 
             """
             SECOND - Calculate critical points and states
@@ -294,7 +302,6 @@ class Dispatcher:
         self.write_routes()
 
 
-
 if __name__ == '__main__':
     network_path = "../../data/online/instance21/init_files/network.xml"
     fleet_path = "../../data/online/instance21/init_files/fleet.xml"
@@ -304,4 +311,3 @@ if __name__ == '__main__':
     d = Dispatcher(network_path, fleet_path, measurements_path, routes_path)
 
     cp = d.synchronization()
-
