@@ -119,9 +119,18 @@ class ElectricVehicle:
         S, L = self.route[0], self.route[1]
         for k, (S0, L0, S1, L1) in enumerate(zip(S[:-1], L[:-1], S[1:], L[1:]), 1):
             service_time_S0 = network.spent_time(S0, self.state_reaching[1, k - 1], L0)
-            eos_time = self.state_reaching[0, k - 1] + service_time_S0
-            eos_soc = self.state_reaching[1, k - 1] + L0
-            eos_payload = self.state_reaching[2, k - 1] - network.demand(S0)
+            if self.with_state_reaching and k == 1:
+                # If reaching state passed, then state leaving is already calculated
+                eos_time = self.state_leaving[0, k - 1]
+                eos_soc = self.state_leaving[1, k - 1]
+                eos_payload = self.state_leaving[2, k - 1]
+                offset = eos_time - self.state_reaching[0, k - 1] - service_time_S0
+                offset = 0. if offset < 1e-10 else offset
+            else:
+                eos_time = self.state_reaching[0, k - 1] + service_time_S0
+                eos_soc = self.state_reaching[1, k - 1] + L0
+                eos_payload = self.state_reaching[2, k - 1] - network.demand(S0)
+                offset = 0.
 
             tij, Eij, w0, w1 = network.waiting_time(S0, S1, eos_time, eos_payload, self.weight)
             eij = Eij * 100 / self.battery_capacity
@@ -130,8 +139,8 @@ class ElectricVehicle:
 
             self.state_reaching[:, k] = self.state_leaving[:, k - 1] + np.array([tij + w1, -eij, 0])
 
-            self.waiting_times[k-1] = w1 + w0
-            self.waiting_times0[k-1] = w0
+            self.waiting_times[k-1] = w1 + w0 + offset
+            self.waiting_times0[k-1] = w0 + offset
             self.waiting_times1[k] = w1
 
             self.travel_times[k - 1] = tij

@@ -88,21 +88,21 @@ def mutate(individual: IndividualType, indices: IndicesType, starting_points: St
             # Case CS
             elif i1 <= index < i2:
                 i = i1 + 3 * int((index - i1) / 3)
-                if randint(0, 1):
-                    individual[i] = sample(individual[i0:i1] + [starting_points[id_ev].S0], 1)[0]
-                else:
-                    individual[i] = -1
+                r = allowed_charging_operations
+                rr = i1 - i0
+                sample_space = individual[i0:i1] + [starting_points[id_ev].S0]*r + [-1]*rr + [individual[i]]*rr
+                individual[i] = sample(sample_space, 1)[0]
                 individual[i + 1] = sample(charging_stations, 1)[0]
-                new_val = abs(individual[i + 2] + uniform(-10, 10))
+                new_val = abs(individual[i + 2] + np.random.normal(0, 10))
                 new_val = new_val if new_val <= 90 else 90
                 individual[i + 2] = new_val
 
             # Case offset of initial condition
             else:
                 if starting_points[id_ev].L0:
-                    amount = individual[i2] + uniform(-8., 8.)
+                    amount = individual[i2] + np.random.normal(0, 20)
                 else:
-                    amount = abs(individual[i2] + uniform(-2., 2.))
+                    amount = abs(individual[i2] + np.random.normal(0, 50))
                 individual[i2] = amount
     return individual
 

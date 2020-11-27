@@ -363,8 +363,8 @@ if __name__ == '__main__':
     soc_policy = (20, 95)
 
     onGA_hyper_parameters = HyperParameters(num_individuals=80, max_generations=150, CXPB=0.7, MUTPB=0.6,
-                                            weights=(0.1 / 2.218, 1. / 0.4364, 1. / 100, 1. / 500, 1. * 0.5),
-                                            K1=1000, K2=2000, keep_best=1, tournament_size=3, r=2,
+                                            weights=(0.1 / 2.218, 1. / 0.4364, 1. / 100, 1. / 500, 1.),
+                                            K1=10000, K2=20000, keep_best=1, tournament_size=3, r=2,
                                             alpha_up=soc_policy[1], algorithm_name='onGA', crossover_repeat=1,
                                             mutation_repeat=1)
 
