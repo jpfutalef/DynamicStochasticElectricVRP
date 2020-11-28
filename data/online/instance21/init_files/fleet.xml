@@ -1,0 +1,1 @@
+<fleet><electric_vehicle alpha_down="20" alpha_up="95" battery_capacity="24.0" battery_capacity_nominal="24.0" id="0" max_payload="1.2" max_tour_duration="360.0" weight="1.52" /><electric_vehicle alpha_down="20" alpha_up="95" battery_capacity="24.0" battery_capacity_nominal="24.0" id="1" max_payload="1.2" max_tour_duration="360.0" weight="1.52" /></fleet>
