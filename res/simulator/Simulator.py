@@ -358,7 +358,7 @@ class Simulator:
 
 
 if __name__ == '__main__':
-    simulation_number = 15
+    simulation_number = 30
     std_factor = (12., 12.)
     soc_policy = (20, 95)
 
