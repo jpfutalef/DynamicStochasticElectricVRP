@@ -38,11 +38,11 @@ def decode(individual: IndividualType, indices: IndicesType, critical_points: St
         if S0 == 0:
             # Initial node is the depot
             L0 = initial_condition.L0
-            x10 = initial_condition.x1_0
+            x10 = initial_condition.x1_0 + offset
             x20 = initial_condition.x2_0
         elif critical_points[id_ev].L0 > 0:
             # Initial node is a CS
-            L0 = initial_condition.L0 + offset
+            L0 = abs(initial_condition.L0 + offset) if abs(initial_condition.L0 + offset) + initial_condition.x2_0 <= fleet.vehicles[id_ev].alpha_up else fleet.vehicles[id_ev].alpha_up
             x10 = initial_condition.x1_0 + fleet.network.spent_time(S0, initial_condition.x2_0, L0)
             x20 = initial_condition.x2_0 + L0
         else:
@@ -67,19 +67,19 @@ def mutate(individual: IndividualType, indices: IndicesType, starting_points: St
     # Find block
     for id_ev, (i0, i1, i2) in indices.items():
         if i0 <= index <= i2:
-            # No customers assigned
+            # One or no customers assigned
             if i0 + 1 >= i1:
                 break
 
             # Case customer
             if i0 <= index < i1:
                 case = np.random.random()
-                if case <= 0.85:
+                if case <= 0.40:
                     i, j = np.random.randint(i0, i1), np.random.randint(i0, i1)
                     while i == j:
                         j = np.random.randint(i0, i1)
                     swap_elements(individual, i, j)
-                elif case < 0.95:
+                elif case < 0.85:
                     i = np.random.randint(i0, i1)
                     individual[i0:i1] = individual[i:i1] + individual[i0:i]
                 else:
@@ -100,9 +100,12 @@ def mutate(individual: IndividualType, indices: IndicesType, starting_points: St
             # Case offset of initial condition
             else:
                 if starting_points[id_ev].L0:
-                    amount = individual[i2] + np.random.normal(0, 20)
+                    amount = individual[i2] + np.random.normal(-2, 2)
+                elif starting_points[id_ev].S0 == 0:
+                    amount = individual[i2] + np.random.normal(-2, 2)
+                    amount = amount if amount > -15. else -15
                 else:
-                    amount = abs(individual[i2] + np.random.normal(0, 50))
+                    amount = abs(individual[i2] + np.random.normal(-1, 1))
                 individual[i2] = amount
     return individual
 
@@ -422,4 +425,9 @@ def onGA(fleet: Fleet, hp: HyperParameters, critical_points: StartingPointsType,
         except FileExistsError:
             pass
         opt_data.save_opt_data(path, savefig=savefig)
+
+    for r in routes.values():
+        L = r[0][1]
+        if sum([1 for Lk in L if Lk < 0]):
+            print('negative')
     return routes, opt_data, toolbox

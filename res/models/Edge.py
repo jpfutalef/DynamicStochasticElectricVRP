@@ -106,7 +106,7 @@ class DynamicEdge:
 
         # Waiting time in Sk1
         tt_leaving_now = self.get_travel_time(done_time)
-        wt1 = max(0, t_low - tt_leaving_now - done_time)
+        wt1 = max(0, t_low - tt_leaving_now - done_time + .001)
         ec1 = self.get_energy_consumption(payload_after, vehicle_weight, done_time)
 
         if wt1 == 0:
@@ -126,7 +126,7 @@ class DynamicEdge:
         n = self.travel_time[i] - m * i * self.sample_time
         val = (t_low - n) / (1 + m) - done_time
 
-        wt0 = max(val, 0) if val < 1440 else max(val - 1440, 0)
+        wt0 = max(val + .001, 0) if val < 1440 else max(val + .001 - 1440, 0)
         ec0 = self.get_energy_consumption(payload_after, vehicle_weight, done_time + wt)
 
         # Choose

@@ -85,6 +85,13 @@ def dist_fun(x: Union[ndarray, float], y: Union[ndarray, float]):
     return (x - y) ** 2
 
 
+def dist_fun_close(x: Union[ndarray, float], y: Union[ndarray, float]):
+    # return 1 / np.abs(x - y)
+    # return 1 / np.sqrt(np.power(x - y, 2))
+    # return 1 / np.abs(np.power(x - y, 2))
+    return 1 / (x - y) ** 2
+
+
 class Fleet:
     vehicles: Dict[int, ElectricVehicle]
     network: net.Network
@@ -209,7 +216,8 @@ class Fleet:
         cost_wait_time = sum([sum(ev.waiting_times) for ev in self.vehicles.values()])
 
         cost_chg_cost = 0.
-        for ev in self.vehicles.values():
+        for id_ev in self.vehicles_to_route:
+            ev = self.vehicles[id_ev]
             for (Sk, Lk) in zip(ev.route[0], ev.route[1]):
                 if self.network.isChargingStation(Sk):
                     xi = self.network.nodes[Sk].price
@@ -230,9 +238,10 @@ class Fleet:
         num_events = 2 * sum_si - 2 * m + 1
         num_cust = len(network.customers)
 
-        for ev in self.vehicles.values():
+        for id_ev in self.vehicles_to_route:
+            ev = self.vehicles[id_ev]
             # MAX TOUR TIME
-            if ev.state_reaching[0, -1] - ev.state_leaving[0, 0] > ev.max_tour_duration:
+            if ev.state_reaching[0, -1] - ev.state_reaching[0, 0] > ev.current_max_tour_duration:
                 d = dist_fun(ev.max_tour_duration, ev.state_reaching[0, -1] - ev.state_leaving[0, 0])
                 dist += d
                 accept = False  # if d > 25 else accept
@@ -255,14 +264,22 @@ class Fleet:
                     # TIME WINDOW UPPER BOUND
                     if node.time_window_upp < ev.state_leaving[0, k] - ev.waiting_times0[k]:
                         d = dist_fun(node.time_window_upp, ev.state_leaving[0, k] - ev.waiting_times0[k])
-                        dist += 20 * d
+                        dist += 20 * d + 10000
                         accept = False  # if d > 20 else accept
+
+                    if node.time_window_upp - 5. < ev.state_leaving[0, k] - ev.waiting_times0[k]:
+                        d = dist_fun_close(node.time_window_upp, ev.state_leaving[0, k] - ev.waiting_times0[k])
+                        dist += d
 
                 # SOC BOUND LOWER - REACHING
                 if ev.state_reaching[1, k] < ev.alpha_down:
                     d = dist_fun(ev.state_reaching[1, k], ev.alpha_down)
-                    dist += d
+                    dist += 20 * d
                     accept = False  # if d > 36 else accept
+
+                if ev.state_reaching[1, k] < ev.alpha_down + 5.:
+                    d = dist_fun_close(ev.state_reaching[1, k], ev.alpha_down)
+                    dist += d
 
                 # SOC BOUND UPPER - REACHING
                 if ev.state_reaching[1, k] > ev.alpha_up:
@@ -273,7 +290,7 @@ class Fleet:
                 # SOC BOUND LOWER - LEAVING
                 if ev.state_leaving[1, k] < ev.alpha_down:
                     d = dist_fun(ev.state_leaving[1, k], ev.alpha_down)
-                    dist += d
+                    dist += 20 * d
                     accept = False  # if d > 36 else accept
 
                 # SOC BOUND UPPER - LEAVING
@@ -415,7 +432,7 @@ class Fleet:
                 ET.ElementTree(tree).write(filepath)
 
     def plot_operation_pyplot(self, arrow_colors=('SteelBlue', 'Crimson', 'SeaGreen'), fig_size=(16, 5),
-                              label_offset=(.15, -6), subplots=True, save_to=None):
+                              label_offset=(.15, -6), subplots=True, save_to=None, arrival_at_depot_times: Dict = None):
         figs = []
         for id_ev, vehicle in self.vehicles.items():
             Si, Li = vehicle.route[0], vehicle.route[1]
@@ -482,8 +499,11 @@ class Fleet:
                        width=0.0004 * fig_size[0], zorder=15, label='Travelling')
 
             # Maximum tour time
-            plt.axhline(vehicle.state_leaving[0, 0] + vehicle.max_tour_duration, linestyle='--', color='black',
-                        label='Maximum tour time')
+            if arrival_at_depot_times is not None:
+                plt.axhline(arrival_at_depot_times[id_ev], linestyle='--', color='black', label='Maximum tour time')
+            else:
+                plt.axhline(vehicle.state_reaching[0, 0] + vehicle.current_max_tour_duration, linestyle='--',
+                            color='black', label='Maximum tour time')
 
             # Annotate nodes
             labels = [str(i) for i in vehicle.route[0]]
@@ -906,9 +926,9 @@ if __name__ == '__main__':
 
     routes, depart_info = Dispatcher.read_routes('../../data/online/instance21/init_files/routes.xml', True)
 
-    routes = {i: ((r[0], r[1]), info[0], info[1], info[2]) for (i, r), info in zip(routes.items(), depart_info.values())}
+    routes = {i: ((r[0], r[1]), info[0], info[1], info[2]) for (i, r), info in
+              zip(routes.items(), depart_info.values())}
 
     f.set_routes_of_vehicles(routes)
 
     f.feasible()
-

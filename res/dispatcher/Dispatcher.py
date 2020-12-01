@@ -1,6 +1,7 @@
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
+import pandas as pd
 
 import numpy as np
 
@@ -120,17 +121,18 @@ class Dispatcher:
     routes: RouteDict = None
     depart_info: DepartDict = None
     time: float = None
-
     onGA_hyper_parameters: HyperParameters = None
+    exec_times: List = None
 
     def __post_init__(self):
         self.read_measurements()
         self.update_fleet()
         self.update_network()
-        self.update_routes()
+        self.update_routes(read_depart_info=True)
         t = min([m.time_finishing_service for m in self.measurements.values()])
         self.init_time = t
         self.time = t
+        self.exec_times = []
 
     def done(self):
         for meas in self.measurements.values():
@@ -196,11 +198,11 @@ class Dispatcher:
             j_next = S.index(meas.node_to)
             S0, S1 = meas.node_from, meas.node_to
 
-            # There are no more customers ahead
-            if sum([1 for i in S[j_next:] if self.network.isCustomer(i)]) <= 1:
+            # Few customers ahead, pass
+            if sum([1 for i in S if self.network.isCustomer(i)]) <= 1:
                 continue
 
-            elif meas.stopped_at_node_from:
+            if meas.stopped_at_node_from:
                 ev = self.fleet.vehicles[id_ev]
                 w1_current = w1[j_next - 1]
 
@@ -237,12 +239,14 @@ class Dispatcher:
             L_ahead = L[j_next:]
             w1_ahead = w1[j_next:]
 
+            Lj1 = L_ahead[0] if arrival_soc_S1 + L_ahead[0] <= ev.alpha_up else ev.alpha_up - arrival_soc_S1
+
             next_node_low_tw = self.network.nodes[S1].time_window_low
             time_at_start_of_service = arrival_time_S1 if arrival_time_S1 > next_node_low_tw else next_node_low_tw
-            t_service = self.network.spent_time(S1, arrival_soc_S1, L_ahead[0])
+            t_service = self.network.spent_time(S1, arrival_soc_S1, Lj1)
 
             x1_0 = time_at_start_of_service + t_service + w1_ahead[0]
-            x2_0 = arrival_soc_S1 + L_ahead[0]
+            x2_0 = arrival_soc_S1 + Lj1
             x3_0 = arrival_payload_S1 - self.network.demand(S1)
 
             # Iterate from the first non-visited node
@@ -258,6 +262,11 @@ class Dispatcher:
             for k, time_at_start_of_service in enumerate(ev.state_reaching[0, :]):
                 if time_at_start_of_service - meas.time >= self.ga_time + self.offset_time:
                     j_critical = j_next + k + j_start
+                    # There are no more customers ahead
+                    if sum([1 for i in S_ahead[k:] if self.network.isCustomer(i)]) <= 1:
+                        continue
+
+                    # Otherwise, it is a critical point
                     x1_critical = float(ev.state_reaching[0, k])
                     x2_critical = float(ev.state_reaching[1, k])
                     x3_critical = float(ev.state_reaching[2, k])
@@ -268,7 +277,7 @@ class Dispatcher:
 
         return critical_nodes_info
 
-    def optimize_online(self):
+    def optimize_online(self, exec_time_filepath):
         cp_info = self.synchronization()
         if not bool(cp_info):
             return
@@ -280,6 +289,8 @@ class Dispatcher:
             x1_0 = cp_info[id_ev][1]
             x2_0 = cp_info[id_ev][2]
             x3_0 = cp_info[id_ev][3]
+            ev = self.fleet.vehicles[id_ev]
+            ev.current_max_tour_duration = ev.max_tour_duration + self.depart_info[id_ev][0] - x1_0
 
             routes_from_critical_points[id_ev] = ((r[0][j_critical:], r[1][j_critical:]), x1_0, x2_0, x3_0)
 
@@ -287,6 +298,11 @@ class Dispatcher:
         best_ind, critical_points = onGA.code(self.fleet, routes_from_critical_points, allowed_charging_operations=2)
         routes, opt_data, toolbox = onGA.onGA(self.fleet, self.onGA_hyper_parameters, critical_points, save_to=None,
                                               best_ind=best_ind)
+
+        # Save execution time
+        self.exec_times.append(opt_data.algo_time)
+        pd.Series(self.exec_times, name='execution_time (seg)').to_csv(exec_time_filepath)
+
         for id_ev in self.fleet.vehicles_to_route:
             j_critical = cp_info[id_ev][0]
             S_ahead = routes[id_ev][0][0]
@@ -297,7 +313,54 @@ class Dispatcher:
             L = self.routes[id_ev][1][:j_critical] + L_ahead
             w1 = self.routes[id_ev][2][:j_critical] + w1_ahead
 
-            self.routes[id_ev] = (S, L, w1)
+            # Fix routes
+            _S = []
+            _L = []
+            _w1 = []
+            add = True
+            for S0, S1, L0, L1, w10, w11 in zip(S[:-1], S[1:], L[:-1], L[1:], w1[:-1], w1[1:]):
+                if S1 == S0 and add:
+                    _S.append(S0)
+                    _L.append(L0)
+                    _w1.append(w10)
+                    add = False
+                elif S1 == S0 and not add:
+                    _L[-1] += L0
+                    _w1[-1] += w10
+                elif S1 != S0 and add:
+                    _S.append(S0)
+                    _L.append(L0)
+                    _w1.append(w10)
+                else:
+                    _L[-1] += L0
+                    _w1[-1] += w10
+                    add = True
+
+            if S1 == S0 and add:
+                _S.append(S1)
+                _L.append(L1)
+                _w1.append(w11)
+            elif S1 == S0 and not add:
+                _L[-1] += L1
+                _w1[-1] += w11
+            elif S1 != S0 and add:
+                _S.append(S1)
+                _L.append(L1)
+                _w1.append(w11)
+            else:
+                _L[-1] += L1
+                _w1[-1] += w11
+
+            self.routes[id_ev] = (tuple(_S), tuple(_L), tuple(_w1))
+
+            if routes[id_ev][0][0][0] == 0:
+                # Save depart info
+                dep_x1_0 = routes[id_ev][1]
+                dep_x2_0 = routes[id_ev][2]
+                dep_x3_0 = routes[id_ev][3]
+
+                self.depart_info[id_ev] = (dep_x1_0, dep_x2_0, dep_x3_0)
+                self.measurements[id_ev].time_finishing_service = dep_x1_0
 
         self.write_routes()
 

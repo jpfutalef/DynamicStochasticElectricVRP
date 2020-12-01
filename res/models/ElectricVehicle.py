@@ -42,6 +42,7 @@ class ElectricVehicle:
     max_payload: Union[int, float]
 
     # Dynamic-related variables
+    current_max_tour_duration: Union[int, float] = 0.
     assigned_customers: Tuple[int, ...] = ()
     x1_0: float = 0.0
     x2_0: float = 100.0
@@ -56,6 +57,9 @@ class ElectricVehicle:
     state_reaching: ndarray = None
     state_leaving: ndarray = None
     with_state_reaching: bool = False
+
+    def __post_init__(self):
+        self.current_max_tour_duration = self.max_tour_duration
 
     def reset(self):
         self.battery_capacity = self.battery_capacity_nominal
@@ -73,6 +77,7 @@ class ElectricVehicle:
         self.state_reaching = None
         self.state_leaving = None
         self.with_state_reaching = False
+        self.current_max_tour_duration = self.max_tour_duration
 
     def set_customers_to_visit(self, new_customers: Tuple[int, ...]):
         self.assigned_customers = new_customers
@@ -117,6 +122,7 @@ class ElectricVehicle:
 
     def step(self, network: Network):
         S, L = self.route[0], self.route[1]
+        w1, w0, offset = 0, 0, 0
         for k, (S0, L0, S1, L1) in enumerate(zip(S[:-1], L[:-1], S[1:], L[1:]), 1):
             service_time_S0 = network.spent_time(S0, self.state_reaching[1, k - 1], L0)
             if self.with_state_reaching and k == 1:
@@ -150,6 +156,8 @@ class ElectricVehicle:
                 self.charging_times[k-1] = service_time_S0
 
         self.state_leaving[:, -1] = self.state_reaching[:, -1]
+        self.waiting_times[-1] = w1 + w0 + offset
+        self.waiting_times0[-1] = w0 + offset
 
     def step_degradation_eta(self, network: Network, eta_table: np.ndarray, eta_model: NearestNeighbors) -> List[float]:
         Sk, Lk = self.route[0], self.route[1]

@@ -204,8 +204,11 @@ class Simulator:
     def save_history(self):
         self.history.save(self.history_path, write_pretty=False)
 
-    def disturb_network(self):
-        disturb_network(self.data, self.network, std_factor=self.std_factor)
+    def disturb_network(self, std_factor: Tuple[float, float] = None):
+        if std_factor is None:
+            disturb_network(self.data, self.network, std_factor=self.std_factor)
+        else:
+            disturb_network(self.data, self.network, std_factor=std_factor)
         self.network.write_xml(self.network_path, print_pretty=False)
 
     def write_measurements(self):
@@ -215,9 +218,13 @@ class Simulator:
         Dispatcher.write_routes(self.routes_path, self.routes, depart_info=None, write_pretty=False)
 
     def update_routes(self):
-        self.routes, _ = Dispatcher.read_routes(self.routes_path, read_depart_info=False)
+        self.routes, self.depart_info = Dispatcher.read_routes(self.routes_path, read_depart_info=True)
 
-    def forward_vehicle(self, id_ev: int):
+        for id_ev, m in self.measurements.items():
+            if m.stopped_at_node_from and m.node_from == 0:
+                m.time_finishing_service = self.depart_info[id_ev][0]
+
+    def forward_vehicle(self, id_ev: int, forward_time: float = None):
         # Select measurement
         measurement = self.measurements[id_ev]
 
@@ -225,34 +232,37 @@ class Simulator:
         if measurement.done:
             return
 
+        # If forward time not passed, set it and iterate from there
+        if forward_time is None:
+            forward_time = self.sample_time
+
         # Select variables
-        S0, S1 = measurement.node_from, measurement.node_to
-        current_time = measurement.time
-        ahead_time = current_time + self.sample_time
-        j_start = measurement.visited_nodes - 1
-        S, L, w1 = self.routes[id_ev][0][j_start:], self.routes[id_ev][1][j_start:], self.routes[id_ev][2][j_start:]
         ev = self.fleet.vehicles[id_ev]
 
+        current_time = measurement.time
+        ahead_time = current_time + forward_time
+        j_start = measurement.visited_nodes - 1
+        S, L, w1 = self.routes[id_ev][0][j_start:], self.routes[id_ev][1][j_start:], self.routes[id_ev][2][j_start:]
+
+        S0, S1 = measurement.node_from, measurement.node_to
         j0 = S.index(S0)
         j1 = S.index(S1)
+
+        # Get departure info from S0
         departure_time_from_S0 = measurement.time_finishing_service + w1[j0]
+        departure_soc_from_S0 = measurement.soc_finishing_service
+        departure_payload_from_S0 = measurement.payload_finishing_service
 
         # Vehicle is stopped at a node
         if measurement.stopped_at_node_from:
             # Vehicle departs
             if ahead_time >= departure_time_from_S0:
-                tij = self.network.t(S0, S1, departure_time_from_S0)
-                Eij = self.network.e(S0, S1, measurement.payload, ev.weight, departure_time_from_S0, tij)
-                eij = 100 * Eij / ev.battery_capacity
+                measurement.time = departure_time_from_S0
+                measurement.soc = departure_soc_from_S0
+                measurement.payload = departure_payload_from_S0
 
-                measurement.eta = eta = (ahead_time - departure_time_from_S0) / tij
-                measurement.soc = measurement.soc_finishing_service - eta * eij
-                measurement.payload = measurement.payload_finishing_service
-
+                measurement.eta = 0.
                 measurement.stopped_at_node_from = False
-
-                self.history.update_travelled_time(id_ev, ahead_time - departure_time_from_S0)
-                self.history.update_consumed_energy(id_ev, eta * Eij)
 
                 if self.network.time_window_upp(S0) < departure_time_from_S0:
                     v = ConstraintViolation('time_window_upp', self.network.time_window_upp(S0), departure_time_from_S0,
@@ -260,89 +270,99 @@ class Simulator:
                     self.history.add_vehicle_constraint_violation(id_ev, v)
 
                 if ev.alpha_up < measurement.soc_finishing_service:
-                    v = ConstraintViolation('alpha_up', ev.alpha_up, measurement.soc_finishing_service, S0,
-                                            'finishing_service')
+                    v = ConstraintViolation('alpha_up', ev.alpha_up, departure_soc_from_S0, S0, 'finishing_service')
                     self.history.add_vehicle_constraint_violation(id_ev, v)
 
                 if ev.alpha_down > measurement.soc_finishing_service:
-                    v = ConstraintViolation('alpha_down', ev.alpha_down, measurement.soc_finishing_service, S0,
-                                            'finishing_service')
+                    v = ConstraintViolation('alpha_down', ev.alpha_down, departure_soc_from_S0, S0, 'finishing_service')
                     self.history.add_vehicle_constraint_violation(id_ev, v)
 
-        # Vehicle is moving across an arc
+                self.forward_vehicle(id_ev, ahead_time - departure_time_from_S0)
+
+            # Vehicles stays at the node
+            else:
+                measurement.time += forward_time
+
+        # Vehicle is traversing an an arc
         else:
             tij = self.network.t(S0, S1, departure_time_from_S0)
             Eij = self.network.e(S0, S1, measurement.payload, ev.weight, departure_time_from_S0, tij)
             eij = 100 * Eij / ev.battery_capacity
-            delta = self.sample_time / tij
+            delta = np.divide(forward_time, tij)
 
             # Vehicle reaches next node
             if delta > 1 - measurement.eta:
                 remaining_arc_portion = 1 - measurement.eta
-                time_reaching = current_time + tij * remaining_arc_portion
-                soc_reaching = measurement.soc - eij * remaining_arc_portion
-                payload_reaching = measurement.payload
+                arrival_time = current_time + tij * remaining_arc_portion
+                arrival_soc = measurement.soc - eij * remaining_arc_portion
+                arrival_payload = measurement.payload
 
                 measurement.visited_nodes += 1
+                measurement.stopped_at_node_from = True
 
                 self.history.update_travelled_time(id_ev, tij * remaining_arc_portion)
                 self.history.update_consumed_energy(id_ev, Eij * remaining_arc_portion)
+
+                if ev.alpha_up < arrival_soc:
+                    v = ConstraintViolation('alpha_up', ev.alpha_up, arrival_soc, S1, 'arriving')
+                    self.history.add_vehicle_constraint_violation(id_ev, v)
+
+                if ev.alpha_down > arrival_soc:
+                    v = ConstraintViolation('alpha_down', ev.alpha_down, arrival_soc, S1, 'arriving')
+                    self.history.add_vehicle_constraint_violation(id_ev, v)
 
                 # The node is the depot: the tour ends
                 if S1 == 0:
                     measurement.done = True
                     measurement.node_from = 0
                     measurement.node_to = 0
-                    measurement.soc = soc_reaching
-                    measurement.payload = payload_reaching
-                    measurement.time_finishing_service = time_reaching
-                    measurement.soc_finishing_service = soc_reaching
-                    measurement.payload_finishing_service = payload_reaching
+                    measurement.soc = arrival_soc
+                    measurement.payload = arrival_payload
+                    measurement.time_finishing_service = arrival_time
+                    measurement.soc_finishing_service = arrival_soc
+                    measurement.payload_finishing_service = arrival_payload
+                    if ev.max_tour_duration < arrival_time - self.depart_info[id_ev][0]:
+                        v = ConstraintViolation('max_tour_time', ev.max_tour_duration, arrival_time, 0, 'arriving')
+                        self.history.add_vehicle_constraint_violation(id_ev, v)
 
                 # The tour continues
                 else:
                     tw_low = self.network.nodes[S1].time_window_low
-                    waiting_time = tw_low - time_reaching if tw_low > time_reaching else 0.
+                    waiting_time = tw_low - arrival_time if tw_low > arrival_time else 0.
 
                     measurement.node_from = S1
                     measurement.node_to = S[j1 + 1]
 
-                    Lj1 = L[j1] if soc_reaching + L[j1] <= 100 else 100 - soc_reaching
+                    Lj1 = L[j1] if arrival_soc + L[j1] <= ev.alpha_up else ev.alpha_up - arrival_soc
 
-                    service_time = self.network.spent_time(S1, soc_reaching, Lj1)
-                    eos_time = time_reaching + waiting_time + service_time
-                    eos_soc = soc_reaching + Lj1
-                    eos_payload = payload_reaching - self.network.demand(S1)
+                    service_time = self.network.spent_time(S1, arrival_soc, Lj1)
+                    eos_time = arrival_time + waiting_time + service_time
+                    eos_soc = arrival_soc + Lj1
+                    eos_payload = arrival_payload - self.network.demand(S1)
 
                     measurement.time_finishing_service = eos_time
                     measurement.soc_finishing_service = eos_soc
                     measurement.payload_finishing_service = eos_payload
 
-                    measurement.stopped_at_node_from = True
+                    measurement.time = arrival_time
+                    measurement.soc = arrival_soc
+                    measurement.payload = arrival_payload
 
                     if self.network.isChargingStation(S1):
                         price = self.network.nodes[S1].price
                         self.history.update_recharging_cost(id_ev, price * Lj1 * ev.battery_capacity)
                         self.history.update_recharging_time(id_ev, service_time)
 
-                if ev.alpha_up < soc_reaching:
-                    v = ConstraintViolation('alpha_up', ev.alpha_up, soc_reaching, S1, 'arriving')
-                    self.history.add_vehicle_constraint_violation(id_ev, v)
+                    self.forward_vehicle(id_ev, ahead_time - arrival_time)
 
-                if ev.alpha_down > soc_reaching:
-                    v = ConstraintViolation('alpha_down', ev.alpha_down, soc_reaching, S1, 'arriving')
-                    self.history.add_vehicle_constraint_violation(id_ev, v)
-
-            # Vehicle continues moving across the arc
+            # Vehicle continues continues traversing the arc
             else:
-                measurement.eta += delta
+                measurement.time += forward_time
                 measurement.soc -= delta * eij
+                measurement.eta += delta
 
                 self.history.update_travelled_time(id_ev, self.sample_time)
                 self.history.update_consumed_energy(id_ev, delta * Eij)
-
-        # Increase time
-        measurement.time += self.sample_time
 
     def forward_fleet(self):
         self.update_routes()
@@ -358,13 +378,15 @@ class Simulator:
 
 
 if __name__ == '__main__':
-    simulation_number = 30
-    std_factor = (12., 12.)
+    simulation_number = 50
+    from_simulation = 1
+    std_factor = (5., 5.)
     soc_policy = (20, 95)
+    keep = 4
 
-    onGA_hyper_parameters = HyperParameters(num_individuals=80, max_generations=150, CXPB=0.7, MUTPB=0.6,
+    onGA_hyper_parameters = HyperParameters(num_individuals=80, max_generations=160, CXPB=0.9, MUTPB=0.6,
                                             weights=(0.1 / 2.218, 1. / 0.4364, 1. / 100, 1. / 500, 1.),
-                                            K1=10000, K2=20000, keep_best=1, tournament_size=3, r=2,
+                                            K1=100000, K2=200000, keep_best=1, tournament_size=3, r=2,
                                             alpha_up=soc_policy[1], algorithm_name='onGA', crossover_repeat=1,
                                             mutation_repeat=1)
 
@@ -375,6 +397,7 @@ if __name__ == '__main__':
 
     """
     WITHOUT OPTIMIZATION
+    
 
     online = False
     stage = 'online' if online else 'offline'
@@ -397,7 +420,6 @@ if __name__ == '__main__':
                 dispatcher.optimize_online()
             sim.forward_fleet()
             sim.save_history()
-            
     """
 
     """ 
@@ -406,21 +428,28 @@ if __name__ == '__main__':
     online = True
     stage = 'online' if online else 'offline'
 
-    for i in range(simulation_number):
+    for i in range(from_simulation, simulation_number):
         print(f'--- Simulation ({stage}) #{i} ---')
         main_folder = f'../../data/online/instance21/{stage}/simulation_{i}/'
         measurements_path = f'../../data/online/instance21/{stage}/simulation_{i}/measurements.xml'
         history_path = f'../../data/online/instance21/{stage}/simulation_{i}/history.xml'
+        exec_time_path = f'../../data/online/instance21/{stage}/simulation_{i}/exec_time.csv'
 
         sim = Simulator(net_path, fleet_path, measurements_path, routes_path, history_path, mat_path, 5., main_folder,
                         std_factor=std_factor)
         dispatcher = Dispatcher.Dispatcher(sim.network_path, sim.fleet_path, sim.measurements_path, sim.routes_path,
                                            onGA_hyper_parameters=onGA_hyper_parameters)
 
+        non_altered = 0
         while not sim.done():
-            sim.disturb_network()
-            if online:
-                dispatcher.update()
-                dispatcher.optimize_online()
+            if non_altered < keep:
+                non_altered += 1
+            else:
+                sim.disturb_network()
+                non_altered = 0
             sim.forward_fleet()
             sim.save_history()
+
+            if online:
+                dispatcher.update()
+                dispatcher.optimize_online(exec_time_filepath=exec_time_path)
