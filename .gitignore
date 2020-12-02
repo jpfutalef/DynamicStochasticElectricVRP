@@ -196,6 +196,7 @@ dmypy.json
 
 # data folder
 data/
+!data/online/instance21/init_files/
 
 # .idea folder
 .idea/

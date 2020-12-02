@@ -919,16 +919,19 @@ def routes_from_xml(path: str, fleet: Fleet) -> RouteDict:
 if __name__ == '__main__':
     from res.dispatcher import Dispatcher
 
-    f = from_xml('../../data/online/instance21/init_files/fleet.xml', assign_customers=False, with_routes=False,
-                 instance=False)
-    n = net.from_xml('../../data/online/instance21/init_files/network.xml', instance=False)
-    f.set_network(n)
+    f = from_xml('../../data/online/instance21/source/opt_1/betaGA_fleetsize_2/result_instance.xml',
+                 assign_customers=True, with_routes=True, instance=True, from_online=False)
+    #n = net.from_xml('../../data/online/instance21/init_files/network.xml', instance=False)
+    #f.set_network(n)
 
-    routes, depart_info = Dispatcher.read_routes('../../data/online/instance21/init_files/routes.xml', True)
+    #routes, depart_info = Dispatcher.read_routes('../../data/online/instance21/init_files/routes.xml', True)
 
-    routes = {i: ((r[0], r[1]), info[0], info[1], info[2]) for (i, r), info in
-              zip(routes.items(), depart_info.values())}
+    r = lambda ev: (ev.route[0], ev.route[1], tuple(ev.waiting_times0))
+    routes = {id_ev: r(ev) for id_ev, ev in f.vehicles.items()}
+    depart_info = {id_ev: (ev.x1_0, ev.x2_0, ev.x3_0) for id_ev, ev in f.vehicles.items()}
+    Dispatcher.write_routes('../../data/online/instance21/source/opt_1/betaGA_fleetsize_2/routes.xml', routes,
+                            depart_info=depart_info)
 
-    f.set_routes_of_vehicles(routes)
+    #f.set_routes_of_vehicles(routes)
 
-    f.feasible()
+    #f.feasible()

@@ -333,7 +333,8 @@ class Simulator:
                     measurement.node_from = S1
                     measurement.node_to = S[j1 + 1]
 
-                    Lj1 = L[j1] if arrival_soc + L[j1] <= ev.alpha_up else ev.alpha_up - arrival_soc
+                    #Lj1 = L[j1] if arrival_soc + L[j1] <= ev.alpha_up else ev.alpha_up - arrival_soc
+                    Lj1 = L[j1] if arrival_soc + L[j1] <= 100. else 100. - arrival_soc
 
                     service_time = self.network.spent_time(S1, arrival_soc, Lj1)
                     eos_time = arrival_time + waiting_time + service_time
@@ -379,10 +380,10 @@ class Simulator:
 
 if __name__ == '__main__':
     simulation_number = 50
-    from_simulation = 1
+    from_simulation = 0
     std_factor = (5., 5.)
     soc_policy = (20, 95)
-    keep = 4
+    keep = 2
 
     onGA_hyper_parameters = HyperParameters(num_individuals=80, max_generations=160, CXPB=0.9, MUTPB=0.6,
                                             weights=(0.1 / 2.218, 1. / 0.4364, 1. / 100, 1. / 500, 1.),
@@ -397,7 +398,7 @@ if __name__ == '__main__':
 
     """
     WITHOUT OPTIMIZATION
-    
+    """
 
     online = False
     stage = 'online' if online else 'offline'
@@ -413,18 +414,20 @@ if __name__ == '__main__':
         dispatcher = Dispatcher.Dispatcher(sim.network_path, sim.fleet_path, sim.measurements_path, sim.routes_path,
                                            onGA_hyper_parameters=onGA_hyper_parameters)
 
+        non_altered = 0
         while not sim.done():
-            sim.disturb_network()
-            if online:
-                dispatcher.update()
-                dispatcher.optimize_online()
+            if non_altered < keep:
+                non_altered += 1
+            else:
+                sim.disturb_network()
+                non_altered = 0
             sim.forward_fleet()
             sim.save_history()
-    """
 
     """ 
     WITH OPTIMIZATION
     """
+    
     online = True
     stage = 'online' if online else 'offline'
 
