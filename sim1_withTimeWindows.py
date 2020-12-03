@@ -12,10 +12,10 @@ std_factor = (12., 12.)
 soc_policy = (20, 95)
 keep = 3
 
-net_path = '../../data/online/instance21/init_files/network.xml'
-fleet_path = '../../data/online/instance21/init_files/fleet.xml'
-routes_path = '../../data/online/instance21/init_files/routes.xml'
-mat_path = '../../data/online/instance21/init_files/21_nodes.mat'
+net_path = 'data/online/instance21/init_files/network.xml'
+fleet_path = 'data/online/instance21/init_files/fleet.xml'
+routes_path = 'data/online/instance21/init_files/routes.xml'
+mat_path = 'data/online/instance21/init_files/21_nodes.mat'
 
 onGA_hyper_parameters = HyperParameters(num_individuals=80, max_generations=160, CXPB=0.9, MUTPB=0.6,
                                         weights=(0.1 / 2.218, 1. / 0.4364, 1. / 100, 1. / 500, 1.),
@@ -32,9 +32,9 @@ if __name__ == '__main__':
     for i in range(end_at):
         print(f'--- Simulation ({stage}) #{i} ---')
 
-        main_folder = f'../../data/online/instance21/{stage}_{simulation_name}/simulation_{i}/'
-        measurements_path = f'../../data/online/instance21/{stage}_{simulation_name}/simulation_{i}/measurements.xml'
-        history_path = f'../../data/online/instance21/{stage}_{simulation_name}/simulation_{i}/history.xml'
+        main_folder = f'data/online/instance21/{stage}_{simulation_name}/simulation_{i}/'
+        measurements_path = f'data/online/instance21/{stage}_{simulation_name}/simulation_{i}/measurements.xml'
+        history_path = f'data/online/instance21/{stage}_{simulation_name}/simulation_{i}/history.xml'
 
         sim = Simulator(net_path, fleet_path, measurements_path, routes_path, history_path, mat_path, 5., main_folder,
                         std_factor=std_factor)
@@ -58,10 +58,10 @@ if __name__ == '__main__':
 
     for i in range(start_from, end_at):
         print(f'--- Simulation ({stage}) #{i} ---')
-        main_folder = f'../../data/online/instance21/{stage}/simulation_{i}/'
-        measurements_path = f'../../data/online/instance21/{stage}/simulation_{i}/measurements.xml'
-        history_path = f'../../data/online/instance21/{stage}/simulation_{i}/history.xml'
-        exec_time_path = f'../../data/online/instance21/{stage}/simulation_{i}/exec_time.csv'
+        main_folder = f'data/online/instance21/{stage}/simulation_{i}/'
+        measurements_path = f'data/online/instance21/{stage}/simulation_{i}/measurements.xml'
+        history_path = f'data/online/instance21/{stage}/simulation_{i}/history.xml'
+        exec_time_path = f'data/online/instance21/{stage}/simulation_{i}/exec_time.csv'
 
         sim = Simulator(net_path, fleet_path, measurements_path, routes_path, history_path, mat_path, 5., main_folder,
                         std_factor=std_factor)
