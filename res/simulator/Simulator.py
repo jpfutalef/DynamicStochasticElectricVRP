@@ -333,7 +333,7 @@ class Simulator:
                     measurement.node_from = S1
                     measurement.node_to = S[j1 + 1]
 
-                    #Lj1 = L[j1] if arrival_soc + L[j1] <= ev.alpha_up else ev.alpha_up - arrival_soc
+                    # Lj1 = L[j1] if arrival_soc + L[j1] <= ev.alpha_up else ev.alpha_up - arrival_soc
                     Lj1 = L[j1] if arrival_soc + L[j1] <= 100. else 100. - arrival_soc
 
                     service_time = self.network.spent_time(S1, arrival_soc, Lj1)
@@ -378,81 +378,21 @@ class Simulator:
         return True
 
 
-if __name__ == '__main__':
-    simulation_number = 50
-    from_simulation = 0
-    std_factor = (5., 5.)
-    soc_policy = (20, 95)
-    keep = 2
+@dataclass
+class SimulationSettings:
+    simulation_folder_path: str
+    fleet_path: str
+    net_path: str
+    routes_path: str
+    mat_path: str
+    onGA_hyper_parameters: HyperParameters
+    number_of_simulations: int = 20
+    optimize: bool = False
+    std_factor: Tuple = (12., 12.)
+    soc_policy: Tuple = (20, 95)
+    keep: int = 3
+    simulation_name: str = ''
 
-    onGA_hyper_parameters = HyperParameters(num_individuals=80, max_generations=160, CXPB=0.9, MUTPB=0.6,
-                                            weights=(0.1 / 2.218, 1. / 0.4364, 1. / 100, 1. / 500, 1.),
-                                            K1=100000, K2=200000, keep_best=1, tournament_size=3, r=2,
-                                            alpha_up=soc_policy[1], algorithm_name='onGA', crossover_repeat=1,
-                                            mutation_repeat=1)
-
-    net_path = '../../data/online/instance21/init_files/network.xml'
-    fleet_path = '../../data/online/instance21/init_files/fleet.xml'
-    routes_path = '../../data/online/instance21/init_files/routes.xml'
-    mat_path = '../../data/online/instance21/init_files/21_nodes.mat'
-
-    """
-    WITHOUT OPTIMIZATION
-    """
-
-    online = False
-    stage = 'online' if online else 'offline'
-
-    for i in range(simulation_number):
-        print(f'--- Simulation ({stage}) #{i} ---')
-        main_folder = f'../../data/online/instance21/{stage}/simulation_{i}/'
-        measurements_path = f'../../data/online/instance21/{stage}/simulation_{i}/measurements.xml'
-        history_path = f'../../data/online/instance21/{stage}/simulation_{i}/history.xml'
-
-        sim = Simulator(net_path, fleet_path, measurements_path, routes_path, history_path, mat_path, 5., main_folder,
-                        std_factor=std_factor)
-        dispatcher = Dispatcher.Dispatcher(sim.network_path, sim.fleet_path, sim.measurements_path, sim.routes_path,
-                                           onGA_hyper_parameters=onGA_hyper_parameters)
-
-        non_altered = 0
-        while not sim.done():
-            if non_altered < keep:
-                non_altered += 1
-            else:
-                sim.disturb_network()
-                non_altered = 0
-            sim.forward_fleet()
-            sim.save_history()
-
-    """ 
-    WITH OPTIMIZATION
-    """
-    
-    online = True
-    stage = 'online' if online else 'offline'
-
-    for i in range(from_simulation, simulation_number):
-        print(f'--- Simulation ({stage}) #{i} ---')
-        main_folder = f'../../data/online/instance21/{stage}/simulation_{i}/'
-        measurements_path = f'../../data/online/instance21/{stage}/simulation_{i}/measurements.xml'
-        history_path = f'../../data/online/instance21/{stage}/simulation_{i}/history.xml'
-        exec_time_path = f'../../data/online/instance21/{stage}/simulation_{i}/exec_time.csv'
-
-        sim = Simulator(net_path, fleet_path, measurements_path, routes_path, history_path, mat_path, 5., main_folder,
-                        std_factor=std_factor)
-        dispatcher = Dispatcher.Dispatcher(sim.network_path, sim.fleet_path, sim.measurements_path, sim.routes_path,
-                                           onGA_hyper_parameters=onGA_hyper_parameters)
-
-        non_altered = 0
-        while not sim.done():
-            if non_altered < keep:
-                non_altered += 1
-            else:
-                sim.disturb_network()
-                non_altered = 0
-            sim.forward_fleet()
-            sim.save_history()
-
-            if online:
-                dispatcher.update()
-                dispatcher.optimize_online(exec_time_filepath=exec_time_path)
+    def __post_init__(self):
+        self.stage = 'online' if self.optimize else 'offline'
+        self.main_folder = f'{self.simulation_folder_path}/{self.stage}_{self.simulation_name}/'

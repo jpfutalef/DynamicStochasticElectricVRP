@@ -102,6 +102,15 @@ class Network:
     def isChargingStation(self, node: int):
         return self.nodes[node].isChargeStation()
 
+    def dropTimeWindows(self, filepath: str = None):
+        for node in self.nodes.values():
+            node.time_window_upp = np.infty
+            node.time_window_low = -np.infty
+
+        if filepath is not None:
+            self.write_xml(filepath)
+
+
     def xml_tree(self):
         _network = ET.Element('network')
         _nodes = ET.SubElement(_network, 'nodes')
