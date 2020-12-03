@@ -8,7 +8,7 @@ GLOBAL PARAMETERS
 simulation_name = 'withoutTimeWindows'
 start_from = 0
 end_at = 50
-std_factor = (12., 12.)
+std_factor = (10., 10.)
 soc_policy = (20, 95)
 keep = 3
 
