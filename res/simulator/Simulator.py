@@ -7,9 +7,9 @@ from res.optimizer.GATools import HyperParameters
 import numpy as np
 from scipy.io import loadmat
 
-import dispatcher.Dispatcher as Dispatcher
-import models.Fleet as Fleet
-import models.Network as Network
+import res.dispatcher.Dispatcher as Dispatcher
+import res.models.Fleet as Fleet
+import res.models.Network as Network
 
 
 def measure(data, i, j, day_points, std_factor=(1., 1.)):
