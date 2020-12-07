@@ -13,7 +13,7 @@ end_at = 50
 std_factor = (10., 10.)
 soc_policy = (20, 95)
 keep = 3
-log_online = True
+log_online = False
 
 net_path = 'data/online/instance21/init_files/network.xml'
 fleet_path = 'data/online/instance21/init_files/fleet.xml'
@@ -29,6 +29,7 @@ onGA_hyper_parameters = HyperParameters(num_individuals=80, max_generations=160,
 if __name__ == '__main__':
     """
     WITHOUT OPTIMIZATION
+    """
 
     stage = 'offline'
 
@@ -42,10 +43,10 @@ if __name__ == '__main__':
         sim = Simulator(net_path, fleet_path, measurements_path, routes_path, history_path, mat_path, 5., main_folder,
                         std_factor=std_factor)
 
-        # Drop time windows
-        sim.network.dropTimeWindows()
+        # Drop time windows and save
         sim.network.dropTimeWindows(filepath=sim.network_path)
 
+        # Start loop
         non_altered = 0
         while not sim.done():
             if non_altered < keep:
@@ -55,7 +56,6 @@ if __name__ == '__main__':
                 non_altered = 0
             sim.forward_fleet()
             sim.save_history()
-    """
 
     """ 
     WITH OPTIMIZATION
@@ -91,6 +91,7 @@ if __name__ == '__main__':
         dispatcher = Dispatcher.Dispatcher(sim.network_path, sim.fleet_path, sim.measurements_path, sim.routes_path,
                                            onGA_hyper_parameters=onGA_hyper_parameters)
 
+        # Start loop
         non_altered = 0
         while not sim.done():
             if non_altered < keep:
