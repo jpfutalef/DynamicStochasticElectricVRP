@@ -364,7 +364,6 @@ class Dispatcher:
 
         self.write_routes()
 
-
 if __name__ == '__main__':
     network_path = "../../data/online/instance21/init_files/network.xml"
     fleet_path = "../../data/online/instance21/init_files/fleet.xml"

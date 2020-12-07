@@ -6,6 +6,8 @@ from res.optimizer.GATools import HyperParameters
 
 import numpy as np
 from scipy.io import loadmat
+from datetime import datetime
+from os import makedirs
 
 import res.dispatcher.Dispatcher as Dispatcher
 import res.models.Fleet as Fleet
@@ -141,13 +143,14 @@ class FleetHistory:
 
 class Simulator:
     def __init__(self, network_path: str, fleet_path: str, measurements_path: str, routes_path: str, history_path: str,
-                 mat_path: str, sample_time: float, main_folder: str = None, std_factor: Tuple = (1., 1.)):
+                 mat_path: str, sample_time: float, main_folder: str = None, std_factor: Tuple = (1., 1.),
+                 create_routes_xml: bool=True, create_measurements_xml: bool = True, create_history_xml: bool=True):
         if main_folder:
             self.network_path = f'{main_folder}{network_path.split("/")[-1][:-4]}_temp.xml'
             self.fleet_path = f'{main_folder}{fleet_path.split("/")[-1][:-4]}_temp.xml'
         else:
-            self.network_path = f'{network_path[:-4]}_temp.xml'
-            self.fleet_path = f'{fleet_path[:-4]}_temp.xml'
+            self.network_path = net_path
+            self.fleet_path = fleet_path
 
         self.measurements_path = measurements_path
         self.history_path = history_path
@@ -378,21 +381,40 @@ class Simulator:
         return True
 
 
-@dataclass
-class SimulationSettings:
-    simulation_folder_path: str
-    fleet_path: str
-    net_path: str
-    routes_path: str
-    mat_path: str
-    onGA_hyper_parameters: HyperParameters
-    number_of_simulations: int = 20
-    optimize: bool = False
-    std_factor: Tuple = (12., 12.)
-    soc_policy: Tuple = (20, 95)
-    keep: int = 3
-    simulation_name: str = ''
+if __name__ == '__main__':
+    main_folder = '../../data/online/instance21/online_withoutTimeWindows/simulation_3/'
+    net_path = f'{main_folder}network_temp.xml'
+    fleet_path = f'{main_folder}fleet_temp.xml'
+    routes_path = f'{main_folder}routes.xml'
+    mat_path = f'../../data/online/instance21/init_files/21_nodes.mat'
+    measurements_path = f'{main_folder}/measurements.xml'
+    history_path = f'{main_folder}/history.xml'
+    exec_time_path = f'{main_folder}/exec_time.csv'
 
-    def __post_init__(self):
-        self.stage = 'online' if self.optimize else 'offline'
-        self.main_folder = f'{self.simulation_folder_path}/{self.stage}_{self.simulation_name}/'
+    std_factor = (10., 10.)
+    soc_policy = (20, 95)
+    onGA_hyper_parameters = HyperParameters(num_individuals=80, max_generations=160, CXPB=0.9, MUTPB=0.6,
+                                            weights=(0.1 / 2.218, 1. / 0.4364, 1. / 100, 1. / 500, 1.),
+                                            K1=100000, K2=200000, keep_best=1, tournament_size=3, r=2,
+                                            alpha_up=soc_policy[1], algorithm_name='onGA', crossover_repeat=1,
+                                            mutation_repeat=1)
+
+    dispatcher = Dispatcher.Dispatcher(net_path, fleet_path, measurements_path, routes_path,
+                                       onGA_hyper_parameters=onGA_hyper_parameters)
+
+    dispatcher.update()
+    cp_info = dispatcher.synchronization()
+    routes_from_critical_points = {}
+
+    for id_ev in cp_info.keys():
+        r = dispatcher.routes[id_ev]
+        j_critical = cp_info[id_ev][0]
+        x1_0 = cp_info[id_ev][1]
+        x2_0 = cp_info[id_ev][2]
+        x3_0 = cp_info[id_ev][3]
+        ev = dispatcher.fleet.vehicles[id_ev]
+        ev.current_max_tour_duration = ev.max_tour_duration + dispatcher.depart_info[id_ev][0] - x1_0
+
+        routes_from_critical_points[id_ev] = ((r[0][j_critical:], r[1][j_critical:]), x1_0, x2_0, x3_0)
+
+    dispatcher.fleet.set_vehicles_to_route([id_ev for id_ev in routes_from_critical_points.keys()])

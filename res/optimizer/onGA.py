@@ -226,7 +226,9 @@ def fitness(individual: IndividualType, indices: IndicesType, critical_points: S
 
     # Set routes
     reaching_states = {id_ev: (r.x1_0, r.x2_0, r.x3_0) for id_ev, r in critical_points.items()}
-    fleet.set_routes_of_vehicles(routes, reaching_states=reaching_states)
+    vehicles_pos = [cp.S0 for cp in critical_points.values()]
+    init_theta = np.array([1 if i in vehicles_pos else 0 for i in range(len(fleet.network))])
+    fleet.set_routes_of_vehicles(routes, reaching_states=reaching_states, init_theta=init_theta)
 
     # Cost
     costs = np.array(fleet.cost_function())

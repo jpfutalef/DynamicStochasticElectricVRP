@@ -193,27 +193,28 @@ class Fleet:
             self.vehicles[id_ev] = ev
 
     def iterate_cs_capacities(self, init_theta: ndarray = None):
-        sum_si = sum([len(ev.route[0]) for ev in self.vehicles.values()])
+        sum_si = sum([len(self.vehicles[id_ev].route[0]) for id_ev in self.vehicles_to_route])
         num_cs = len(self.network.charging_stations)
-        m = len(self.vehicles)
+        m = len(self.vehicles_to_route)
         num_events = 2 * sum_si - 2 * m + 1
         time_vectors = []
-        for id_ev, ev in self.vehicles.items():
-            time_vectors.append((self.vehicles[id_ev].state_leaving[0, :-1] - ev.waiting_times0[:-1],
-                                 self.vehicles[id_ev].state_reaching[0, 1:], self.vehicles[id_ev].route[0]))
+        for id_ev in self.vehicles_to_route:
+            ev = self.vehicles[id_ev]
+            time_vectors.append((ev.state_leaving[0, :-1] - ev.waiting_times0[:-1], ev.state_reaching[0, 1:],
+                                 ev.route[0]))
         if init_theta is None:
             init_theta = np.zeros(len(self.network))
-            init_theta[0] = len(self)
+            init_theta[0] = len(self.vehicles_to_route)
 
         self.theta_matrix = np.zeros((len(self.network), num_events))
         self.theta_matrix[:, 0] = init_theta
         theta_matrix(self.theta_matrix, time_vectors, num_events)
 
     def cost_function(self) -> Tuple:
-        cost_tt = sum([sum(ev.travel_times) for ev in self.vehicles.values()])
-        cost_ec = sum([sum(ev.energy_consumption) for ev in self.vehicles.values()])
-        cost_chg_time = sum([sum(ev.charging_times) for ev in self.vehicles.values()])
-        cost_wait_time = sum([sum(ev.waiting_times) for ev in self.vehicles.values()])
+        cost_tt = sum([sum(self.vehicles[id_ev].travel_times) for id_ev in self.vehicles_to_route])
+        cost_ec = sum([sum(self.vehicles[id_ev].energy_consumption) for id_ev in self.vehicles_to_route])
+        cost_chg_time = sum([sum(self.vehicles[id_ev].charging_times) for id_ev in self.vehicles_to_route])
+        cost_wait_time = sum([sum(self.vehicles[id_ev].waiting_times) for id_ev in self.vehicles_to_route])
 
         cost_chg_cost = 0.
         for id_ev in self.vehicles_to_route:
@@ -233,8 +234,8 @@ class Fleet:
 
         # 2. Variables from the optimization vector and vehicles
         network = self.network
-        m = len(self.vehicles)
-        sum_si = sum([len(ev.route[0]) for ev in self.vehicles.values()])
+        m = len(self.vehicles_to_route)
+        sum_si = sum([len(self.vehicles[id_ev].route[0]) for id_ev in self.vehicles_to_route])
         num_events = 2 * sum_si - 2 * m + 1
         num_cust = len(network.customers)
 
@@ -604,7 +605,7 @@ class Fleet:
             figs.append(fig)
 
         # Charging stations occupation
-        sum_si = sum([len(ev.route[0]) for ev in self.vehicles.values()])
+        sum_si = sum([len(self.vehicles[id_ev].route[0]) for id_ev in self.vehicles_to_route])
         num_cs = len(self.network.charging_stations)
         m = len(self.vehicles)
         num_events = 2 * sum_si - 2 * m + 1
