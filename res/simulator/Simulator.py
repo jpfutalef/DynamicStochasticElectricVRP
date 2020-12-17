@@ -336,8 +336,8 @@ class Simulator:
                     measurement.node_from = S1
                     measurement.node_to = S[j1 + 1]
 
-                    # Lj1 = L[j1] if arrival_soc + L[j1] <= ev.alpha_up else ev.alpha_up - arrival_soc
-                    Lj1 = L[j1] if arrival_soc + L[j1] <= 100. else 100. - arrival_soc
+                    Lj1 = L[j1] if arrival_soc + L[j1] <= ev.alpha_up else ev.alpha_up - arrival_soc
+                    #Lj1 = L[j1] if arrival_soc + L[j1] <= 100. else 100. - arrival_soc
 
                     service_time = self.network.spent_time(S1, arrival_soc, Lj1)
                     eos_time = arrival_time + waiting_time + service_time

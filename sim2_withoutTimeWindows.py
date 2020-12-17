@@ -10,9 +10,9 @@ GLOBAL PARAMETERS
 simulation_name = 'withoutTimeWindows'
 start_from = 0
 end_at = 50
-std_factor = (10., 10.)
+std_factor = (3., 3.)
 soc_policy = (20, 95)
-keep = 3
+keep = 1
 log_online = False
 
 net_path = 'data/online/instance21/init_files/network.xml'
@@ -33,7 +33,7 @@ if __name__ == '__main__':
 
     stage = 'offline'
 
-    for i in range(end_at):
+    for i in range(start_from, end_at):
         print(f'--- Simulation ({stage}) #{i} ---')
 
         main_folder = f'data/online/instance21/{stage}_{simulation_name}/simulation_{i}/'
@@ -59,19 +59,17 @@ if __name__ == '__main__':
 
     """ 
     WITH OPTIMIZATION
-    """
+
     stage = 'online'
 
-    for i in range(start_from, end_at):
+    for i in range(48, 50):
         print(f'--- Simulation ({stage}) #{i} ---')
         main_folder = f'data/online/instance21/{stage}_{simulation_name}/simulation_{i}/'
         measurements_path = f'{main_folder}/measurements.xml'
         history_path = f'{main_folder}/history.xml'
         exec_time_path = f'{main_folder}/exec_time.csv'
 
-        """
-        Logs folders
-        """
+        # Log folders
         log_measurements_folder = main_folder + 'logs/measurements/'
         log_routes_folder = main_folder + 'logs/routes/'
         log_histories_folder = main_folder + 'logs/histories/'
@@ -119,3 +117,5 @@ if __name__ == '__main__':
             if log_online:
                 log_routes_path = log_routes_folder + log_time + '.xml'
                 Dispatcher.write_routes(log_routes_path, dispatcher.routes, dispatcher.depart_info)
+    """
+
