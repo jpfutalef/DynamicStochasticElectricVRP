@@ -1,15 +1,13 @@
 import os
 
-from res.models.Fleet import from_xml
+from res.models import Fleet, Network
 from optimizer.GATools import HyperParameters
-from optimizer.alphaGA import alphaGA
-from optimizer.betaGA import betaGA
-from res.dispatcher import Dispatcher
+from optimizer import alphaGA, betaGA
 
 if __name__ == '__main__':
     # %% 1. Specify instances location
-    folder = '../data/online/instance21/'
-    instances = ['santiago21.xml']
+    folder = 'data/online/instance6/source/'
+    instances = ['santiago6.xml']
 
     # %% 2. CS capacities and SOC policy
     cs_capacity = 3
@@ -17,12 +15,13 @@ if __name__ == '__main__':
 
     # %% 3. Solve instances
     for instance in instances:
-        fleet = from_xml(folder + instance, assign_customers=False, with_routes=False, instance=True, from_online=False)
+        fleet = Fleet.from_xml(folder + instance, assign_customers=False, with_routes=False, instance=True,
+                               from_online=False)
 
         fleet.modify_cs_capacities(cs_capacity)
         fleet.new_soc_policy(soc_policy[0], soc_policy[1])
 
-        # %% 4. GA hyper-parameters
+        # %% 4. alphaGA hyper-parameters
         num_individuals = int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 50
         K1 = 100. * len(fleet.network) + 1000 * len(fleet)
         hp_alpha = HyperParameters(num_individuals=num_individuals,
@@ -38,6 +37,7 @@ if __name__ == '__main__':
                                    alpha_up=soc_policy[1],
                                    algorithm_name='alphaGA')
 
+        # %% 5. betaGA hyper-parameters
         num_individuals = int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 50
         K1 = 100. * len(fleet.network) + 1000 * len(fleet)
         hp_beta = HyperParameters(num_individuals=num_individuals,
@@ -55,15 +55,15 @@ if __name__ == '__main__':
                                   crossover_repeat=2,
                                   mutation_repeat=2)
 
-        # %% 5. Specify data folder
-        # Main instance folder
+        # %% 6. Specify directory to store optimization data
+        # A directory to store several optimization results for the same instance
         instance_folder = folder + instance[:-4] + '/'
         try:
             os.mkdir(instance_folder)
         except FileExistsError:
             pass
 
-        # Main optimization folder
+        # The optimization directory for this optimization
         opt_folders = [os.path.join(instance_folder, d) for d in os.listdir(instance_folder) if
                        os.path.isdir(os.path.join(instance_folder, d))]
         if opt_folders:
@@ -80,21 +80,20 @@ if __name__ == '__main__':
         best_alpha = None
         best_beta = None
         mi = None
-        # mi = int(sum([fleet.network.demand(i) for i in fleet.network.customers])/fleet.vehicles[0].max_payload) + 1
-        for k in range(8):
-            routes_alpha, opt_data_alpha, toolbox_alpha = alphaGA(fleet, hp_alpha, opt_folder,
-                                                                  best_ind=best_alpha,
-                                                                  savefig=True,
-                                                                  mi=mi,
-                                                                  plot_best_generation=False)
+        for k in range(3):
+            routes_alpha, opt_data_alpha, toolbox_alpha = alphaGA.alphaGA(fleet, hp_alpha, opt_folder,
+                                                                          best_ind=best_alpha,
+                                                                          savefig=True,
+                                                                          mi=mi,
+                                                                          plot_best_generation=False)
 
-            routes_beta, opt_data_beta, toolbox_beta = betaGA(fleet, hp_beta, opt_folder,
-                                                              best_ind=best_beta,
-                                                              savefig=True)
+            routes_beta, opt_data_beta, toolbox_beta = betaGA.betaGA(fleet, hp_beta, opt_folder,
+                                                                     best_ind=best_beta,
+                                                                     savefig=True)
             mi = opt_data_alpha.additional_info['mi']
 
             if not opt_data_alpha.acceptable and not opt_data_beta.acceptable:
-                # Not feasible
+                # Both alphaGA and betaGA are not feasible
                 print('INCREASING FLEET SIZE BY 1...')
                 mi += 1
                 hp_alpha.num_individuals += 15

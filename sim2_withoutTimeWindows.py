@@ -59,6 +59,7 @@ if __name__ == '__main__':
 
     """ 
     WITH OPTIMIZATION
+    """
 
     stage = 'online'
 
@@ -117,5 +118,3 @@ if __name__ == '__main__':
             if log_online:
                 log_routes_path = log_routes_folder + log_time + '.xml'
                 Dispatcher.write_routes(log_routes_path, dispatcher.routes, dispatcher.depart_info)
-    """
-

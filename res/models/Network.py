@@ -238,6 +238,6 @@ def from_element_tree(tree: ET.ElementTree, instance=True):
     return Network(nodes, edges)
 
 
-def from_xml(path, instance=True):
+def from_xml(path, instance=False):
     tree = ET.parse(path)
     return from_element_tree(tree, instance)

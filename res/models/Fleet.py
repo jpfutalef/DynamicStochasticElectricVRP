@@ -837,7 +837,7 @@ class Fleet:
         return
 
 
-def from_xml(path, assign_customers=False, with_routes=True, instance=True, from_online=False):
+def from_xml(path, assign_customers=False, with_routes=False, instance=False, from_online=False):
     # Open XML file
     tree = ET.parse(path)
     if instance:
