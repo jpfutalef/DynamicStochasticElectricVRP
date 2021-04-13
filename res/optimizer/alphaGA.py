@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from deap import tools, base, creator
 
-from optimizer.GATools import HyperParameters, GenerationsData, Fleet, RouteDict, IndividualType
+from res.optimizer.GATools import HyperParameters, GenerationsData, Fleet, RouteDict, IndividualType
 
 '''
 MAIN FUNCTIONS
@@ -84,11 +84,7 @@ def fitness(individual: IndividualType, fleet: Fleet, hp: HyperParameters):
     # Calculate penalization
     feasible, distance, accept = fleet.feasible()
 
-    penalization = 0
-    if not accept:
-        penalization = distance + hp.K1 + hp.K2
-    elif accept and not feasible:
-        penalization = distance + hp.K1
+    penalization = distance + hp.K1 if fleet.deterministic else distance
 
     # Calculate fitness
     fit = np.dot(costs, np.asarray(hp.weights)) + penalization
@@ -551,8 +547,8 @@ def alphaGA(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind=Non
     mutate_num = hp.num_individuals - init_size - random_inds_num
 
     # MODIFY HYPER-PARAMETERS
-    hp.num_individuals = int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 50
-    hp.max_generations = hp.num_individuals * 3
+    hp.num_individuals = 80 #int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 60
+    hp.max_generations = 150 #hp.num_individuals * 4
 
     # TOOLBOX
     toolbox = base.Toolbox()

@@ -8,8 +8,7 @@ import os
 from res.models.Edge import *
 
 NodeDict = Dict[int, Union[CustomerNode, ChargeStationNode, DepotNode]]
-EdgeDict = Dict[int, Dict[int, Union[Edge, DynamicEdge]]]
-DynamicEdgeDict = Dict[int, Dict[int, DynamicEdge]]
+EdgeDict = Dict[int, Dict[int, Union[Edge, DynamicEdge, GaussianEdge]]]
 NodeType = Union[DepotNode, CustomerNode, ChargeStationNode]
 
 
@@ -67,18 +66,18 @@ class Network:
         for node in node_collection.values():
             self.add_node(node)
 
-    def t(self, node_from: int, node_to: int, time_of_day: float) -> Union[float, int]:
+    def t(self, node_from: int, node_to: int, time_of_day: float) -> Union[float, int, Tuple[float, float]]:
         return self.edges[node_from][node_to].get_travel_time(time_of_day)
 
     def e(self, node_from: int, node_to: int, payload: float, vehicle_weight: float,
-          time_of_day: float, tAB: float = None) -> Union[float, int]:
+          time_of_day: float, tAB: float = None) -> Union[float, int, Tuple[float, float]]:
         return self.edges[node_from][node_to].get_energy_consumption(payload, vehicle_weight, time_of_day, tAB)
 
-    def spent_time(self, node: int, p, q, eta=None):
-        return self.nodes[node].spentTime(p, q, eta)
-
-    def demand(self, node: int):
-        return self.nodes[node].demand
+    def arc_costs(self, node_from: int, node_to: int, payload: float, vehicle_weight: float,
+                  time_of_day: float):
+        tt = self.edges[node_from][node_to].get_travel_time(time_of_day)
+        ec = self.edges[node_from][node_to].get_energy_consumption(payload, vehicle_weight, time_of_day, tt)
+        return tt, ec
 
     def waiting_time(self, i, j, done_time, payload_after, vehicle_weight):
         if self.nodes[j].isDepot() or self.nodes[j].isChargeStation():
@@ -86,6 +85,12 @@ class Network:
             ec = self.e(i, j, payload_after, vehicle_weight, done_time, tt)
             return tt, ec, 0.0, 0.0
         return self.edges[i][j].waiting_time(done_time, self.nodes[j].time_window_low, payload_after, vehicle_weight)
+
+    def spent_time(self, node: int, p, q, eta=None):
+        return self.nodes[node].spentTime(p, q, eta)
+
+    def demand(self, node: int):
+        return self.nodes[node].demand
 
     def time_window_low(self, node: int):
         return self.nodes[node].time_window_low
@@ -223,18 +228,14 @@ def from_element_tree(tree: ET.ElementTree, instance=True):
         d_from = edges[node_from_id] = {}
         for _node_to in _node_from:
             node_to_id = int(_node_to.get('id'))
-            if _node_to.get('travel_time') is not None:
-                tt = float(_node_to.get('travel_time'))
-                ec = float(_node_to.get('energy_consumption'))
-                distance = float(_node_to.get('distance'))
-                d_from[node_to_id] = Edge(node_from_id, node_to_id, tt, ec, distance)
-            else:
-                _tt, _ec = _node_to.find('travel_time'), _node_to.find('energy_consumption')
-                tt = np.array([float(bp.get('value')) for bp in _tt])
-                ec = np.array([float(bp.get('value')) for bp in _ec])
-                s = int(float(_tt[1].get('time_of_day'))) - int(float(_tt[0].get('time_of_day')))
-                distance = float(_node_to.get('distance')) if _node_to.get('distance') else 0.
-                d_from[node_to_id] = DynamicEdge(node_from_id, node_to_id, s, tt, ec, distance)
+            _tt, _ec = _node_to.find('travel_time'), _node_to.find('energy_consumption')
+            tt = np.array([float(bp.get('value')) for bp in _tt])
+            tt_dev = np.array([float(bp.get('deviation')) for bp in _tt])
+            ec = np.array([float(bp.get('value')) for bp in _ec])
+            ec_dev = np.array([float(bp.get('deviation')) for bp in _ec])
+            s = int(float(_tt[1].get('time_of_day'))) - int(float(_tt[0].get('time_of_day')))
+            distance = float(_node_to.get('distance')) if _node_to.get('distance') else 0.
+            d_from[node_to_id] = GaussianEdge(node_from_id, node_to_id, s, tt, ec, distance, tt_dev, ec_dev)
     return Network(nodes, edges)
 
 

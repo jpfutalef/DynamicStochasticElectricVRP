@@ -4,7 +4,7 @@ import numpy as np
 from typing import Tuple, Dict
 import time, os
 
-from optimizer.GATools import HyperParameters, GenerationsData, Fleet, RouteDict, IndividualType, IndicesType, \
+from res.optimizer.GATools import HyperParameters, GenerationsData, Fleet, RouteDict, IndividualType, IndicesType, \
     StartingPointsType, InitialCondition
 
 

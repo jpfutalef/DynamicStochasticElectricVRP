@@ -5,6 +5,8 @@ import networkx as nx
 import pandas as pd
 import xml.dom.minidom
 from copy import deepcopy
+from scipy.stats import norm
+import math
 
 # Visualization tools
 from bokeh.models import Whisker, Span, Range1d
@@ -70,26 +72,45 @@ def theta_matrix(matrix, time_vectors, events_count) -> None:
 
 
 '''
-MAIN FLEET DEFINITION
+USEFUL FUNCTIONS
 '''
 
 
-def distance(results, multi: np.ndarray, b: np.ndarray):
-    return sum([dist_fun(multi[i], b[i]) for i, result in enumerate(results) if not result])
+def normal_cdf(x, mu=0., sigma=1.0):
+    if sigma:
+        q = math.erf((x - mu) / (math.sqrt(2.0) * sigma))
+        return (1.0 + q) / 2.0
+    elif x - mu:
+        return 0.
+    else:
+        return 1.
 
 
-def dist_fun(x: Union[ndarray, float], y: Union[ndarray, float]):
-    # return np.abs(x - y)
-    # return np.sqrt(np.power(x - y, 2))
-    # return np.abs(np.power(x - y, 2))
-    return (x - y) ** 2
+def penalization_deterministic(x: float, y: float, **kwargs):
+    return penalization_quadratic(x, y, **kwargs)
 
 
-def dist_fun_close(x: Union[ndarray, float], y: Union[ndarray, float]):
-    # return 1 / np.abs(x - y)
-    # return 1 / np.sqrt(np.power(x - y, 2))
-    # return 1 / np.abs(np.power(x - y, 2))
-    return 1 / (x - y) ** 2
+def penalization_stochastic(cdf: float, const_prob: float, **kwargs):
+    if cdf > const_prob:
+        return 0.  # Constraint is satisfied
+    return penalization_abs(const_prob, cdf, **kwargs)  # TODO modify to use linear instead
+
+
+def penalization_quadratic(x: float, y: float, w=1.0, c=0):
+    return w * (x - y) ** 2 + c
+
+
+def penalization_abs(x: float, y: float, w=1.0, c=0):
+    return w * abs(x - y) + c
+
+
+def penalization_linear(x: float, y: float, w=1.0, c=0):
+    return w * (x - y) + c
+
+
+'''
+MAIN FLEET DEFINITION
+'''
 
 
 class Fleet:
@@ -101,8 +122,9 @@ class Fleet:
     optimization_vector_indices: Union[Tuple, None]
     starting_points: Dict[int, InitialCondition]
     route: bool
+    deterministic: bool
 
-    def __init__(self, vehicles=None, network=None, vehicles_to_route=None, route=True):
+    def __init__(self, vehicles=None, network=None, vehicles_to_route=None, route=True, deterministic=False):
         self.set_vehicles(vehicles)
         self.set_network(network)
         self.set_vehicles_to_route(vehicles_to_route)
@@ -114,6 +136,8 @@ class Fleet:
 
         self.starting_points = {}
         self.route = route
+
+        self.deterministic = deterministic
 
     def __len__(self):
         return len(self.vehicles)
@@ -177,12 +201,9 @@ class Fleet:
         self.iterate_cs_capacities(None)
 
     def set_routes_of_vehicles(self, routes: RouteDict, iterate=True, iterate_cs=True,
-                               init_theta: ndarray = None, reaching_states: Dict[int, np.ndarray] = None) -> None:
+                               init_theta: ndarray = None) -> None:
         for id_ev, (route, dep_time, dep_soc, dep_pay) in routes.items():
-            if reaching_states:
-                self.vehicles[id_ev].set_route(route, dep_time, dep_soc, dep_pay, reaching_states[id_ev])
-            else:
-                self.vehicles[id_ev].set_route(route, dep_time, dep_soc, dep_pay)
+            self.vehicles[id_ev].set_route(route, dep_time, dep_soc, dep_pay)
             if iterate:
                 self.vehicles[id_ev].step(self.network)
         if iterate_cs:
@@ -226,7 +247,91 @@ class Fleet:
 
         return cost_tt, cost_ec, cost_chg_time, cost_chg_cost, cost_wait_time
 
-    def feasible(self, online=False) -> Tuple[bool, Union[int, float], bool]:
+    def feasible(self) -> Tuple[bool, Union[int, float], bool]:
+        if self.deterministic:
+            return self.feasible_deterministic()
+        return self.feasible_stochastic()
+
+    def feasible_deterministic(self) -> Tuple[bool, Union[int, float], bool]:
+        # 1. Variables to return
+        is_feasible = True
+        accept = True
+        penalization = 0
+
+        # 2. Variables from the optimization vector and vehicles
+        network = self.network
+        m = len(self.vehicles_to_route)
+        sum_si = sum([len(self.vehicles[id_ev].route[0]) for id_ev in self.vehicles_to_route])
+        num_events = 2 * sum_si - 2 * m + 1
+        num_cust = len(network.customers)
+
+        for id_ev in self.vehicles_to_route:
+            ev = self.vehicles[id_ev]
+            # MAX TOUR TIME
+            if ev.state_reaching[0, -1] - ev.state_reaching[0, 0] > ev.current_max_tour_duration:
+                d = penalization_deterministic(ev.max_tour_duration, ev.state_reaching[0, -1] - ev.state_leaving[0, 0])
+                penalization += d
+                accept = False
+
+                # MAX PAYLOAD
+            if ev.state_leaving[2, 0] > ev.max_payload:
+                d = penalization_deterministic(ev.state_leaving[2, 0], ev.max_payload)
+                penalization += d
+                accept = False
+
+            for k, (Sk, Lk) in enumerate(zip(ev.route[0], ev.route[1])):
+                if network.isCustomer(Sk):
+                    node = network.nodes[Sk]
+                    # TIME WINDOW LOW BOUND
+                    if node.time_window_low > ev.state_reaching[0, k]:
+                        d = penalization_deterministic(ev.state_reaching[0, k], node.time_window_low)
+                        penalization += d
+                        accept = False
+
+                    # TIME WINDOW UPPER BOUND
+                    if node.time_window_upp < ev.state_leaving[0, k] - ev.waiting_times0[k]:
+                        d = penalization_deterministic(node.time_window_upp,
+                                                       ev.state_leaving[0, k] - ev.waiting_times0[k])
+                        penalization += d
+                        accept = False
+
+                # SOC BOUND LOWER - REACHING
+                if ev.state_reaching[1, k] < ev.alpha_down:
+                    d = penalization_deterministic(ev.state_reaching[1, k], ev.alpha_down)
+                    penalization += d
+                    accept = False
+
+                # SOC BOUND UPPER - REACHING
+                if ev.state_reaching[1, k] > ev.alpha_up:
+                    d = penalization_deterministic(ev.state_reaching[1, k], ev.alpha_up)
+                    penalization += d
+                    accept = False
+
+                # SOC BOUND LOWER - LEAVING
+                if ev.state_leaving[1, k] < ev.alpha_down:
+                    d = penalization_deterministic(ev.state_leaving[1, k], ev.alpha_down)
+                    penalization += d
+                    accept = False
+
+                # SOC BOUND UPPER - LEAVING
+                if ev.state_leaving[1, k] > ev.alpha_up:
+                    d = penalization_deterministic(ev.state_leaving[1, k], ev.alpha_up)
+                    penalization += d
+                    accept = False
+
+        for i, cs in enumerate(network.charging_stations):
+            for k in range(num_events):
+                if self.theta_matrix[1 + num_cust + i, k] > network.nodes[cs].capacity:
+                    d = penalization_deterministic(self.theta_matrix[1 + num_cust + i, k], network.nodes[cs].capacity)
+                    penalization += d
+                    accept = False
+
+        if penalization > 0:
+            is_feasible = False
+
+        return is_feasible, penalization, accept
+
+    def feasible_stochastic(self) -> Tuple[bool, Union[int, float], bool]:
         # 1. Variables to return
         is_feasible = True
         accept = True
@@ -241,89 +346,82 @@ class Fleet:
 
         for id_ev in self.vehicles_to_route:
             ev = self.vehicles[id_ev]
-            # MAX TOUR TIME
-            if ev.state_reaching[0, -1] - ev.state_reaching[0, 0] > ev.current_max_tour_duration:
-                d = dist_fun(ev.max_tour_duration, ev.state_reaching[0, -1] - ev.state_leaving[0, 0])
-                dist += d
-                accept = False  # if d > 25 else accept
+            """
+            MAX TOUR TIME
+            """
+            PRB = 0.9
+            MU = ev.state_reaching[0, -1]
+            SIG = np.sqrt(ev.state_reaching_covariance[0, -3])
+            VAL = ev.max_tour_duration + ev.x1_0
+            CDF = normal_cdf(VAL, MU, SIG)
+            dist += penalization_stochastic(CDF, PRB, w=100.)
 
-            # MAX PAYLOAD
-            if ev.state_leaving[2, 0] > ev.max_payload and not online:
-                d = dist_fun(ev.state_leaving[2, 0], ev.max_payload)
-                dist += d
-                accept = False
+            """
+            MAX PAYLOAD
+            """
+            if ev.state_leaving[2, 0] > ev.max_payload:
+                dist = penalization_deterministic(ev.state_leaving[2, 0], ev.max_payload)
 
             for k, (Sk, Lk) in enumerate(zip(ev.route[0], ev.route[1])):
                 if network.isCustomer(Sk):
                     node = network.nodes[Sk]
-                    # TIME WINDOW LOW BOUND
-                    if node.time_window_low > ev.state_reaching[0, k]:
-                        d = dist_fun(ev.state_reaching[0, k], node.time_window_low)
-                        dist += 20 * d
-                        accept = False  # if d > 20 else accept
+                    """
+                    TIME WINDOW - LOWER BOUND
+                    """
+                    PRB = 0.9
+                    MU = ev.state_reaching[0, k]
+                    SIG = ev.state_reaching_covariance[0, 3 * k]  # TODO Check
+                    VAL = node.time_window_low
+                    CDF = 1 - normal_cdf(VAL, MU, SIG)
+                    dist += penalization_stochastic(CDF, PRB, w=100.)
 
-                    # TIME WINDOW UPPER BOUND
-                    if node.time_window_upp < ev.state_leaving[0, k] - ev.waiting_times0[k]:
-                        d = dist_fun(node.time_window_upp, ev.state_leaving[0, k] - ev.waiting_times0[k])
-                        dist += 20 * d + 10000
-                        accept = False  # if d > 20 else accept
+                    """
+                    TIME WINDOW - UPPER BOUND
+                    """
+                    PRB = 0.9
+                    MU = ev.state_reaching[0, k]
+                    SIG = np.sqrt(ev.state_reaching_covariance[0, 3 * k])  # TODO Check
+                    VAL = node.time_window_upp - ev.service_time[k]
+                    CDF = normal_cdf(VAL, MU, SIG)
+                    dist += penalization_stochastic(CDF, PRB, w=100.)
 
-                    if node.time_window_upp - 5. < ev.state_leaving[0, k] - ev.waiting_times0[k]:
-                        d = dist_fun_close(node.time_window_upp, ev.state_leaving[0, k] - ev.waiting_times0[k])
-                        dist += d
+                """
+                SOC BOUND - REACHING
+                """
+                PRB = 0.9
+                MU = ev.state_reaching[1, k]
+                SIG = np.sqrt(ev.state_reaching_covariance[1, 3 * k + 1])
+                VAL1 = ev.alpha_up
+                VAL2 = ev.alpha_down
+                CDF1 = normal_cdf(VAL1, MU, SIG)
+                CDF2 = normal_cdf(VAL2, MU, SIG)
+                CDF = CDF1 - CDF2
+                dist += penalization_stochastic(CDF, PRB, w=100.)
 
-                # SOC BOUND LOWER - REACHING
-                if ev.state_reaching[1, k] < ev.alpha_down:
-                    d = dist_fun(ev.state_reaching[1, k], ev.alpha_down)
-                    dist += 20 * d
-                    accept = False  # if d > 36 else accept
-
-                if ev.state_reaching[1, k] < ev.alpha_down + 5.:
-                    d = dist_fun_close(ev.state_reaching[1, k], ev.alpha_down)
-                    dist += d
-
-                # SOC BOUND UPPER - REACHING
-                if ev.state_reaching[1, k] > ev.alpha_up:
-                    d = dist_fun(ev.state_reaching[1, k], ev.alpha_up)
-                    dist += d
-                    accept = False  # if d > 36 else accept
-
-                # SOC BOUND LOWER - LEAVING
-                if ev.state_leaving[1, k] < ev.alpha_down:
-                    d = dist_fun(ev.state_leaving[1, k], ev.alpha_down)
-                    dist += 20 * d
-                    accept = False  # if d > 36 else accept
-
-                # SOC BOUND UPPER - LEAVING
-                if ev.state_leaving[1, k] > ev.alpha_up:
-                    d = dist_fun(ev.state_leaving[1, k], ev.alpha_up)
-                    dist += d
-                    accept = False  # if d > 36 else accept
-
-                if ev.state_reaching[1, k] < 0:
-                    dist += dist_fun(ev.state_reaching[1, k], ev.alpha_down) + 1000
-                    accept = False
-
-                if ev.state_leaving[1, k] < 0:
-                    dist += dist_fun(ev.state_leaving[1, k], ev.alpha_down) + 1000
-                    accept = False
-
-                if ev.state_reaching[1, k] > 100:
-                    dist += dist_fun(ev.state_reaching[1, k], ev.alpha_up) + 1000
-                    accept = False
-
-                if ev.state_leaving[1, k] > 100:
-                    dist += dist_fun(ev.state_leaving[1, k], ev.alpha_up) + 1000
-                    accept = False
-
+                """
+                SOC BOUND LOWER - LEAVING
+                """
+                PRB = 0.9
+                MU = ev.state_leaving[1, k]
+                SIG = SIG
+                VAL1 = ev.alpha_up - Lk
+                VAL2 = ev.alpha_down - Lk
+                CDF1 = normal_cdf(VAL1, MU, SIG)
+                CDF2 = normal_cdf(VAL2, MU, SIG)
+                CDF = CDF1 - CDF2
+                dist += penalization_stochastic(CDF, PRB, w=100.)
+        """
+        CS CAPACITIES
+        """
         for i, cs in enumerate(network.charging_stations):
             for k in range(num_events):
                 if self.theta_matrix[1 + num_cust + i, k] > network.nodes[cs].capacity:
-                    dist += dist_fun(self.theta_matrix[1 + num_cust + i, k], network.nodes[cs].capacity)
-                    accept = False
+                    dist += penalization_deterministic(self.theta_matrix[1 + num_cust + i, k],
+                                                       network.nodes[cs].capacity)
 
-        if dist > 0:
+        if dist:
             is_feasible = False
+            accept = False
 
         return is_feasible, dist, accept
 
@@ -922,10 +1020,10 @@ if __name__ == '__main__':
 
     f = from_xml('../../data/online/instance21/source/opt_1/betaGA_fleetsize_2/result_instance.xml',
                  assign_customers=True, with_routes=True, instance=True, from_online=False)
-    #n = net.from_xml('../../data/online/instance21/init_files/network.xml', instance=False)
-    #f.set_network(n)
+    # n = net.from_xml('../../data/online/instance21/init_files/network.xml', instance=False)
+    # f.set_network(n)
 
-    #routes, depart_info = Dispatcher.read_routes('../../data/online/instance21/init_files/routes.xml', True)
+    # routes, depart_info = Dispatcher.read_routes('../../data/online/instance21/init_files/routes.xml', True)
 
     r = lambda ev: (ev.route[0], ev.route[1], tuple(ev.waiting_times0))
     routes = {id_ev: r(ev) for id_ev, ev in f.vehicles.items()}
@@ -933,6 +1031,6 @@ if __name__ == '__main__':
     Dispatcher.write_routes('../../data/online/instance21/source/opt_1/betaGA_fleetsize_2/routes.xml', routes,
                             depart_info=depart_info)
 
-    #f.set_routes_of_vehicles(routes)
+    # f.set_routes_of_vehicles(routes)
 
-    #f.feasible()
+    # f.feasible()

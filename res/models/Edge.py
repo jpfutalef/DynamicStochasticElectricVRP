@@ -153,3 +153,80 @@ class DynamicEdge:
             ET.SubElement(_tt, 'breakpoint', attrib=attrib_tt)
             ET.SubElement(_ec, 'breakpoint', attrib=attrib_ec)
         return element
+
+
+@dataclass
+class GaussianEdge:
+    node_from: int
+    node_to: int
+    sample_time: Union[float, int]
+    travel_time: np.ndarray
+    energy_consumption: np.ndarray
+    distance: float
+    travel_time_deviation: np.ndarray = None
+    energy_consumption_deviation: np.ndarray = None
+
+    def __post_init__(self):
+        if self.travel_time_deviation is None:
+            self.travel_time_deviation = np.zeros(self.travel_time.shape)
+        if self.energy_consumption_deviation is None:
+            self.energy_consumption_deviation = np.zeros(self.energy_consumption.shape)
+
+    def get_travel_time(self, time_of_day: float, breakpoints_info: Tuple[int, int] = None) -> Tuple[float, float]:
+        while time_of_day >= 1440:
+            time_of_day -= 1440
+
+        if breakpoints_info:
+            i, j = breakpoints_info
+        else:
+            i = int(time_of_day / self.sample_time)
+            j = i + 1 if i + 1 < len(self.travel_time) else 0
+
+        m = (self.travel_time[j] - self.travel_time[i]) / self.sample_time
+        m_std = (self.travel_time_deviation[j] - self.travel_time_deviation[i]) / self.sample_time
+
+        n = self.travel_time[i] - m * i * self.sample_time
+        n_std = self.travel_time_deviation[i] - m_std * i * self.sample_time
+
+        tt = m * time_of_day + n
+        tt_std = m_std * time_of_day + n_std
+        return tt, tt_std
+
+    def get_energy_consumption(self, payload: float, vehicle_weight: float, time_of_day: float, tAB: float = None,
+                               breakpoints_info: Tuple[int, int] = None) -> Tuple[float, float]:
+        while time_of_day >= 1440:
+            time_of_day -= 1440
+
+        if breakpoints_info:
+            i, j = breakpoints_info
+        else:
+            i = int(time_of_day / self.sample_time)
+            j = i + 1 if i + 1 < len(self.energy_consumption) else 0
+
+        m = (self.energy_consumption[j] - self.energy_consumption[i]) / self.sample_time
+        m_std = (self.energy_consumption_deviation[j] - self.energy_consumption_deviation[i]) / self.sample_time
+
+        n = self.energy_consumption[i] - m * i * self.sample_time
+        n_std = self.energy_consumption_deviation[i] - m_std * i * self.sample_time
+
+        ec_ev = m * time_of_day + n
+        ec_ev_std = m_std * time_of_day + n_std
+
+        ec = (1+payload/vehicle_weight)*ec_ev
+        ec_std = ec_ev_std # (1+payload/vehicle_weight)*ec_ev_std
+
+        return ec, ec_std
+
+    def xml_element(self):
+        attribs = {'id': str(self.node_to), 'distance': str(self.distance)}
+        element = ET.Element('node_to', attrib=attribs)
+
+        # Travel time and energy consumption elements
+        _tt, _ec = ET.SubElement(element, 'travel_time'), ET.SubElement(element, 'energy_consumption')
+        for k, (tt, tt_std, ec, ec_std) in enumerate(zip(self.travel_time, self.travel_time_deviation,
+                                                         self.energy_consumption, self.energy_consumption_deviation)):
+            attrib_tt = {'time_of_day': str(k * self.sample_time), 'value': str(tt), 'deviation': str(tt_std)}
+            attrib_ec = {'time_of_day': str(k * self.sample_time), 'value': str(ec), 'deviation': str(ec_std)}
+            ET.SubElement(_tt, 'breakpoint', attrib=attrib_tt)
+            ET.SubElement(_ec, 'breakpoint', attrib=attrib_ec)
+        return element
