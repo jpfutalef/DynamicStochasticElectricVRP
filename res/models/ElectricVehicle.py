@@ -151,7 +151,7 @@ class ElectricVehicle:
         # Update what happens at the end
         spent_time = network.spent_time(Sk1, self.state_reaching[1, k], Lk1)
         f0k = np.array([spent_time, Lk1, -network.demand(Sk1)])
-        self.service_time[k+1] = spent_time # TODO check if k or k+1
+        self.service_time[k+1] = spent_time
         self.state_leaving[:, k+1] = self.state_reaching[:, k+1] + f0k
 
     def xml_element(self, assign_customers=False, with_routes=False, this_id=None, online=False):

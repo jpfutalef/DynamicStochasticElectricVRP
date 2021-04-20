@@ -72,7 +72,6 @@ def fitness(individual: IndividualType, fleet: Fleet, hp: HyperParameters):
     """
 
     # Decode
-    m = len(fleet.vehicles)
     routes = decode(individual, fleet, hp)
 
     # Set routes
@@ -528,11 +527,18 @@ MAIN ALGORITHM
 
 def alphaGA(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind=None, savefig=False,
             mi: int = None, plot_best_generation=False):
+    # MODIFY HYPER-PARAMETERS IF NOT GIVEN
+    if hp.num_individuals is None:
+        hp.num_individuals = int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 60
+
+    if hp.max_generations is None:
+        hp.max_generations = hp.num_individuals * 4
+
     # OBJECTS
     creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
     creator.create("Individual", list, fitness=creator.FitnessMin, feasible=False, acceptable=False)
 
-    # INIT SIZES
+    # INITIAL POPULATION
     if mi:
         pop, mh = heuristic_population_2(mi, hp.r, fleet)
         m = mi
@@ -545,10 +551,6 @@ def alphaGA(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind=Non
     init_size = len(pop)
     random_inds_num = int(hp.num_individuals / 3)
     mutate_num = hp.num_individuals - init_size - random_inds_num
-
-    # MODIFY HYPER-PARAMETERS
-    hp.num_individuals = 80 #int(len(fleet.network) * 1.5) + int(len(fleet) * 10) + 60
-    hp.max_generations = 150 #hp.num_individuals * 4
 
     # TOOLBOX
     toolbox = base.Toolbox()

@@ -179,7 +179,6 @@ def fitness(individual: IndividualType, indices: IndicesType, init_state: Starti
     """
 
     # Decode
-    m = len(fleet.vehicles)
     routes = decode(individual, indices, init_state, fleet)
 
     # Set routes
@@ -191,11 +190,7 @@ def fitness(individual: IndividualType, indices: IndicesType, init_state: Starti
     # Calculate penalization
     feasible, distance, accept = fleet.feasible()
 
-    penalization = 0
-    if not accept:
-        penalization = distance + hp.K1 + hp.K2
-    elif accept and not feasible:
-        penalization = distance + hp.K1
+    penalization = distance + hp.K1 if fleet.deterministic else distance
 
     # Calculate fitness
     fit = np.dot(costs, np.asarray(hp.weights)) + penalization

@@ -14,7 +14,7 @@ import res.models.Network as Network
 
 # %% Paths
 
-main_folder = '../data/test/'
+main_folder = '../data/instances/'
 mat_path = '../data/online/instance21/init_files/21_nodes.mat'
 
 
@@ -119,15 +119,18 @@ fig.tight_layout()
 # fig.savefig('../data/online/instance21/1kmProfile.pdf')
 
 # %% Create network. First, network parameters
-n_customers = 18
-n_charg_sta = 4
-minx, maxx = -14, 14  # km
-miny, maxy = -14, 14  # km
+n_customers = 20
+n_charg_sta = 8
+minx, maxx = -15, 15  # km
+miny, maxy = -15, 15  # km
 minreq, maxreq = 0.01, 0.08
 mintime, maxtime = 8, 15
 mintw_low, maxtw_low = 60 * 9, 60 * 16
 mintw_width, maxtw_width = 60 * 2.5, 60 * 3.5
 cs_capacity = 2
+
+std_factor_tt = 1.0
+std_factor_ec = 1.0
 
 # CS technologies
 tech1 = {0.0: 0.0, 75.6: 85.0, 92.4: 95.0, 122.4: 100.0}  # slow
@@ -198,10 +201,13 @@ for i in range(1 + n_customers + n_charg_sta):
     for j in range(1 + n_customers + n_charg_sta):
         a, b = nodes[i], nodes[j]
         dist = np.sqrt((a.pos_x - b.pos_x) ** 2 + (a.pos_y - b.pos_y) ** 2)
-        tAB = dist * tt_mean
+
+        tAB = std_factor_tt * dist * tt_mean
         tAB_std = dist * tt_std if dist > 0 else np.zeros_like(tt_mean)
-        eAB = 1.82 * dist * ec_mean
-        eAB_std = ec_std if dist > 0 else np.zeros_like(ec_mean)
+
+        eAB = 2*dist * ec_mean
+        eAB_std = std_factor_ec * dist * ec_std if dist > 0 else np.zeros_like(ec_mean)
+
         edge = Network.GaussianEdge(i, j, 30., tAB, eAB, dist,tAB_std, eAB_std)
         edges[i][j] = edge
         # print(f'mean [{i}][{j}]:\n', eAB, '\nstd:\n', eAB_std)
@@ -212,12 +218,13 @@ for i in range(1 + n_customers + n_charg_sta):
 
 # %% Instance network
 network = Network.Network(nodes, edges)
-network.draw(save_to=None, width=0.003, edge_color='grey', markeredgecolor='black', markeredgewidth=2.0)[0].savefig(f'{main_folder}/network.pdf')
+#network.draw(save_to=None, width=0.003, edge_color='grey', markeredgecolor='black', markeredgewidth=2.0)[0].savefig(f'{main_folder}/network.pdf')
 
 # %% Save network
-network.write_xml(f'{main_folder}/network.xml')
+network.write_xml(f'{main_folder}/network_C{n_customers}_CS{n_charg_sta}_ttSTD_{std_factor_tt}_ecSTD{std_factor_ec}.xml')
 
 # %%  Create fleet
+
 ev_id = 0
 alpha_down, alpha_upp = 0, 100
 battery_capacity = 24  # kWh

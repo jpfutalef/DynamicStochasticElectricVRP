@@ -93,7 +93,7 @@ def penalization_deterministic(x: float, y: float, **kwargs):
 def penalization_stochastic(cdf: float, const_prob: float, **kwargs):
     if cdf > const_prob:
         return 0.  # Constraint is satisfied
-    return penalization_abs(const_prob, cdf, **kwargs)  # TODO modify to use linear instead
+    return penalization_linear(const_prob, cdf, **kwargs)
 
 
 def penalization_quadratic(x: float, y: float, w=1.0, c=0):
@@ -213,16 +213,22 @@ class Fleet:
         for id_ev, ev in new_fleet.vehicles.items():
             self.vehicles[id_ev] = ev
 
-    def iterate_cs_capacities(self, init_theta: ndarray = None):
+    def iterate_cs_capacities(self, init_theta: ndarray = None, xi: float = 2.0):
         sum_si = sum([len(self.vehicles[id_ev].route[0]) for id_ev in self.vehicles_to_route])
-        num_cs = len(self.network.charging_stations)
         m = len(self.vehicles_to_route)
         num_events = 2 * sum_si - 2 * m + 1
         time_vectors = []
         for id_ev in self.vehicles_to_route:
             ev = self.vehicles[id_ev]
-            time_vectors.append((ev.state_leaving[0, :-1] - ev.waiting_times0[:-1], ev.state_reaching[0, 1:],
-                                 ev.route[0]))
+            if self.deterministic:
+                time_vectors.append((ev.state_leaving[0, :-1] - ev.waiting_times0[:-1], ev.state_reaching[0, 1:],
+                                    ev.route[0]))
+            else:
+                xi_sigma = xi*np.sqrt(ev.state_reaching_covariance[0, ::3])
+                t_reaching = ev.state_reaching[0, 1:] - xi_sigma[1:]
+                t_leaving = ev.state_leaving[0, :-1] - ev.waiting_times0[:-1] + xi_sigma[:-1]
+                time_vectors.append((t_leaving, t_reaching, ev.route[0]))
+
         if init_theta is None:
             init_theta = np.zeros(len(self.network))
             init_theta[0] = len(self.vehicles_to_route)
@@ -349,12 +355,12 @@ class Fleet:
             """
             MAX TOUR TIME
             """
-            PRB = 0.9
+            PRB = 0.95
             MU = ev.state_reaching[0, -1]
             SIG = np.sqrt(ev.state_reaching_covariance[0, -3])
             VAL = ev.max_tour_duration + ev.x1_0
             CDF = normal_cdf(VAL, MU, SIG)
-            dist += penalization_stochastic(CDF, PRB, w=100.)
+            dist += penalization_stochastic(CDF, PRB, w=1e4)
 
             """
             MAX PAYLOAD
@@ -368,22 +374,22 @@ class Fleet:
                     """
                     TIME WINDOW - LOWER BOUND
                     """
-                    PRB = 0.9
+                    PRB = 0.95
                     MU = ev.state_reaching[0, k]
-                    SIG = ev.state_reaching_covariance[0, 3 * k]  # TODO Check
+                    SIG = ev.state_reaching_covariance[0, 3 * k]
                     VAL = node.time_window_low
                     CDF = 1 - normal_cdf(VAL, MU, SIG)
-                    dist += penalization_stochastic(CDF, PRB, w=100.)
+                    dist += penalization_stochastic(CDF, PRB, w=1e4)
 
                     """
                     TIME WINDOW - UPPER BOUND
                     """
-                    PRB = 0.9
+                    PRB = 0.95
                     MU = ev.state_reaching[0, k]
-                    SIG = np.sqrt(ev.state_reaching_covariance[0, 3 * k])  # TODO Check
+                    SIG = np.sqrt(ev.state_reaching_covariance[0, 3 * k])
                     VAL = node.time_window_upp - ev.service_time[k]
                     CDF = normal_cdf(VAL, MU, SIG)
-                    dist += penalization_stochastic(CDF, PRB, w=100.)
+                    dist += penalization_stochastic(CDF, PRB, w=1e4)
 
                 """
                 SOC BOUND - REACHING
@@ -396,7 +402,7 @@ class Fleet:
                 CDF1 = normal_cdf(VAL1, MU, SIG)
                 CDF2 = normal_cdf(VAL2, MU, SIG)
                 CDF = CDF1 - CDF2
-                dist += penalization_stochastic(CDF, PRB, w=100.)
+                dist += penalization_stochastic(CDF, PRB, w=1e4)
 
                 """
                 SOC BOUND LOWER - LEAVING
@@ -409,7 +415,7 @@ class Fleet:
                 CDF1 = normal_cdf(VAL1, MU, SIG)
                 CDF2 = normal_cdf(VAL2, MU, SIG)
                 CDF = CDF1 - CDF2
-                dist += penalization_stochastic(CDF, PRB, w=100.)
+                dist += penalization_stochastic(CDF, PRB, w=1e4)
         """
         CS CAPACITIES
         """
