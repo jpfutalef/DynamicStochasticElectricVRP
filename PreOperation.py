@@ -6,7 +6,7 @@ from res.optimizer import alphaGA
 
 # %% Configuration
 folder = 'data/test/'
-instance_name = 'fleet2'
+instance_name = 'fleet'
 results_folder = None  # folder + 'results/'
 max_add_vehicles = 0
 weights = (0.1, 10., 1e-1, 1e-4)
