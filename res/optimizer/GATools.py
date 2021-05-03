@@ -9,33 +9,26 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import List, Tuple, Dict, NamedTuple, Union
 
-from res.models.Fleet import Fleet, InitialCondition
-from res.tools.IOTools import read_write_pretty_xml
+import res.models.Fleet as Fleet
+import res.tools.IOTools as IOTools
 
 # TYPES
 IndividualType = List
 IndicesType = Dict[int, Tuple[int, int, int]]
-StartingPointsType = Dict[int, InitialCondition]
-RouteVector = Tuple[Tuple[int, ...], Tuple[float, ...]]
-RouteDict = Dict[int, Tuple[RouteVector, float, float, float]]
+RouteDict = Dict[int, Tuple[Tuple[int, ...], Tuple[float, ...], float, float, float]]
 
 
 @dataclass
 class HyperParameters:
-    num_individuals: int
-    max_generations: int
-    CXPB: float
-    MUTPB: float
     weights: Tuple[float, ...]
-    K1: float
-    K2: float
-    keep_best: int
-    tournament_size: int
-    r: int = 2
-    alpha_up: float = 80.
+    num_individuals: int = 20
+    max_generations: int = 40
+    CXPB: float = 0.3
+    MUTPB: float = 0.2
+    hard_penalization: float = 100000
+    elite_individuals: int = 1
+    tournament_size: int = 5
     algorithm_name: str = 'Not specified'
-    crossover_repeat: int = 1
-    mutation_repeat: int = 1
 
     def __str__(self):
         string = 'Current hyper-parameters:\n'
@@ -43,8 +36,25 @@ class HyperParameters:
             string += f'{key}:   {val}\n'
         return string
 
-    def get_dataframe(self):
+    def get_dataframe(self) -> pd.Series:
         return pd.Series(self.__dict__)
+
+    def to_csv(self, filepath):
+        self.get_dataframe().to_csv(filepath)
+
+
+@dataclass
+class AlphaGA_HyperParameters(HyperParameters):
+    r: int = 2
+    alpha_up: float = 95.
+    crossover_repeat: int = 1
+    mutation_repeat: int = 1
+    algorithm_name: str = 'AlphaGA'
+
+
+@dataclass
+class BetaGA_HyperParameters(HyperParameters):
+    algorithm_name: str = 'BetaGA'
 
 
 @dataclass
@@ -93,7 +103,7 @@ class GenerationsData:
         df_op_gens.to_csv(optimization_iterations_filepath)
 
         # theta vector
-        mt = self.fleet.theta_matrix.T
+        mt = self.fleet.network.theta_matrix.T
         events = list(range(int(len(mt[:, 0]))))
         df_nodes_occupation = pd.DataFrame(mt, index=events)
         df_nodes_occupation.to_csv(theta_vector_filepath)
@@ -158,7 +168,7 @@ class GenerationsData:
         # write routes file for alphaGA
         routes_to_save = {i: (ev.route[0], ev.route[1], ev.waiting_times0) for i, ev in self.fleet.vehicles.items()}
         depart_info = {i: (r.x1_0, r.x2_0, r.x3_0) for i, r in self.fleet.vehicles.items()}
-        write_routes(opt_path+'routes.xml', routes_to_save, depart_info)
+        write_routes(opt_path + 'routes.xml', routes_to_save, depart_info)
 
         # write fleet
         fleet_path = f'{opt_path}fleet.xml'
@@ -194,7 +204,7 @@ class OptimizationDataParser:
     opt_data: GenerationsData
 
 
-def save_optimization_report(path, report: OptimizationReport, pretty=False) -> None:
+def save_optimization_report(path, report: OptimizationReport, print_pretty=False) -> None:
     tree = ET.parse(path)
     _info = tree.find('info')
     for _op_info in _info.findall('optimization_info'):
@@ -204,10 +214,10 @@ def save_optimization_report(path, report: OptimizationReport, pretty=False) -> 
               'execution_time': str(report.execution_time)}
     _op_info = ET.SubElement(_info, 'optimization_info', attrib=attrib)
 
-    tree.write(path)
-    if pretty:
-        read_write_pretty_xml(path)
-    return
+    if print_pretty:
+        IOTools.write_pretty_xml(path, tree.getroot())
+    else:
+        tree.write(path)
 
 
 def read_optimization_report(path, tree=None) -> Union[OptimizationReport, None]:

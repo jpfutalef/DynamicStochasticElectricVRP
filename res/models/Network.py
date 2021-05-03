@@ -1,43 +1,73 @@
-from typing import Dict
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass
+from typing import Dict, Tuple, Union, List
 
 import matplotlib.pyplot as plt
 import networkx as nx
-import xml.dom.minidom
-import os
+import numpy as np
 
-from res.models.Edge import *
+import res.models.Edge as Edge
+import res.models.Node as Node
+import res.tools.IOTools as IOTools
+import res.models.Penalization as Penalization
 
-NodeDict = Dict[int, Union[CustomerNode, ChargeStationNode, DepotNode]]
-EdgeDict = Dict[int, Dict[int, Union[Edge, DynamicEdge, GaussianEdge]]]
-NodeType = Union[DepotNode, CustomerNode, ChargeStationNode]
+NodeDict = Dict[int, Union[Node.BaseNode, Node.DepotNode, Node.CustomerNode, Node.ChargingStationNode]]
+EdgeDict = Dict[int, Dict[int, Union[Edge.DynamicEdge, Edge.GaussianEdge]]]
+
+'''
+UTILITIES
+'''
 
 
+class TupleIndex(list):
+    def __add__(self, other: int):
+        i = 2 * self[0] + self[1] + other
+        return TupleIndex(integer_to_tuple2(i))
+
+
+def integer_to_tuple2(k: int):
+    val = int(k / 2)
+    if k % 2:
+        return val, 1
+    return val, 0
+
+
+def theta_matrix(matrix, time_vectors, events_count):
+    counters = [[TupleIndex([0, 0]), 0] for _ in range(len(time_vectors))]
+    for k in range(1, events_count):
+        min_t, ind_ev = min([(time_vectors[ind][x[0][1]][x[0][0]], ind) for ind, x in enumerate(counters) if not x[1]])
+        event = 1 if counters[ind_ev][0][1] else -1
+        node = time_vectors[ind_ev][2][counters[ind_ev][0][0] + counters[ind_ev][0][1]]
+        matrix[:, k] = matrix[:, k - 1]
+        matrix[node, k] += event
+        counters[ind_ev][0] = counters[ind_ev][0] + 1
+        if not counters[ind_ev][0][1] and len(time_vectors[ind_ev][2]) - 1 == counters[ind_ev][0][0] + \
+                counters[ind_ev][0][1]:
+            counters[ind_ev][1] = 1
+
+
+"""
+CLASS DEFINITIONS
+"""
+
+
+@dataclass
 class Network:
     nodes: NodeDict
     edges: EdgeDict
-    depots: Tuple[int, ...]
-    customers: Tuple[int, ...]
-    charging_stations: Tuple[int, ...]
+    depots: Tuple[int, ...] = tuple()
+    customers: Tuple[int, ...] = tuple()
+    charging_stations: Tuple[int, ...] = tuple()
+    type: str = None
 
-    def __init__(self, network_nodes: NodeDict = None, network_edges: EdgeDict = None):
-        self.nodes = {}
-        self.edges = {}
-
-        self.depots = ()
-        self.customers = ()
-        self.charging_stations = ()
-
-        if network_nodes:
-            self.set_nodes(network_nodes)
-        if network_edges:
-            self.set_edges(network_edges)
+    def __post_init__(self):
+        [self.add_to_ids(node) for node in self.nodes.values()]
+        self.type = self.__class__.__name__
 
     def __len__(self):
         return len(self.nodes)
 
     def set_nodes(self, node_collection: NodeDict):
-        del self.nodes, self.depots, self.customers, self.charging_stations
-
         self.nodes = node_collection
         self.depots = ()
         self.customers = ()
@@ -50,15 +80,15 @@ class Network:
         del self.edges
         self.edges = edge_collection
 
-    def add_to_ids(self, node: NodeType):
-        if node.isDepot():
+    def add_to_ids(self, node: Node.BaseNode):
+        if node.is_depot():
             self.depots += (node.id,)
-        elif node.isCustomer():
+        elif node.is_customer():
             self.customers += (node.id,)
         else:
             self.charging_stations += (node.id,)
 
-    def add_node(self, node: NodeType):
+    def add_node(self, node: Node.BaseNode):
         self.nodes[node.id] = node
         self.add_to_ids(node)
 
@@ -66,31 +96,17 @@ class Network:
         for node in node_collection.values():
             self.add_node(node)
 
-    def t(self, node_from: int, node_to: int, time_of_day: float) -> Union[float, int, Tuple[float, float]]:
-        return self.edges[node_from][node_to].get_travel_time(time_of_day)
+    def v(self, node_from: int, node_to: int, time_of_day: float) -> Union[float, Tuple[float, float]]:
+        return self.edges[node_from][node_to].get_velocity(time_of_day)
 
-    def e(self, node_from: int, node_to: int, payload: float, vehicle_weight: float,
-          time_of_day: float, tAB: float = None) -> Union[float, int, Tuple[float, float]]:
-        return self.edges[node_from][node_to].get_energy_consumption(payload, vehicle_weight, time_of_day, tAB)
-
-    def arc_costs(self, node_from: int, node_to: int, payload: float, vehicle_weight: float,
-                  time_of_day: float):
-        tt = self.edges[node_from][node_to].get_travel_time(time_of_day)
-        ec = self.edges[node_from][node_to].get_energy_consumption(payload, vehicle_weight, time_of_day, tt)
-        return tt, ec
-
-    def waiting_time(self, i, j, done_time, payload_after, vehicle_weight):
-        if self.nodes[j].isDepot() or self.nodes[j].isChargeStation():
-            tt = self.t(i, j, done_time)
-            ec = self.e(i, j, payload_after, vehicle_weight, done_time, tt)
-            return tt, ec, 0.0, 0.0
-        return self.edges[i][j].waiting_time(done_time, self.nodes[j].time_window_low, payload_after, vehicle_weight)
-
-    def spent_time(self, node: int, p, q, eta=None):
-        return self.nodes[node].spentTime(p, q, eta)
+    def spent_time(self, node: int, init_soc: float, soc_increment, eta=None):
+        return self.nodes[node].service_time(init_soc, soc_increment, eta)
 
     def demand(self, node: int):
         return self.nodes[node].demand
+
+    def arc_length(self, node_from: int, node_to: int) -> float:
+        return self.edges[node_from][node_to].length
 
     def time_window_low(self, node: int):
         return self.nodes[node].time_window_low
@@ -98,58 +114,19 @@ class Network:
     def time_window_upp(self, node: int):
         return self.nodes[node].time_window_upp
 
-    def isDepot(self, node: int):
-        return self.nodes[node].isDepot()
+    def is_depot(self, node: int):
+        return self.nodes[node].is_depot()
 
-    def isCustomer(self, node: int):
-        return self.nodes[node].isCustomer()
+    def is_customer(self, node: int):
+        return self.nodes[node].is_customer()
 
-    def isChargingStation(self, node: int):
-        return self.nodes[node].isChargeStation()
+    def is_charging_station(self, node: int):
+        return self.nodes[node].is_charge_station()
 
-    def dropTimeWindows(self, filepath: str = None):
+    def drop_time_windows(self):
         for node in self.nodes.values():
             node.time_window_upp = np.infty
             node.time_window_low = -np.infty
-
-        if filepath is not None:
-            self.write_xml(filepath)
-
-
-    def xml_tree(self):
-        _network = ET.Element('network')
-        _nodes = ET.SubElement(_network, 'nodes')
-        _edges = ET.SubElement(_network, 'edges')
-        _technologies = ET.SubElement(_network, 'technologies')
-        technologies = []
-
-        for node in self.nodes.values():
-            _nodes.append(node.xml_element())
-            _node_from = ET.SubElement(_edges, 'node_from', attrib={'id': str(node.id)})
-            for node_to in self.nodes.values():
-                _node_to = self.edges[node.id][node_to.id].xml_element()
-                _node_from.append(_node_to)
-            if node.isChargeStation():
-                if node.technology not in technologies:
-                    _technology = ET.SubElement(_technologies, 'technology', attrib={'type': str(node.technology)})
-                    for t, soc in zip(node.time_points, node.soc_points):
-                        attrib = {'charging_time': str(t), 'battery_level': str(soc)}
-                        _bp = ET.SubElement(_technology, 'breakpoint', attrib=attrib)
-                    technologies.append(node.technology)
-        return _network
-
-    def write_xml(self, filepath: str, print_pretty=False):
-        tree = self.xml_tree()
-        if print_pretty:
-            xml_pretty = xml.dom.minidom.parseString(ET.tostring(tree, 'utf-8')).toprettyxml()
-            with open(filepath, 'w') as file:
-                file.write(xml_pretty)
-        else:
-            try:
-                ET.ElementTree(tree).write(filepath)
-            except FileNotFoundError:
-                os.makedirs('/'.join(filepath.split('/')[:-1]) + '/')
-                ET.ElementTree(tree).write(filepath)
 
     def draw(self, color=('lightskyblue', 'limegreen', 'goldenrod'), shape=('s', 'o', '^'),
              fig: plt.Figure = None, save_to=None, **kwargs):
@@ -183,62 +160,148 @@ class Network:
         g.add_edges_from(arcs)
         return g
 
+    def xml_tree(self):
+        _network = ET.Element('network')
+        _nodes = ET.SubElement(_network, 'nodes')
+        _edges = ET.SubElement(_network, 'edges')
 
-def from_element_tree(tree: ET.ElementTree, instance=True):
-    if instance:
-        _info: ET = tree.find('info')
-        _network: ET = tree.find('network')
-        _technologies: ET = _network.find('technologies')
-    else:
-        _network: ET = tree
-        _technologies: ET = _network.find('technologies')
+        _network.set('type', self.type)
 
-    nodes = {}
-    edges = {}
-    for _node in _network.find('nodes'):
-        node_id = int(_node.get('id'))
-        pos_x, pos_y = float(_node.get('pos_x')), float(_node.get('pos_y'))
-        typ = int(_node.get('type'))
+        for node in self.nodes.values():
+            _nodes.append(node.xml_element())
+            _node_from = ET.SubElement(_edges, 'node_from', attrib={'id': str(node.id)})
+            for node_to in self.nodes.values():
+                _node_to = self.edges[node.id][node_to.id].xml_element()
+                _node_from.append(_node_to)
+        return _network
 
-        if typ == 0:
-            node = DepotNode(node_id, pos_x=pos_x, pos_y=pos_y)
-
-        elif typ == 1:
-            spent_time = float(_node.get('spent_time'))
-            time_window_low = float(_node.get('time_window_low'))
-            time_window_upp = float(_node.get('time_window_upp'))
-            demand = float(_node.get('demand'))
-            node = CustomerNode(node_id, spent_time=spent_time, demand=demand, pos_x=pos_x, pos_y=pos_y,
-                                time_window_low=time_window_low, time_window_upp=time_window_upp)
+    def write_xml(self, filepath: str, print_pretty=False):
+        tree = self.xml_tree()
+        if print_pretty:
+            IOTools.write_pretty_xml(filepath, tree)
         else:
-            capacity = int(_node.get('capacity'))
-            technology = int(_node.get('technology'))
-            for _technology in _technologies:
-                if int(_technology.get('type')) == technology:
-                    break
-            time_points = tuple([float(bp.get('charging_time')) for bp in _technology])
-            soc_points = tuple([float(bp.get('battery_level')) for bp in _technology])
-            price = float(_node.get('price')) if _node.get('price') else 60.
-            node = ChargeStationNode(node_id, capacity=capacity, pos_x=pos_x, pos_y=pos_y, time_points=time_points,
-                                     soc_points=soc_points, technology=technology, price=price)
-        nodes[node_id] = node
+            ET.ElementTree(tree).write(filepath)
 
-    for _node_from in _network.find('edges'):
-        node_from_id = int(_node_from.get('id'))
-        d_from = edges[node_from_id] = {}
-        for _node_to in _node_from:
-            node_to_id = int(_node_to.get('id'))
-            _tt, _ec = _node_to.find('travel_time'), _node_to.find('energy_consumption')
-            tt = np.array([float(bp.get('value')) for bp in _tt])
-            tt_dev = np.array([float(bp.get('deviation')) for bp in _tt])
-            ec = np.array([float(bp.get('value')) for bp in _ec])
-            ec_dev = np.array([float(bp.get('deviation')) for bp in _ec])
-            s = int(float(_tt[1].get('time_of_day'))) - int(float(_tt[0].get('time_of_day')))
-            distance = float(_node_to.get('distance')) if _node_to.get('distance') else 0.
-            d_from[node_to_id] = GaussianEdge(node_from_id, node_to_id, s, tt, ec, distance, tt_dev, ec_dev)
-    return Network(nodes, edges)
+    @classmethod
+    def from_xml_element(cls, element: ET.Element):
+        nodes = {}
+        for _node in element.find('nodes'):
+            node = Node.from_xml_element(_node)
+            nodes[node.id] = node
+
+        edges = {}
+        for _node_from in element.find('edges'):
+            node_from = int(_node_from.get('id'))
+            dict_from = edges[node_from] = {}
+            for _node_to in _node_from:
+                edge = Edge.from_xml_element(_node_to, node_from)
+                dict_from[edge.node_to] = edge
+
+        return cls(nodes, edges)
+
+    @classmethod
+    def from_xml(cls, xml_file: Union[str, ET.Element], return_etree=False):
+        if type(xml_file) == str:
+            tree = ET.parse(xml_file).getroot()
+        else:
+            tree = xml_file
+
+        is_instance = True if tree.tag == 'instance' else False
+        _network = tree.find('network') if is_instance else tree
+
+        if return_etree:
+            return cls.from_xml_element(_network), tree
+        else:
+            return cls.from_xml_element(_network)
 
 
-def from_xml(path, instance=False):
-    tree = ET.parse(path)
-    return from_element_tree(tree, instance)
+@dataclass
+class CapacitatedNetwork(Network):
+    theta_matrix: Union[None, np.ndarray] = None
+    theta_matrix_container: Union[None, np.ndarray] = None
+    penalization: float = 0.0
+
+    def __post_init__(self):
+        super(CapacitatedNetwork, self).__post_init__()
+        num_events = 2 * len(self)
+        self.theta_matrix_container = np.zeros((len(self), num_events))
+
+    def iterate_cs_capacities(self, init_theta: np.ndarray, time_vectors: List, fleet_size: int):
+        """
+        Calculates occupation matrix.
+        @param init_theta: Vector containing the number of vehicles at each node, at the moment of calculation.
+        @param time_vectors: List containing information about routes, and arrival and departure times. Each element in
+         this list is a tuple (Time arrival_i, Time_departure_i, Route_i), for EV i.
+        @param fleet_size: the number of EVs in the fleets
+        @return: None. The matrix is then accessible via NETWORK_INSTANCE.theta_matrix
+        """
+        sum_si = sum([len(t[2]) for t in time_vectors])
+        num_events = 2 * sum_si - 2 * fleet_size + 1
+        if num_events > self.theta_matrix_container.shape[1]:
+            diff = num_events - self.theta_matrix_container.shape[1]
+            self.theta_matrix_container = np.append(self.theta_matrix_container, np.zeros((len(self), diff)), axis=1)
+        # self.theta_matrix_container.fill(0)
+        self.theta_matrix_container[:, 0] = init_theta
+        theta_matrix(self.theta_matrix_container, time_vectors, num_events)
+        self.theta_matrix = self.theta_matrix_container[:, :num_events]
+
+    def check_feasibility(self):
+        self.penalization = 0.0
+        self.constraint_cs_capacities()
+        return self.penalization
+
+    def constraint_cs_capacities(self):
+        p = 0.0
+        for cs_id in self.charging_stations:
+            row = self.theta_matrix[cs_id, :]
+            capacity = self.nodes[cs_id].capacity
+            p += sum([val - capacity if val - capacity > 0 else 0 for val in row])
+        self.penalization += p
+
+
+@dataclass
+class CapacitatedGaussianNetwork(Network):
+    sample_time: float = 5.
+    cdf_container: Union[np.ndarray, None] = None
+    saturation_container: Union[np.ndarray, None] = None
+
+    def iterate_cs_capacities(self, init_theta: np.ndarray = None, xi: float = 2.0):
+        sum_si = sum([len(self.vehicles[id_ev].route[0]) for id_ev in self.vehicles_to_route])
+        m = len(self.vehicles_to_route)
+        num_events = 2 * sum_si - 2 * m + 1
+        time_vectors = []
+        for id_ev in self.vehicles_to_route:
+            ev = self.vehicles[id_ev]
+            if self.deterministic:
+                time_vectors.append((ev.state_leaving[0, :-1] - ev.waiting_times0[:-1], ev.state_reaching[0, 1:],
+                                     ev.route[0]))
+            else:
+                xi_sigma = xi * np.sqrt(ev.state_reaching_covariance[0, ::3])
+                t_reaching = ev.state_reaching[0, 1:] - xi_sigma[1:]
+                t_leaving = ev.state_leaving[0, :-1] - ev.waiting_times0[:-1] + xi_sigma[:-1]
+                time_vectors.append((t_leaving, t_reaching, ev.route[0]))
+
+        if init_theta is None:
+            init_theta = np.zeros(len(self.network))
+            init_theta[0] = len(self.vehicles_to_route)
+
+        self.theta_matrix = np.zeros((len(self.network), num_events))
+        self.theta_matrix[:, 0] = init_theta
+        theta_matrix(self.theta_matrix, time_vectors, num_events)
+
+
+def from_xml_element(element: ET.Element):
+    t = element.get('type')
+    cls = globals()[t]
+    return cls.from_xml_element(element)
+
+
+def from_xml(filepath: str):
+    element = ET.parse(filepath).getroot()
+    if element.tag == 'network':
+        _network = element
+    else:
+        _network = element.find('network')
+    t = _network.get('type')
+    cls = globals()[t]
+    return cls.from_xml(element)

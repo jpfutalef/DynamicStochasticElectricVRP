@@ -339,7 +339,7 @@ class Simulator:
                     Lj1 = L[j1] if arrival_soc + L[j1] <= ev.alpha_up else ev.alpha_up - arrival_soc
                     #Lj1 = L[j1] if arrival_soc + L[j1] <= 100. else 100. - arrival_soc
 
-                    service_time = self.network.spent_time(S1, arrival_soc, Lj1)
+                    service_time = self.network.service_time(S1, arrival_soc, Lj1)
                     eos_time = arrival_time + waiting_time + service_time
                     eos_soc = arrival_soc + Lj1
                     eos_payload = arrival_payload - self.network.demand(S1)
@@ -352,7 +352,7 @@ class Simulator:
                     measurement.soc = arrival_soc
                     measurement.payload = arrival_payload
 
-                    if self.network.isChargingStation(S1):
+                    if self.network.is_charging_station(S1):
                         price = self.network.nodes[S1].price
                         self.history.update_recharging_cost(id_ev, price * Lj1 * ev.battery_capacity)
                         self.history.update_recharging_time(id_ev, service_time)

@@ -373,8 +373,8 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
             block_probabilities = (.33, .33, .33)
 
         # Select the best individuals, if given
-        if hp.keep_best:
-            best_individuals = list(map(toolbox.clone, tools.selBest(pop, hp.keep_best)))
+        if hp.elite_individuals:
+            best_individuals = list(map(toolbox.clone, tools.selBest(pop, hp.elite_individuals)))
 
         # Select and clone the next generation individuals
         offspring = toolbox.select(pop, len(pop))
@@ -407,8 +407,8 @@ def optimal_route_assignation(fleet: Fleet, hp: HyperParameters, save_to: str = 
         pop[:] = tools.selBest(pop, len(pop))
 
         # Insert best individuals from previous generation
-        if hp.keep_best:
-            pop[:] = best_individuals + pop[:-hp.keep_best]
+        if hp.elite_individuals:
+            pop[:] = best_individuals + pop[:-hp.elite_individuals]
 
         # Update best individual
         bestInd = tools.selBest(pop, 1)[0]

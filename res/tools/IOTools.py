@@ -19,7 +19,6 @@ def write_pretty_xml(filepath: str, tree: ET.Element):
     pretty = xml.dom.minidom.parseString(s).toprettyxml()
     with open(filepath, 'w') as file:
         file.write(pretty)
-    return
 
 
 """
@@ -148,12 +147,7 @@ def read_routes(filepath: str, read_depart_info: bool = False) -> Tuple[RouteDic
     return routes, depart_info
 
 
-if __name__ == '__main__':
-    routes1: RouteDict = {1: ((0, 1, 2, 0), (0, 0, 0, 0), (0, 0, 5, 0)),
-                          2: ((), (), ()),
-                          3: ((0, 3, 5, 4, 0), (0, 0, 15, 0, 0), (0, 0, 0, 2, 0))}
-    depart_info = {1: (400, 85, 0.9), 2: (480, 85, 0.99), 3: (500, 85, 0.55)}
-    filepath = 'routes.xml'
-    write_routes(filepath, routes1, depart_info)
-
-    routes2 = read_routes(filepath)
+def from_xml_element(element: ET.Element):
+    t = element.get('type')
+    cls = globals()[t]
+    return cls.from_xml_element(element)

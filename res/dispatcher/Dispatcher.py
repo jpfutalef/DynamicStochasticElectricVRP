@@ -199,7 +199,7 @@ class Dispatcher:
             S0, S1 = meas.node_from, meas.node_to
 
             # Few customers ahead, pass
-            if sum([1 for i in S if self.network.isCustomer(i)]) <= 1:
+            if sum([1 for i in S if self.network.is_customer(i)]) <= 1:
                 continue
 
             if meas.stopped_at_node_from:
@@ -263,14 +263,14 @@ class Dispatcher:
                 if time_at_start_of_service - meas.time >= self.ga_time + self.offset_time:
                     j_critical = j_next + k + j_start
                     # There are no more customers ahead
-                    if sum([1 for i in S_ahead[k:] if self.network.isCustomer(i)]) <= 1:
+                    if sum([1 for i in S_ahead[k:] if self.network.is_customer(i)]) <= 1:
                         continue
 
                     # Otherwise, it is a critical point
                     x1_critical = float(ev.state_reaching[0, k])
                     x2_critical = float(ev.state_reaching[1, k])
                     x3_critical = float(ev.state_reaching[2, k])
-                    ev.assigned_customers = tuple(i for i in S_ahead if self.network.isCustomer(i))
+                    ev.assigned_customers = tuple(i for i in S_ahead if self.network.is_customer(i))
 
                     critical_nodes_info[id_ev] = (j_critical, x1_critical, x2_critical, x3_critical)
                     break

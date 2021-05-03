@@ -6,12 +6,12 @@ from typing import Tuple, Dict
 import numpy as np
 from deap import tools, base, creator
 
-from res.optimizer.GATools import HyperParameters, GenerationsData, Fleet, RouteDict, IndividualType, IndicesType, \
-    StartingPointsType, InitialCondition
+from res.optimizer.GATools import HyperParameters, GenerationsData, RouteDict, IndividualType, IndicesType
+from res.models import Fleet
 
 
 # FUNCTIONS
-def decode(individual: IndividualType, indices: IndicesType, critical_points: StartingPointsType, fleet: Fleet,
+def decode(individual: IndividualType, indices: IndicesType, critical_points: Dict, fleet: Fleet,
            hp: HyperParameters) -> RouteDict:
     routes = {}
     for id_ev, (i0, i1, i2) in indices.items():
@@ -57,7 +57,7 @@ def decode(individual: IndividualType, indices: IndicesType, critical_points: St
     return routes
 
 
-def mutate(individual: IndividualType, indices: IndicesType, starting_points: StartingPointsType,
+def mutate(individual: IndividualType, indices: IndicesType, starting_points: Dict,
            customers_to_visit: Dict[int, Tuple[int, ...]], charging_stations: Tuple, allowed_charging_operations=2,
            index=None) -> IndividualType:
     # Choose a random index if not passed
@@ -183,7 +183,7 @@ def block_indices(customers_to_visit: Dict[int, Tuple[int, ...]], allowed_chargi
     return indices
 
 
-def random_individual(indices: IndicesType, starting_points: StartingPointsType,
+def random_individual(indices: IndicesType, starting_points: Dict,
                       customers_to_visit: Dict[int, Tuple[int, ...]], charging_stations: Tuple[int, ...],
                       allowed_charging_operations=2):
     """
@@ -214,7 +214,7 @@ def random_individual(indices: IndicesType, starting_points: StartingPointsType,
     return individual
 
 
-def fitness(individual: IndividualType, indices: IndicesType, critical_points: StartingPointsType,
+def fitness(individual: IndividualType, indices: IndicesType, critical_points: Dict,
             fleet: Fleet, hp: HyperParameters):
     """
     Calculates fitness of individual.
@@ -238,9 +238,9 @@ def fitness(individual: IndividualType, indices: IndicesType, critical_points: S
 
     penalization = 0
     if not accept:
-        penalization = distance + hp.K1 + hp.K2
+        penalization = distance + hp.hard_penalization + hp.K2
     elif accept and not feasible:
-        penalization = distance + hp.K1
+        penalization = distance + hp.hard_penalization
 
     # Calculate fitness
     fit = np.dot(costs, np.asarray(hp.weights)) + penalization
@@ -249,7 +249,7 @@ def fitness(individual: IndividualType, indices: IndicesType, critical_points: S
 
 
 def code(fleet: Fleet, routes_with_critical_point: RouteDict, allowed_charging_operations=2) -> Tuple[
-    IndividualType, StartingPointsType]:
+    IndividualType, Dict]:
     ind = []
     critical_points = {}
     for id_ev, route in routes_with_critical_point.items():
@@ -257,10 +257,10 @@ def code(fleet: Fleet, routes_with_critical_point: RouteDict, allowed_charging_o
         (S, L), x1, x2, x3 = route
 
         # Save critical points
-        critical_points[id_ev] = InitialCondition(S[0], L[0], x1, x2, x3)
+        critical_points[id_ev] = (S[0], L[0], x1, x2, x3)
 
         # Create individual from ahead route
-        customer_sequence = [x for x in S[1:] if fleet.network.isCustomer(x)]
+        customer_sequence = [x for x in S[1:] if fleet.network.is_customer(x)]
         charging_operations, charging_operations_count = [], 0
         for k, LK in enumerate(L[1:]):
             if LK > 0.:
@@ -277,7 +277,7 @@ def code(fleet: Fleet, routes_with_critical_point: RouteDict, allowed_charging_o
 
 
 # THE ALGORITHM
-def onGA(fleet: Fleet, hp: HyperParameters, critical_points: StartingPointsType, save_to: str = None,
+def onGA(fleet: Fleet, hp: HyperParameters, critical_points: Dict, save_to: str = None,
          best_ind: IndividualType = None, savefig=False):
     customers_to_visit = {ev_id: fleet.vehicles[ev_id].assigned_customers for ev_id in fleet.vehicles_to_route}
     indices = block_indices(customers_to_visit, hp.r)
@@ -334,8 +334,8 @@ def onGA(fleet: Fleet, hp: HyperParameters, critical_points: StartingPointsType,
         opt_data.generations.append(g)
 
         # Select the best individuals, if given
-        if hp.keep_best:
-            best_individuals = list(map(toolbox.clone, tools.selBest(pop, hp.keep_best)))
+        if hp.elite_individuals:
+            best_individuals = list(map(toolbox.clone, tools.selBest(pop, hp.elite_individuals)))
 
         # Select and clone the next generation individuals
         offspring = toolbox.select(pop, len(pop))
@@ -369,8 +369,8 @@ def onGA(fleet: Fleet, hp: HyperParameters, critical_points: StartingPointsType,
         pop[:] = tools.selBest(pop, len(pop))
 
         # Insert best individuals from previous generation
-        if hp.keep_best:
-            pop[:] = best_individuals + pop[:-hp.keep_best]
+        if hp.elite_individuals:
+            pop[:] = best_individuals + pop[:-hp.elite_individuals]
 
         # Update best individual
         bestInd = tools.selBest(pop, 1)[0]

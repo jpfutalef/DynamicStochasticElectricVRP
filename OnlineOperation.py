@@ -5,20 +5,18 @@ from os import makedirs
 from datetime import datetime
 
 """
-GLOBAL PARAMETERS
+Configuration
 """
 simulation_name = 'withoutTimeWindows'
-start_from = 0
-end_at = 50
-std_factor = (3., 3.)
+num_of_simulations = 10
 soc_policy = (20, 95)
-keep = 1
-log_online = False
+keep_num_realizations = 1
+online_verbose = False
 
-net_path = 'data/online/instance21/init_files/network.xml'
-fleet_path = 'data/online/instance21/init_files/fleet.xml'
-routes_path = 'data/online/instance21/init_files/routes.xml'
-mat_path = 'data/online/instance21/init_files/21_nodes.mat'
+folder_path = '/data/online/case1/'
+net_path = f'{folder_path}network_C10_CS4_ttSTD_1.0_ecSTD1.0'
+fleet_path = f'{folder_path}fleet.xml'
+routes_path = f'{folder_path}routes.xml'
 
 onGA_hyper_parameters = HyperParameters(num_individuals=80, max_generations=160, CXPB=0.9, MUTPB=0.6,
                                         weights=(0.1 / 2.218, 1. / 0.4364, 1. / 100, 1. / 500, 1.),
@@ -33,23 +31,19 @@ if __name__ == '__main__':
 
     stage = 'offline'
 
-    for i in range(start_from, end_at):
+    for i in range(num_of_simulations):
         print(f'--- Simulation ({stage}) #{i} ---')
 
         main_folder = f'data/online/instance21/{stage}_{simulation_name}/simulation_{i}/'
         measurements_path = f'data/online/instance21/{stage}_{simulation_name}/simulation_{i}/measurements.xml'
         history_path = f'data/online/instance21/{stage}_{simulation_name}/simulation_{i}/history.xml'
 
-        sim = Simulator(net_path, fleet_path, measurements_path, routes_path, history_path, mat_path, 5., main_folder,
-                        std_factor=std_factor)
-
-        # Drop time windows and save
-        sim.network.drop_time_windows(filepath=sim.network_path)
+        sim = Simulator(net_path, fleet_path, measurements_path, routes_path, history_path, mat_path, 5., main_folder)
 
         # Start loop
         non_altered = 0
         while not sim.done():
-            if non_altered < keep:
+            if non_altered < keep_num_realizations:
                 non_altered += 1
             else:
                 sim.disturb_network()

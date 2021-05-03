@@ -4,12 +4,12 @@ import numpy as np
 from typing import Tuple, Dict
 import time, os
 
-from res.optimizer.GATools import HyperParameters, GenerationsData, Fleet, RouteDict, IndividualType, IndicesType, \
-    StartingPointsType, InitialCondition
+from res.optimizer.GATools import HyperParameters, GenerationsData, RouteDict, IndividualType, IndicesType
+from res.models import Fleet
 
 
 # FUNCTIONS
-def decode(individual: IndividualType, indices: IndicesType, init_state: StartingPointsType, fleet: Fleet) -> RouteDict:
+def decode(individual: IndividualType, indices: IndicesType, init_state: Dict, fleet: Fleet) -> RouteDict:
     routes = {}
     for id_ev, (i0, i1, i2) in indices.items():
         S = individual[i0:i1]
@@ -168,7 +168,7 @@ def random_individual(customers_per_vehicle: Dict[int, Tuple[int, ...]], chargin
     return individual
 
 
-def fitness(individual: IndividualType, indices: IndicesType, init_state: StartingPointsType,
+def fitness(individual: IndividualType, indices: IndicesType, init_state: Dict,
             fleet: Fleet, hp: HyperParameters):
     """
     Positive fitness of the individual.
@@ -190,7 +190,7 @@ def fitness(individual: IndividualType, indices: IndicesType, init_state: Starti
     # Calculate penalization
     feasible, distance, accept = fleet.feasible()
 
-    penalization = distance + hp.K1 if fleet.deterministic else distance
+    penalization = distance + hp.hard_penalization if fleet.deterministic else distance
 
     # Calculate fitness
     fit = np.dot(costs, np.asarray(hp.weights)) + penalization
@@ -207,13 +207,13 @@ def individual_from_routes(fleet: Fleet) -> IndividualType:
         charging_station, soc_increment = None, None
 
         for Sk, Lk in zip(S[1:-1], L[1:-1]):
-            if fleet.network.isCustomer(Sk):
+            if fleet.network.is_customer(Sk):
                 customer_block.append(Sk)
                 if charging_path:
                     CBP1[-2:] = [charging_station, soc_increment]
                     charging_path = False
                 CBP1 += [-1, uniform(5, 20)]
-            elif fleet.network.isChargingStation(Sk):
+            elif fleet.network.is_charging_station(Sk):
                 charging_station, soc_increment = Sk, Lk
                 charging_path = True
 
@@ -227,7 +227,7 @@ def betaGA(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind: Ind
            savefig=False):
     fleet.assign_customers_in_route()
     customers_to_visit = {ev_id: ev.assigned_customers for ev_id, ev in fleet.vehicles.items()}
-    starting_points = {ev_id: InitialCondition(0, 0, fleet.vehicles[ev_id].state_leaving[0, 0],
+    starting_points = {ev_id: (0, 0, fleet.vehicles[ev_id].state_leaving[0, 0],
                                                ev.alpha_up, sum([fleet.network.demand(x)
                                                                  for x in ev.assigned_customers]))
                        for ev_id, ev in fleet.vehicles.items()}
@@ -302,8 +302,8 @@ def betaGA(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind: Ind
             block_probabilities = (.33, .33, .33)
 
         # Select the best individuals, if given
-        if hp.keep_best:
-            best_individuals = list(map(toolbox.clone, tools.selBest(pop, hp.keep_best)))
+        if hp.elite_individuals:
+            best_individuals = list(map(toolbox.clone, tools.selBest(pop, hp.elite_individuals)))
 
         # Select and clone the next generation individuals
         offspring = toolbox.select(pop, len(pop))
@@ -337,8 +337,8 @@ def betaGA(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind: Ind
         pop[:] = tools.selBest(pop, len(pop))
 
         # Insert best individuals from previous generation
-        if hp.keep_best:
-            pop[:] = best_individuals + pop[:-hp.keep_best]
+        if hp.elite_individuals:
+            pop[:] = best_individuals + pop[:-hp.elite_individuals]
 
         # Update best individual
         bestInd = tools.selBest(pop, 1)[0]
