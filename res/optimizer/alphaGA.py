@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from deap import tools, base, creator
 
-from res.optimizer.GATools import AlphaGA_HyperParameters, GenerationsData, RouteDict, IndividualType
+from res.optimizer.GATools import AlphaGA_HyperParameters, GenerationsData, OptimizationData, RouteDict, IndividualType
 from res.models import Fleet
 
 '''
@@ -82,7 +82,7 @@ def fitness(individual: IndividualType, fleet: Fleet, hp: AlphaGA_HyperParameter
     fleet.iterate()
 
     # Cost
-    costs = np.array(fleet.cost_function()) # cost_tt, cost_ec, cost_chg_time, cost_chg_cost
+    costs = np.array(fleet.cost_function())  # cost_tt, cost_ec, cost_chg_time, cost_chg_cost
 
     # Calculate penalization
     feasible, distance, accept = fleet.feasible()
@@ -259,7 +259,7 @@ def mutate_charging_operation1(individual: IndividualType, index: int, m: int, n
     offset = int((index - ics) / 3)
     op_index = ics + 3 * offset
 
-    a0 = list(range(1, num_customers + 1)) + [-1]*num_customers
+    a0 = list(range(1, num_customers + 1)) + [-1] * num_customers
     a1 = range(num_customers + 1, num_customers + num_cs + 1)
     individual[op_index] = sample(a0, 1)[0] if randint(0, 1) else individual[op_index]
     individual[op_index + 1] = sample(a1, 1)[0] if randint(0, 1) else individual[op_index + 1]
@@ -286,7 +286,7 @@ def mutate_charging_operation2(individual: IndividualType, index: int, m: int, n
 
 def mutate_departure_time1(individual: IndividualType, index: int, m: int, num_customers: int, num_cs: int, r: int):
     # individual[index] += uniform(-60, 60)
-    individual[index] += np.random.normal(0, 60)
+    individual[index] += np.random.normal(60, 3600)
 
 
 '''
@@ -394,7 +394,7 @@ def heuristic_population_1(r: int, fleet: Fleet, fill_up_to=1.0):
     tw = {i: net.nodes[i].time_window_low for i in net.customers}
     sorted_customers = sorted(tw, key=tw.__getitem__)
 
-    max_weight = fleet.vehicles[0].max_payload*fill_up_to
+    max_weight = fleet.vehicles[0].max_payload * fill_up_to
 
     routes = []
     current_route = []
@@ -450,12 +450,56 @@ def heuristic_population_2(m: int, r: int, fleet: Fleet):
         customer, charging_station, amount = -1, sample(net.charging_stations, 1)[0], uniform(20, 30)
         charging_operations_block += [customer, charging_station, amount]
 
-    departure_times_block = list(np.random.uniform(60 * 10, 60 * 12, m))
+    departure_times_block = list(np.random.uniform(60 * 60 * 10, 60 * 60 * 12, m))
 
     ind = customers_block + charging_operations_block + departure_times_block
     pop = [ind]
 
     return pop, m
+
+
+def heuristic_population_3(r: int, fleet: Fleet, fill_up_to=1.0, additional_vehicles=1):
+    net = fleet.network
+    tw = {i: net.nodes[i].time_window_low for i in net.customers}
+    sorted_customers = sorted(tw, key=tw.__getitem__)
+
+    max_weight = fleet.vehicles[0].max_payload * fill_up_to
+
+    routes = []
+    current_route = []
+    cum_weight = 0
+    for i in sorted_customers:
+        d = net.demand(i)
+        if cum_weight + d >= max_weight:
+            routes.append(current_route)
+            current_route = [i]
+            cum_weight = 0
+        else:
+            current_route.append(i)
+            cum_weight += d
+
+    # Check if there are residual customers after loop
+    if current_route:
+        routes.append(current_route)
+
+    # Fill up to fleet size if necessary
+    [routes.append([]) for _ in range(additional_vehicles)]
+    fleet.resize_fleet(len(routes))
+
+    # Create blocks
+    customer_block = []
+    for route in routes:
+        customer_block += route + ['|']
+
+    charging_operation_block = []
+    for j in range(r * len(fleet)):
+        customer, charging_station, amount = -1, sample(net.charging_stations, 1)[0], uniform(20, 30)
+        charging_operation_block += [customer, charging_station, amount]
+
+    departure_time_block = [net.nodes[r[0]].time_window_low if r else np.random.uniform(7 * 60 * 60, 13 * 60 * 60) for r in
+                            routes]
+    initial_population = [customer_block + charging_operation_block + departure_time_block]
+    return initial_population
 
 
 '''
@@ -532,13 +576,13 @@ def resize_individual(individual, old_m, new_m, r, customers, charging_stations)
     dep_time_insertion = [individual[-1] for _ in range(new_m - old_m)]
     return individual[:n + old_m] + customer_insertion + cs_insertion + individual[n + old_m:] + dep_time_insertion
 
+
 '''
 MAIN ALGORITHM
 '''
 
 
-def alphaGA(fleet: Fleet, hp: AlphaGA_HyperParameters, save_to: str = None, init_pop=None, savefig=False,
-            plot_best_generation=False):
+def alphaGA(fleet: Fleet, hp: AlphaGA_HyperParameters, save_to: str = None, init_pop=None):
     # OBJECTS
     creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
     creator.create("Individual", list, fitness=creator.FitnessMin, feasible=False, acceptable=False)
@@ -553,6 +597,11 @@ def alphaGA(fleet: Fleet, hp: AlphaGA_HyperParameters, save_to: str = None, init
     toolbox.register("select", tools.selTournament, tournsize=hp.tournament_size)
     toolbox.register("select_worst", tools.selWorst)
     toolbox.register("decode", decode, fleet=fleet, hp=hp)
+
+    # OPTIMIZATION ITERATIONS CONTAINER
+    generations_data_container = None
+    if save_to:
+        generations_data_container = GenerationsData()
 
     # BEGIN ALGORITHM
     t_init = time.time()
@@ -578,34 +627,16 @@ def alphaGA(fleet: Fleet, hp: AlphaGA_HyperParameters, save_to: str = None, init
     bestOfAll = tools.selBest(pop, 1)[0]
     print(f"Best individual  : {bestOfAll}\n Fitness: {bestOfAll.fitness.wvalues[0]} Feasible: {bestOfAll.feasible}")
 
-    # These will save statistics
-    cs_capacity = fleet.network.nodes[fleet.network.charging_stations[0]].capacity
-    opt_data = GenerationsData([], [], [], [], [], [], fleet, hp, bestOfAll, bestOfAll.feasible, bestOfAll.acceptable,
-                               len(fleet), cs_capacity)
+    # Store best fitness average in previous generations
+    best_fitness_criterion = len(fleet.network)
+    last_best_fitnesses = [0] * best_fitness_criterion
 
-    print("################  Start of evolution  ################")
+    # Block probabilities
+    block_probabilities = (1/3, 1/3, 1/3)
+
     # Begin the evolution
+    print("################  Start of evolution  ################")
     for g in range(hp.max_generations):
-        # A new generation
-        print(f"-- Generation {g}/{hp.max_generations} --")
-        opt_data.generations.append(g)
-
-        # Update block probabilities
-        if g < 50:
-            block_probabilities = (.33, .33, .33)
-        elif g < 100:
-            block_probabilities = (.2, .6, .2)
-        elif g < 150:
-            block_probabilities = (.6, .2, .2)
-        elif g < 200:
-            block_probabilities = (.33, .33, .33)
-        elif g < 250:
-            block_probabilities = (.2, .6, .2)
-        elif g < 300:
-            block_probabilities = (.6, .2, .33)
-        else:
-            block_probabilities = (.33, .33, .33)
-
         # Select the best individuals, if given
         if hp.elite_individuals:
             best_individuals = list(map(toolbox.clone, tools.selBest(pop, hp.elite_individuals)))
@@ -635,8 +666,6 @@ def alphaGA(fleet: Fleet, hp: AlphaGA_HyperParameters, save_to: str = None, init
             ind.feasible = feasible
             ind.acceptable = acceptable
 
-        print(f'  Evaluated {len(invalid_ind)} individuals')
-
         # The population is entirely replaced by a sorted offspring
         pop[:] = offspring
         pop[:] = tools.selBest(pop, len(pop))
@@ -651,39 +680,48 @@ def alphaGA(fleet: Fleet, hp: AlphaGA_HyperParameters, save_to: str = None, init
             bestOfAll = bestInd
 
         # Real-time info
-        print(
-            f"Best individual  : {bestInd}\n Fitness: {bestInd.fitness.wvalues[0]} Feasible: {bestInd.feasible} Acceptable: {bestInd.acceptable}")
-
         worstInd = tools.selWorst(pop, 1)[0]
-        print(
-            f"Worst individual : {worstInd}\n Fitness: {worstInd.fitness.wvalues[0]} Feasible: {worstInd.feasible}  Acceptable: {worstInd.acceptable}")
-
-        print(
-            f"Curr. best-of-all: {bestOfAll}\n Fitness: {bestOfAll.fitness.wvalues[0]} Feasible: {bestOfAll.feasible}  Acceptable: {bestOfAll.acceptable}")
 
         # Statistics
         fits = [sum(ind.fitness.wvalues) for ind in pop]
         mean = np.average(fits)
         std = np.std(fits)
 
-        print(f"Max {max(fits)}")
-        print(f"Min {min(fits)}")
-        print(f"Avg {mean}")
-        print(f"Std {std}")
+        to_print = f"""
+------- Generation {g+1}/{hp.max_generations} -------
+Evaluated {len(invalid_ind)} individuals during genetic operations
+Curr. best-of-all: {bestOfAll}
+    Fitness: {bestOfAll.fitness.wvalues[0]}
+    Feasible: {bestOfAll.feasible}
+Worst individual : {worstInd}
+    Fitness: {worstInd.fitness.wvalues[0]}
+    Feasible: {worstInd.feasible}
 
-        opt_data.best_fitness.append(-max(fits))
-        opt_data.worst_fitness.append(-min(fits))
-        opt_data.average_fitness.append(mean)
-        opt_data.std_fitness.append(std)
-        opt_data.best_individuals.append(bestInd)
+Population Max: {max(fits)}
+Population Min: {min(fits)}
+Population Avg: {mean}
+Population Std: {std}"""
 
-        print()
+        print(to_print, end="\r")
+        toolbox.evaluate(bestOfAll)
 
-        if plot_best_generation:
-            toolbox.evaluate(bestOfAll)
-            fleet.plot_operation_pyplot()
-            plt.show()
-            input('Press ENTER to evolve...')
+        if save_to:
+            generations_data_container.generation.append(g)
+            generations_data_container.best_fitness.append(-max(fits))
+            generations_data_container.worst_fitness.append(-min(fits))
+            generations_data_container.feasible.append(bestOfAll.feasible)
+            generations_data_container.average_fitness.append(mean)
+            generations_data_container.std_fitness.append(std)
+
+        if g >= best_fitness_criterion:
+            last_best_fitnesses.append(bestOfAll.fitness.wvalues[0])
+            last_best_fitnesses.pop(0)
+
+            if np.std(last_best_fitnesses) < 1e-10:
+                break
+
+        else:
+            last_best_fitnesses[g] = bestOfAll.fitness.wvalues[0]
 
     t_end = time.time()
     print("################  End of (successful) evolution  ################")
@@ -694,17 +732,10 @@ def alphaGA(fleet: Fleet, hp: AlphaGA_HyperParameters, save_to: str = None, init
     fit, feasible, acceptable = toolbox.evaluate(bestOfAll)
     routes = toolbox.decode(bestOfAll)
 
-    opt_data.bestOfAll = bestOfAll
-    opt_data.feasible = feasible
-    opt_data.acceptable = acceptable
-    opt_data.algo_time = algo_time
-    opt_data.fleet = fleet
-
     if save_to:
-        path = save_to + hp.algorithm_name + f'_fleetsize_{len(fleet)}/'
-        try:
-            os.mkdir(path)
-        except FileExistsError:
-            pass
-        opt_data.save_opt_data(path, savefig=savefig)
-    return routes, opt_data, toolbox
+        os.makedirs(save_to)
+        report = OptimizationData(fleet, hp, feasible, len(fleet), algo_time, fit, bestOfAll)
+        generations_data_container.save(save_to)
+        report.save(save_to)
+
+    return routes, toolbox

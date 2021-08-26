@@ -2,6 +2,8 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Union, Tuple
 import numpy as np
+from typing import List, Dict
+import itertools
 
 
 @dataclass
@@ -110,8 +112,8 @@ class ChargingStationNode(BaseNode):
                 n = y1 - m * t1
                 end_time = (end_soc - n) / m
                 break
-        init_time = init_time if 0. <= end_soc <= 100. else -1000*abs(init_time)
-        end_time = end_time if 0. <= end_soc <= 100. else 1000*abs(end_time)
+        # init_time = init_time if 0. <= end_soc <= 100. else -1000*abs(init_time)
+        # end_time = end_time if 0. <= end_soc <= 100. else 1000*abs(end_time)
         return end_time - init_time
 
     def set_technology(self, tech_dict):  # TODO use kwargs?
@@ -120,6 +122,10 @@ class ChargingStationNode(BaseNode):
         self.technology = tech_dict['technology']
         self.technology_name = tech_dict['technology_name']
         self.price = tech_dict['price']
+
+    def saturation_combinations(self, fleet_size: int) -> List[Tuple]:
+        combinations = [i for i in itertools.product([1, 0], repeat=fleet_size) if sum(i) > self.capacity]
+        return combinations
 
     def xml_element(self):
         dont_include = ['spent_time', 'time_points', 'soc_points', 'technology', 'technology_name']

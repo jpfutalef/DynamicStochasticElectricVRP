@@ -2,6 +2,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Dict, Tuple, Union, List
 
+from pathlib import Path
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
@@ -9,7 +10,6 @@ import numpy as np
 import res.models.Edge as Edge
 import res.models.Node as Node
 import res.tools.IOTools as IOTools
-import res.models.Penalization as Penalization
 
 NodeDict = Dict[int, Union[Node.BaseNode, Node.DepotNode, Node.CustomerNode, Node.ChargingStationNode]]
 EdgeDict = Dict[int, Dict[int, Union[Edge.DynamicEdge, Edge.GaussianEdge]]]
@@ -216,13 +216,13 @@ class Network:
 
 
 @dataclass
-class CapacitatedNetwork(Network):
+class DeterministicCapacitatedNetwork(Network):
     theta_matrix: Union[None, np.ndarray] = None
     theta_matrix_container: Union[None, np.ndarray] = None
     penalization: float = 0.0
 
     def __post_init__(self):
-        super(CapacitatedNetwork, self).__post_init__()
+        super(DeterministicCapacitatedNetwork, self).__post_init__()
         num_events = 2 * len(self)
         self.theta_matrix_container = np.zeros((len(self), num_events))
 
@@ -245,6 +245,12 @@ class CapacitatedNetwork(Network):
         theta_matrix(self.theta_matrix_container, time_vectors, num_events)
         self.theta_matrix = self.theta_matrix_container[:, :num_events]
 
+    def noise_gain(self, factor: float):
+        # TODO test it
+        for i in self.edges.values():
+            for j in i.values():
+                j.velocity_deviation *= factor
+
     def check_feasibility(self):
         self.penalization = 0.0
         self.constraint_cs_capacities()
@@ -259,35 +265,75 @@ class CapacitatedNetwork(Network):
         self.penalization += p
 
 
+"""
+CAPACITATED GAUSSIAN NETWORK - DEFINITION
+"""
+
+
+def evaluate_saturation(cs_id: int, num_customers: int, constraints: List[List],
+                        probability_matrices: Dict[int, np.ndarray],
+                        result_container: np.ndarray, num_depots: int = 1):
+    """
+    Evaluates the saturation probability of a CS, given an operational behavior of EVs
+    @param cs_id: ID of the CS to evaluate
+    @param num_customers: number of customers in the network
+    @param constraints:
+    @param probability_matrices: matrix
+    @param result_container:
+    @param num_depots:
+    @return:
+    """
+    row = cs_id - num_depots - num_customers
+    for k in range(len(result_container)):
+        probability = sum([m[row, k] if constraints[k] else 1 - m[row, k] for m in probability_matrices.values()])
+        result_container[k] = probability
+
+
+def probability_saturation(description: List[Tuple], probabilities_in_nodes: List[np.ndarray]):
+    return sum([single_saturation_probability(d, probabilities_in_nodes) for d in description])
+
+
+def single_saturation_probability(description: Tuple, probabilities_in_nodes: List[np.ndarray]):
+    if len(description) != len(probabilities_in_nodes):
+        raise ValueError("Length of probability descriptions does not match number of calculated probabilities")
+    p = 1
+    for i, prob in zip(description, probabilities_in_nodes):
+        factor = prob if i else 1 - prob
+        p *= factor
+    return p
+
+
+def heuristic_1(self):
+    num_of_evs_that_recharge = sum([1 if ev.visits_a_cs else 0 for ev in self.vehicles.values()])
+
+
+def heuristic_2(self):
+    return
+
+
 @dataclass
 class CapacitatedGaussianNetwork(Network):
-    sample_time: float = 5.
+    sample_time_occupation_probability: float = 5.
     cdf_container: Union[np.ndarray, None] = None
-    saturation_container: Union[np.ndarray, None] = None
+    probability_of_occupation: Union[np.ndarray, None] = None
 
-    def iterate_cs_capacities(self, init_theta: np.ndarray = None, xi: float = 2.0):
-        sum_si = sum([len(self.vehicles[id_ev].route[0]) for id_ev in self.vehicles_to_route])
-        m = len(self.vehicles_to_route)
-        num_events = 2 * sum_si - 2 * m + 1
-        time_vectors = []
-        for id_ev in self.vehicles_to_route:
-            ev = self.vehicles[id_ev]
-            if self.deterministic:
-                time_vectors.append((ev.state_leaving[0, :-1] - ev.waiting_times0[:-1], ev.state_reaching[0, 1:],
-                                     ev.route[0]))
-            else:
-                xi_sigma = xi * np.sqrt(ev.state_reaching_covariance[0, ::3])
-                t_reaching = ev.state_reaching[0, 1:] - xi_sigma[1:]
-                t_leaving = ev.state_leaving[0, :-1] - ev.waiting_times0[:-1] + xi_sigma[:-1]
-                time_vectors.append((t_leaving, t_reaching, ev.route[0]))
+    def __post_init__(self):
+        self.setup_saturation_container(self.sample_time_occupation_probability)
 
-        if init_theta is None:
-            init_theta = np.zeros(len(self.network))
-            init_theta[0] = len(self.vehicles_to_route)
+    def setup_saturation_container(self, sample_time: float = None):
+        if sample_time:
+            self.sample_time_occupation_probability = sample_time
+        self.probability_of_occupation = np.zeros(
+            (len(self.charging_stations), 24 * 60 / self.sample_time_occupation_probability))
 
-        self.theta_matrix = np.zeros((len(self.network), num_events))
-        self.theta_matrix[:, 0] = init_theta
-        theta_matrix(self.theta_matrix, time_vectors, num_events)
+    def constraint_cs_capacities(self):
+        p = 0.0
+        self.penalization += p
+
+    def check_feasibility(self):
+        self.penalization = 0.0
+        self.constraint_cs_capacities()
+        return self.penalization
 
 
 def from_xml_element(element: ET.Element):
@@ -296,7 +342,7 @@ def from_xml_element(element: ET.Element):
     return cls.from_xml_element(element)
 
 
-def from_xml(filepath: str):
+def from_xml(filepath: Union[str, Path]):
     element = ET.parse(filepath).getroot()
     if element.tag == 'network':
         _network = element

@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 Network = Fleet.Network
 
-NetworkType = Union[Network.Network, Network.CapacitatedNetwork, Network.CapacitatedGaussianNetwork]
+NetworkType = Union[Network.Network, Network.DeterministicCapacitatedNetwork, Network.CapacitatedGaussianNetwork]
 FleetType = Union[Fleet.Fleet, Fleet.GaussianFleet]
 
 

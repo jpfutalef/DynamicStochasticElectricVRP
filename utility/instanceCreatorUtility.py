@@ -207,7 +207,7 @@ for i in range(1 + n_customers + n_charg_sta):
 if stochastic:
     network = Network.CapacitatedGaussianNetwork(nodes, edges)
 else:
-    network = Network.CapacitatedNetwork(nodes, edges)
+    network = Network.DeterministicCapacitatedNetwork(nodes, edges)
 
 if plot_network:
     network.draw(save_to=None, width=0.003, edge_color='grey', markeredgecolor='black',

@@ -1,5 +1,4 @@
-import datetime
-import os
+from pathlib import Path
 
 from deap import base
 import matplotlib.pyplot as plt
@@ -59,123 +58,121 @@ class BetaGA_HyperParameters(HyperParameters):
 
 @dataclass
 class GenerationsData:
-    generations: List
-    best_fitness: List
-    worst_fitness: List
-    average_fitness: List
-    std_fitness: List
-    best_individuals: List
-    fleet: Fleet
+    generation: List = None
+    best_fitness: List = None
+    worst_fitness: List = None
+    feasible: List = None
+    average_fitness: List = None
+    std_fitness: List = None
+
+    def __post_init__(self):
+        for key in self.__dict__.keys():
+            self.__dict__[key] = []
+
+    def save(self, data_folder):
+        filepath = Path(data_folder, 'generations_data.csv')
+        pd.DataFrame(self.__dict__, index=self.generation).to_csv(filepath)
+
+
+@dataclass
+class OptimizationData:
+    fleet: Fleet.Fleet
     hyper_parameters: HyperParameters
-    bestOfAll: List
     feasible: bool
-    acceptable: bool
     m: int
-    cs_capacity: int
     algo_time: float = None
+    best_fitness: float = None
+    best_individual: List = None
     additional_info: Dict = None
 
-    def save_opt_data(self, data_folder: str = None, method='ASSIGNATION', savefig=False):
-        from res.dispatcher.Dispatcher import write_routes
+    def save(self, folder_path):
+        # Occupation file
+        nodes_occupation_filepath = Path(folder_path, 'nodes_occupation.csv')
+        theta_matrix = self.fleet.network.theta_matrix.T
+        events = list(range(int(len(theta_matrix[:, 0]))))
+        df_nodes_occupation = pd.DataFrame(theta_matrix, index=events)
+        df_nodes_occupation.to_csv(nodes_occupation_filepath)
 
-        # folder
-        if data_folder:
-            opt_path = data_folder
-        else:
-            now = datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S')
-            folder_name = f'{now}_FEASIBLE_{method}/' if self.feasible else f'{now}_INFEASIBLE_{method}/'
-            opt_path = data_folder + folder_name
-
-            try:
-                os.mkdir(opt_path)
-            except FileExistsError:
-                pass
-
-        # files
-        optimization_iterations_filepath = opt_path + 'optimization_iterations.csv'
-        theta_vector_filepath = opt_path + 'nodes_occupation.csv'
-        info_filepath = opt_path + 'hyper-parameters.csv'
-
-        # optimization results
-        df_op_gens = pd.DataFrame({'best_fitness': self.best_fitness, 'worst_fitness': self.worst_fitness,
-                                   'pop_average': self.average_fitness, 'pop_std': self.std_fitness},
-                                  index=self.generations)
-        df_op_gens.to_csv(optimization_iterations_filepath)
-
-        # theta vector
-        mt = self.fleet.network.theta_matrix.T
-        events = list(range(int(len(mt[:, 0]))))
-        df_nodes_occupation = pd.DataFrame(mt, index=events)
-        df_nodes_occupation.to_csv(theta_vector_filepath)
-
-        # fleet operation
+        # Fleet operation
         for id_ev, ev in self.fleet.vehicles.items():
-            ev_filepath = opt_path + f'EV{id_ev}_operation.csv'
-            route_data = pd.DataFrame({'Sk': ev.route[0], 'Lk': ev.route[1]})
+            ev_filepath = Path(folder_path, f'EV{id_ev}_operation.csv')
+            route_data = pd.DataFrame({'Sk': ev.S, 'Lk': ev.L})
             reaching_data = pd.DataFrame(ev.state_reaching.T, columns=['x1_reaching', 'x2_reaching', 'x3_reaching'])
             leaving_data = pd.DataFrame(ev.state_leaving.T, columns=['x1_leaving', 'x2_leaving', 'x3_leaving'])
-            wt0 = pd.DataFrame(ev.waiting_times0.T, columns=['wating_time_after'])
-            wt1 = pd.DataFrame(ev.waiting_times1.T, columns=['wating_time_before'])
-            data = pd.concat([route_data, reaching_data, leaving_data, wt0, wt1], axis=1)
+            data = pd.concat([route_data, reaching_data, leaving_data], axis=1)
             data.to_csv(ev_filepath)
 
-        # costs
-        cost_filepath = opt_path + 'costs.csv'
-        weight_tt, weight_ec, weight_chg_op, weight_chg_cost, weight_wait_time = self.hyper_parameters.weights
-        cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_weight_time = self.fleet.cost_function()
+        # Routes
+        routes_path = Path(folder_path, 'routes.xml')
+        routes = {}
+        departure_info = {}
+        for id_ev, ev in self.fleet.vehicles.items():
+            S, L = ev.S, ev.L
+            w1 = (0.,)*len(ev.S)
+            routes[id_ev] = (S, L, w1)
+            departure_info[id_ev] = (ev.x1_0, ev.x2_0, ev.x3_0)
+        IOTools.write_routes(routes_path, routes, departure_info)
+
+        # Costs file
+        cost_filepath = Path(folder_path, 'costs.csv')
+        weight_tt, weight_ec, weight_chg_op, weight_chg_cost= self.hyper_parameters.weights
+        cost_tt, cost_ec, cost_chg_op, cost_chg_cost = self.fleet.cost_function()
         index = ['weight', 'cost']
-        data = [[weight_tt, weight_ec, weight_chg_op, weight_chg_cost, weight_wait_time],
-                [cost_tt, cost_ec, cost_chg_op, cost_chg_cost, cost_weight_time]]
-        df_costs = pd.DataFrame(data, columns=['Travel Time (min)', 'Energy Consumption (SOC)',
-                                               'Charging Time (min)', 'Charging Cost', 'Waiting Time (min)'],
-                                index=index)
+        data = [[weight_tt, weight_ec, weight_chg_op, weight_chg_cost],
+                [cost_tt, cost_ec, cost_chg_op, cost_chg_cost]]
+        df_costs = pd.DataFrame(data, columns=['Travel Time (min)', 'Energy Consumption (SOC)', 'Charging Time (min)',
+                                               'Charging Cost'], index=index)
         df_costs.to_csv(cost_filepath)
 
-        # save hyper-parameters
-        info_df = self.hyper_parameters.get_dataframe()
-        additional_info = {'Algorithm time': self.algo_time,
-                           'Best individual': [i for i in self.bestOfAll],
-                           'm': self.m,
-                           'cs_capacity': self.cs_capacity,
-                           'feasible': self.feasible,
-                           'acceptable': self.acceptable}
+        # Hyper-parameters file
+        hyper_parameter_filepath = Path(folder_path, 'hyper_parameters.csv')
+        self.hyper_parameters.to_csv(hyper_parameter_filepath)
+
+        # Report file
+        report_filepath = Path(folder_path, 'optimization_report.csv')
+        report_data = {'Algorithm time': self.algo_time,
+                       'm': self.m,
+                       'feasible': self.feasible,
+                       'best_fitness': self.best_fitness}
         if self.additional_info:
-            additional_info.update(self.additional_info)
-        info_df = info_df.append(pd.Series(additional_info))
-        info_df.to_csv(info_filepath)
+            report_data.update(self.additional_info)
+        pd.Series(report_data).to_csv(report_filepath)
 
-        if savefig:
-            fig, g = self.fleet.network.draw(save_to=f'{opt_path}network', width=0.02,
-                                             edge_color='grey',
-                                             markeredgecolor='black', markeredgewidth=2.0)
-            fig.savefig(f'{opt_path}network.pdf')
+        # Save figures
+        network_path = Path(folder_path, 'network')
+        network_drawing_path = Path(folder_path, 'network.pdf')
+        fig, g = self.fleet.network.draw(save_to=network_path, width=0.02,
+                                         edge_color='grey')
+        fig.savefig(network_drawing_path)
 
-            figs = self.fleet.plot_operation_pyplot()
-            for ev_id, fig in enumerate(figs[:-1]):
-                fig.savefig(f'{opt_path}operation_EV{ev_id}')
-                fig.savefig(f'{opt_path}operation_EV{ev_id}.pdf')
-            figs[-1].savefig(f'{opt_path}cs_occupation')
-            figs[-1].savefig(f'{opt_path}cs_occupation.pdf')
+        figs = self.fleet.plot_operation_pyplot()
+        for ev_id, fig in enumerate(figs[:-1]):
+            png_figure_path = Path(folder_path, f'operation_EV{ev_id}')
+            pdf_figure_path = Path(folder_path, f'operation_EV{ev_id}.pdf')
+            fig.savefig(png_figure_path)
+            fig.savefig(pdf_figure_path)
+        png_occupation_figure_path = Path(folder_path, 'cs_occupation')
+        pdf_occupation_figure_path = Path(folder_path, 'cs_occupation.pdf')
+        figs[-1].savefig(png_occupation_figure_path)
+        figs[-1].savefig(pdf_occupation_figure_path)
 
-            fig, g = self.fleet.draw_operation(color_route=('r', 'b', 'g', 'c', 'y'), save_to=None, width=0.02,
-                                               edge_color='grey',
-                                               markeredgecolor='black', markeredgewidth=2.0)
+        fig, g = self.fleet.draw_operation(color_route=('r', 'b', 'g', 'c', 'y'), save_to=None, width=0.02,
+                                           edge_color='grey')
+        png_network_operation = Path(folder_path, 'network_operation')
+        pdf_network_operation = Path(folder_path, 'network_operation.pdf')
+        fig.savefig(png_network_operation)
+        fig.savefig(pdf_network_operation)
+        plt.close('all')
 
-            fig.savefig(f'{opt_path}network_operation')
-            fig.savefig(f'{opt_path}network_operation.pdf')
-            plt.close('all')
-
-        # write routes file for alphaGA
-        routes_to_save = {i: (ev.route[0], ev.route[1], ev.waiting_times0) for i, ev in self.fleet.vehicles.items()}
-        depart_info = {i: (r.x1_0, r.x2_0, r.x3_0) for i, r in self.fleet.vehicles.items()}
-        write_routes(opt_path + 'routes.xml', routes_to_save, depart_info)
+        # write best individual
+        with open(Path(folder_path, 'best_individual.txt'), 'w') as file:
+            file.write(str(self.best_individual))
 
         # write fleet
-        fleet_path = f'{opt_path}fleet.xml'
-        self.fleet.write_xml(fleet_path, network_in_file=False, assign_customers=False, with_routes=False, online=False,
-                             print_pretty=False)
+        fleet_path = Path(folder_path, 'fleet.xml')
+        self.fleet.write_xml(fleet_path, network_in_file=False, print_pretty=False)
         # write network
-        network_path = f'{opt_path}network.xml'
+        network_path = Path(folder_path, 'network.xml')
         self.fleet.network.write_xml(network_path, print_pretty=False)
 
 

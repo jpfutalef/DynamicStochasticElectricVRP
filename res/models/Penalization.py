@@ -5,9 +5,9 @@ def normal_cdf(x, mu=0., sigma=1.0):
     if sigma:
         q = math.erf((x - mu) / (math.sqrt(2.0) * sigma))
         return (1.0 + q) / 2.0
-    elif x - mu:
-        return 0.
-    return 1.
+    elif mu <= x:
+        return 1
+    return 0.
 
 
 def penalization_deterministic(x: float, y: float, **kwargs):

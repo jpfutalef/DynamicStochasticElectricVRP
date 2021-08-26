@@ -3,6 +3,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Tuple, Dict, Union, List, Type
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -22,7 +23,7 @@ MAIN FLEET DEFINITION
 @dataclass
 class Fleet:
     vehicles: Dict[int, EV.ElectricVehicle]
-    network: Network.CapacitatedNetwork = None
+    network: Network.DeterministicCapacitatedNetwork = None
     vehicles_to_route: Tuple[int, ...] = None
     default_init_theta: np.ndarray = None
     hard_penalization: Union[int, float] = 0.0
@@ -43,9 +44,8 @@ class Fleet:
         self.vehicles = vehicles
 
     def set_network(self, network: Network = None):
-        if network:
-            self.network = network
-            self.set_default_init_theta()
+        self.network = network
+        self.set_default_init_theta()
 
     def set_default_init_theta(self, init_theta: np.ndarray = None):
         if self.network:
@@ -76,7 +76,7 @@ class Fleet:
 
     def resize_fleet(self, new_size, based_on=None):
         ev_base = deepcopy(based_on) if based_on else deepcopy(self.vehicles[0])
-        ev_base.reset()
+        ev_base.reset(self.network)
         self.vehicles = {}
         for i in range(new_size):
             ev = deepcopy(ev_base)
@@ -234,6 +234,21 @@ class Fleet:
             ### FIG X1 ###
             plt.subplot(131)
             plt.grid()
+
+            # Covariance
+            try:
+                Y_reaching_std = np.array(
+                    [np.sqrt(q) for i, q in enumerate(vehicle.state_reaching_covariance[0, :]) if i % 3 == 0])
+                plt.fill_between(range(si), r_time - 3 * Y_reaching_std, r_time + 3 * Y_reaching_std, color='red',
+                                 alpha=0.2)
+
+                Y_leaving_std = np.array(
+                    [np.sqrt(q) for i, q in enumerate(vehicle.state_reaching_covariance[0, :]) if i % 3 == 0])
+                plt.fill_between(range(si), l_time - 3 * Y_leaving_std, l_time + 3 * Y_leaving_std, color='green',
+                                 alpha=0.2)
+            except ValueError:
+                pass
+
             # time windows
             X_tw = [k for k, Sk in enumerate(Si) if self.network.is_customer(Sk)]
             Y_tw = [(self.network.nodes[Sk].time_window_upp + self.network.nodes[Sk].time_window_low) / 2.0
@@ -283,13 +298,27 @@ class Fleet:
 
             plt.legend(fontsize='small')
             plt.xlabel('Stop')
-            plt.ylabel('Time of the day (min)')
+            plt.ylabel('Time of the day [s]')
             plt.title(f'Arrival and departure times (EV {id_ev})')
             plt.xlim(-.5, si - .5)
 
             ### FIG X2 ###
             plt.subplot(132)
             plt.grid()
+
+            # Covariance
+            try:
+                Y_reaching_std = np.array(
+                    [np.sqrt(q) for i, q in enumerate(vehicle.state_reaching_covariance[1, 1:]) if i % 3 == 0])
+                plt.fill_between(range(si), r_soc - 3 * Y_reaching_std, r_soc + 3 * Y_reaching_std, color='red',
+                                 alpha=0.2)
+
+                Y_leaving_std = np.array(
+                    [np.sqrt(q) for i, q in enumerate(vehicle.state_reaching_covariance[1, 1:]) if i % 3 == 0])
+                plt.fill_between(range(si), l_soc - 3 * Y_leaving_std, l_soc + 3 * Y_leaving_std, color='green',
+                                 alpha=0.2)
+            except ValueError:
+                pass
 
             # SOC in Customer
             X_node = [i for i in range(si) if self.network.is_customer(Si[i])]
@@ -333,7 +362,7 @@ class Fleet:
             plt.ylim((0, 100))
             plt.xlim(-.5, si - .5)
             plt.xlabel('Stop')
-            plt.ylabel('State Of Charge (%)')
+            plt.ylabel('State Of Charge [%]')
             plt.title(f'EV Battery SOC (EV {id_ev})')
 
             ### FIG X3 ###
@@ -364,7 +393,7 @@ class Fleet:
             plt.axhline(vehicle.max_payload, linestyle='--', color='black', label='Max. payload')
 
             plt.xlabel('Stop')
-            plt.ylabel('Payload (t)')
+            plt.ylabel('Payload [kg]')
             plt.title(f' (Payload evolution (EV {id_ev})')
             plt.legend(fontsize='small')
 
@@ -390,7 +419,7 @@ class Fleet:
         pos = {i: (node.pos_x, node.pos_y) for i, node in self.network.nodes.items()}
         cc = 0
         for id_ev, ev in self.vehicles.items():
-            edges = [(Sk0, Sk1) for Sk0, Sk1 in zip(ev.S[0:-1], ev.L[1:])]
+            edges = [(Sk0, Sk1) for Sk0, Sk1 in zip(ev.S[0:-1], ev.S[1:])]
             if type(color_route) == str:
                 nx.draw_networkx_edges(g, pos, edgelist=edges, ax=fig.get_axes()[0], edge_color=color_route)
             else:
@@ -399,116 +428,36 @@ class Fleet:
         return fig, g
 
 
+'''
+GAUSSIAN FLEET DEFINITION
+'''
+
+
 class GaussianFleet(Fleet):
     vehicles: Dict[int, EV.GaussianElectricVehicle]
     network: Network.CapacitatedGaussianNetwork
+    cs_capacities_combinations: Dict[int, List[List]]  # CS: CS_combinations
+    sample_time_cs_probability: Union[float, int]
+
+    def __post_init__(self):
+        super(GaussianFleet, self).__post_init__()
+        self.setup_cs_capacities_combinations()
+        self.set_sample_time_cs_probability(5.0)
 
     def iterate(self):
         for ev in self.vehicles.values():
             ev.step(self.network)
 
-    def heuristic_1(self):
-        return
-
-    def heuristic_2(self):
-        return
-
     def choose_which_cs_evaluate(self):
-        return
+        return [1 for _ in self.network.charging_stations]  # TODO heuristic
 
-    def feasible_stochastic(self) -> Tuple[bool, Union[int, float], bool]:
-        # 1. Variables to return
-        is_feasible = True
-        accept = True
-        dist = 0
+    def setup_cs_capacities_combinations(self):
+        n = self.network
+        cs = self.network.charging_stations
+        self.cs_capacities_combinations = {i: n.nodes[i].saturation_combinations(len(self)) for i in cs}
 
-        # 2. Variables from the optimization vector and vehicles
-        network = self.network
-        m = len(self.vehicles_to_route)
-        sum_si = sum([len(self.vehicles[id_ev].route[0]) for id_ev in self.vehicles_to_route])
-        num_events = 2 * sum_si - 2 * m + 1
-        num_cust = len(network.customers)
-
-        for id_ev in self.vehicles_to_route:
-            ev = self.vehicles[id_ev]
-            """
-            MAX TOUR TIME
-            """
-            PRB = 0.95
-            MU = ev.state_reaching[0, -1]
-            SIG = np.sqrt(ev.state_reaching_covariance[0, -3])
-            VAL = ev.max_tour_duration + ev.x1_0
-            CDF = normal_cdf(VAL, MU, SIG)
-            dist += penalization_stochastic(CDF, PRB, w=1e4)
-
-            """
-            MAX PAYLOAD
-            """
-            if ev.state_leaving[2, 0] > ev.max_payload:
-                dist = penalization_deterministic(ev.state_leaving[2, 0], ev.max_payload)
-
-            for k, (Sk, Lk) in enumerate(zip(ev.route[0], ev.route[1])):
-                if network.is_customer(Sk):
-                    node = network.nodes[Sk]
-                    """
-                    TIME WINDOW - LOWER BOUND
-                    """
-                    PRB = 0.95
-                    MU = ev.state_reaching[0, k]
-                    SIG = ev.state_reaching_covariance[0, 3 * k]
-                    VAL = node.time_window_low
-                    CDF = 1 - normal_cdf(VAL, MU, SIG)
-                    dist += penalization_stochastic(CDF, PRB, w=1e4)
-
-                    """
-                    TIME WINDOW - UPPER BOUND
-                    """
-                    PRB = 0.95
-                    MU = ev.state_reaching[0, k]
-                    SIG = np.sqrt(ev.state_reaching_covariance[0, 3 * k])
-                    VAL = node.time_window_upp - ev.service_time[k]
-                    CDF = normal_cdf(VAL, MU, SIG)
-                    dist += penalization_stochastic(CDF, PRB, w=1e4)
-
-                """
-                SOC BOUND - REACHING
-                """
-                PRB = 0.9
-                MU = ev.state_reaching[1, k]
-                SIG = np.sqrt(ev.state_reaching_covariance[1, 3 * k + 1])
-                VAL1 = ev.alpha_up
-                VAL2 = ev.alpha_down
-                CDF1 = normal_cdf(VAL1, MU, SIG)
-                CDF2 = normal_cdf(VAL2, MU, SIG)
-                CDF = CDF1 - CDF2
-                dist += penalization_stochastic(CDF, PRB, w=1e4)
-
-                """
-                SOC BOUND LOWER - LEAVING
-                """
-                PRB = 0.9
-                MU = ev.state_leaving[1, k]
-                SIG = SIG
-                VAL1 = ev.alpha_up - Lk
-                VAL2 = ev.alpha_down - Lk
-                CDF1 = normal_cdf(VAL1, MU, SIG)
-                CDF2 = normal_cdf(VAL2, MU, SIG)
-                CDF = CDF1 - CDF2
-                dist += penalization_stochastic(CDF, PRB, w=1e4)
-        """
-        CS CAPACITIES
-        """
-        for i, cs in enumerate(network.charging_stations):
-            for k in range(num_events):
-                if self.theta_matrix[1 + num_cust + i, k] > network.nodes[cs].capacity:
-                    dist += penalization_deterministic(self.theta_matrix[1 + num_cust + i, k],
-                                                       network.nodes[cs].capacity)
-
-        if dist:
-            is_feasible = False
-            accept = False
-
-        return is_feasible, dist, accept
+    def set_sample_time_cs_probability(self, sample_time: Union[int, float]):
+        self.sample_time_cs_probability = sample_time
 
 
 def routes_from_csv_folder(folder_path: str, fleet: Fleet):
@@ -522,7 +471,7 @@ def routes_from_csv_folder(folder_path: str, fleet: Fleet):
     return routes
 
 
-def from_xml(filepath: str) -> Union[Fleet, GaussianFleet]:
+def from_xml(filepath: Union[Path, str]) -> Union[Fleet, GaussianFleet]:
     element = ET.parse(filepath).getroot()
     if element.tag == 'fleet':
         _fleet = element

@@ -2,11 +2,12 @@ from dataclasses import dataclass
 from typing import Union, Dict, Tuple
 import xml.etree.ElementTree as ET
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 def fix_tod(tod: float):
-    while tod > 1440:
-        tod -= 1440
+    while tod > 86400:
+        tod -= 86400
     return tod
 
 
@@ -28,6 +29,9 @@ def interpolate(t: float, dt: float, array: Union[np.ndarray, list]):
     t0, y0 = i * dt, array[i]
     t1, y1 = (i + 1) * dt, array[j]
     m, n = get_affine_parameters(t0, t1, y0, y1)
+    #plt.plot(array)
+    #plt.plot(t / dt, m * t + n, "*")
+    #plt.show()
     return m * t + n
 
 
@@ -106,6 +110,13 @@ class DynamicEdge:
         return cls(node_from, node_to, length, sample_time, velocity, distance_profile, inclination_profile,
                    velocity_unit)
 
+    def plot_profile(self):
+        fig = plt.figure()
+        plt.plot(np.arange(0, 86400, 1800), self.velocity)
+        plt.xlabel("TOD")
+        plt.ylabel("Velocity [m/s]")
+        return fig
+
 
 @dataclass
 class GaussianEdge(DynamicEdge):
@@ -141,6 +152,16 @@ class GaussianEdge(DynamicEdge):
 
         return cls(node_from, node_to, length, sample_time, velocity, length_profile, inclination_profile,
                    velocity_unit, velocity_deviation=velocity_deviation)
+
+    def plot_profile(self):
+        fig = plt.figure()
+        plt.plot(np.arange(0, 86400, 1800), self.velocity, marker='', markersize=4, color='k', label='Average')
+        plt.fill_between(np.arange(0, 86400, 1800), self.velocity + 3*self.velocity_deviation,
+                         self.velocity - 3*self.velocity_deviation, alpha=.2, color="black",
+                         label='99.7% confidence interval')
+        plt.xlabel("TOD")
+        plt.ylabel("Velocity [m/s]")
+        return fig
 
 
 def from_xml_element(element: ET.Element, node_from: int):
