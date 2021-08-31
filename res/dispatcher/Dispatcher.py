@@ -2,14 +2,15 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Dict, Tuple, List
 import pandas as pd
-
 import numpy as np
+from pathlib import Path
+import copy
 
 import res.models.Fleet as Fleet
 import res.models.Network as Network
 from res.tools.IOTools import RouteDict, DepartDict, write_routes, read_routes, write_pretty_xml
 
-from res.optimizer.GATools import HyperParameters
+from res.optimizer.GATools import OnGA_HyperParameters
 from res.optimizer import onGA
 
 
@@ -32,6 +33,10 @@ class ElectricVehicleMeasurement:
     visited_nodes: int = 0
 
     done: bool = False
+    departure_time: float = 0.0
+    cumulated_consumed_energy: float = 0.0
+    min_soc: float = 0.0
+    max_soc: float = 0.0
 
     def xml_element(self) -> [ET.Element]:
         return ET.Element('measurement', attrib={str(i): str(j) for i, j in self.__dict__.items()})
@@ -47,38 +52,55 @@ class ElectricVehicleMeasurement:
             self.__dict__[key] = type(self.__dict__[key])(attrib)
 
 
-def create_measurements_file(filepath: str, routes_path: str) -> Tuple[Dict[int, ElectricVehicleMeasurement],
-                                                                       ET.Element]:
-    routes, departure_info = read_routes(routes_path, read_depart_info=True)
-    collection = {}
+def create_measurements_file(filepath: Path, routes_path: Path, offset_time: float = 600.,
+                             based_on: Dict[int, ElectricVehicleMeasurement] = None,
+                             previous_day_measurements: Dict[int, ElectricVehicleMeasurement] = None
+                             ) -> Tuple[Dict[int, ElectricVehicleMeasurement], ET.Element]:
+    if based_on:
+        collection = copy.deepcopy(based_on)
+    else:
+        collection = {}
+        routes, departure_info = read_routes(routes_path, read_depart_info=True)
+        t = min([info[0] for info in departure_info.values()]) - offset_time
+        for ev_id, route, info in zip(routes.keys(), routes.values(), departure_info.values()):
+            m = ElectricVehicleMeasurement(ev_id)
+            m.stopped_at_node_from = True
+            m.node_from = route[0][0]
+            m.node_to = route[0][1]
+            m.eta = 0.
+
+            m.time_finishing_service = info[0]
+            m.soc_finishing_service = info[1]
+            m.payload_finishing_service = info[2]
+
+            m.time = t
+            m.departure_time = departure_info[ev_id][0]
+            m.soc = info[1]
+            m.payload = info[2]
+
+            m.visited_nodes = 1
+            m.done = False
+
+            if previous_day_measurements:
+                pdm = previous_day_measurements[ev_id]
+                m.min_soc = pdm.min_soc if pdm.min_soc <= m.soc else m.soc
+                m.max_soc = pdm.max_soc if pdm.max_soc >= m.soc else m.soc
+                m.cumulated_consumed_energy = pdm.cumulated_consumed_energy
+
+            else:
+                m.min_soc = m.soc
+                m.max_soc = m.soc
+                m.cumulated_consumed_energy = 0.0
+
+            collection[ev_id] = m
+
     root = ET.Element('measurements')
-    t = min([info[0] for info in departure_info.values()])
-    for ev_id, route, info in zip(routes.keys(), routes.values(), departure_info.values()):
-        m = ElectricVehicleMeasurement(ev_id)
-        m.stopped_at_node_from = True
-        m.node_from = route[0][0]
-        m.node_to = route[0][1]
-        m.eta = 0.
-
-        m.time_finishing_service = info[0]
-        m.soc_finishing_service = info[1]
-        m.payload_finishing_service = info[2]
-
-        m.time = t
-        m.soc = info[1]
-        m.payload = info[2]
-
-        m.visited_nodes = 1
-
-        m.done = False
-
-        root.append(m.xml_element())
-        collection[ev_id] = m
+    [root.append(m.xml_element()) for m in collection.values()]
     ET.ElementTree(root).write(filepath)
     return collection, root
 
 
-def read_measurements(filepath: str) -> Dict[int, ElectricVehicleMeasurement]:
+def read_measurements(filepath: Path) -> Dict[int, ElectricVehicleMeasurement]:
     measurements = {}
     root = ET.parse(filepath).getroot()
     for _measurement in root:
@@ -88,14 +110,14 @@ def read_measurements(filepath: str) -> Dict[int, ElectricVehicleMeasurement]:
     return measurements
 
 
-def update_measurements(filepath: str, measurements: Dict[int, ElectricVehicleMeasurement]):
+def update_measurements(filepath: Path, measurements: Dict[int, ElectricVehicleMeasurement]):
     root = ET.parse(filepath).getroot()
     for _measurement in root:
         measurements[int(_measurement.get('id'))].update_from_element(_measurement)
     return measurements
 
 
-def write_measurements(filepath: str, measurements: Dict[int, ElectricVehicleMeasurement], write_pretty: bool = False):
+def write_measurements(filepath: Path, measurements: Dict[int, ElectricVehicleMeasurement], write_pretty: bool = False):
     root = ET.Element('measurements')
     for measurement in measurements.values():
         root.append(measurement.xml_element())
@@ -107,10 +129,10 @@ def write_measurements(filepath: str, measurements: Dict[int, ElectricVehicleMea
 
 @dataclass
 class Dispatcher:
-    network_path: str
-    fleet_path: str
-    measurements_path: str
-    routes_path: str
+    network_path: Path
+    fleet_path: Path
+    measurements_path: Path
+    routes_path: Path
 
     network: Network.Network = None
     fleet: Fleet.Fleet = None
@@ -121,7 +143,7 @@ class Dispatcher:
     routes: RouteDict = None
     depart_info: DepartDict = None
     time: float = None
-    onGA_hyper_parameters: HyperParameters = None
+    onGA_hyper_parameters: OnGA_HyperParameters = None
     exec_times: List = None
 
     def __post_init__(self):
@@ -141,11 +163,10 @@ class Dispatcher:
         return True
 
     def update_network(self):
-        self.network = Network.from_xml(self.network_path, instance=False)
+        self.network = Network.from_xml(self.network_path)
 
     def update_fleet(self):
-        self.fleet = Fleet.from_xml(self.fleet_path, assign_customers=False, with_routes=False, instance=False,
-                                    from_online=False)
+        self.fleet = Fleet.from_xml(self.fleet_path)
 
     def set_routes(self, routes: RouteDict, depart_info: DepartDict = None):
         self.routes = routes
@@ -178,198 +199,123 @@ class Dispatcher:
         self.update_routes()
         self.fleet.set_network(self.network)
 
-    def synchronization(self) -> Dict[int, Tuple[int, float, float, float]]:
-        """
-        Applies synchronization procedure to routes, based on the measurements.
-        :return: Dictionary containing position of critical node and critical state (j, x1_0, x2_0, x3_0)
-        """
-        critical_nodes_info = {}
+    def synchronization(self) -> Tuple[Dict[int, onGA.CriticalPoint], Dict[int, Tuple]]:
+        critical_nodes = {}
+        routes_with_critical_nodes = {}
         for id_ev, meas in self.measurements.items():
-            # Vehicle finished the operation
+            # Vehicle finished the operation. Pass.
             if meas.done:
                 continue
 
             """
             FIRST - Find next node the EV will visit and iterate from there
             """
-            j_start = meas.visited_nodes - 1
-            (S, L, w1) = self.routes[id_ev][0][j_start:], self.routes[id_ev][1][j_start:], self.routes[id_ev][2][
-                                                                                           j_start:]
-            j_next = S.index(meas.node_to)
-            S0, S1 = meas.node_from, meas.node_to
+            j0 = meas.visited_nodes - 1
+            route = self.routes[id_ev]
+            (S, L, w1) = route[0][j0:], route[1][j0:], route[2][j0:]
 
-            # Few customers ahead, pass
+            # Few customers ahead. Pass.
             if sum([1 for i in S if self.network.is_customer(i)]) <= 1:
                 continue
 
-            if meas.stopped_at_node_from:
-                ev = self.fleet.vehicles[id_ev]
-                w1_current = w1[j_next - 1]
+            # Get the EV
+            ev = self.fleet.vehicles[id_ev]
 
-                departure_time = meas.time_finishing_service + w1_current
+            # EV is performing an operation at the first node of S
+            if meas.stopped_at_node_from:
+                departure_time = meas.time_finishing_service + w1[0]  # TODO check this
                 departure_soc = meas.soc_finishing_service
                 departure_payload = meas.payload_finishing_service
 
-                if S0 == 0:
-                    # Vehicle is at depot, consider this as the next node
-                    j_next = 0
-                    S1 = 0
-                    arrival_time_S1 = departure_time
-                    arrival_soc_S1 = departure_soc
-                    arrival_payload_S1 = departure_payload
+                if S[0] == 0:
+                    # Consider this node as the critical node.
+                    j1 = 0
+                    Sj1_arrival_time = departure_time
+                    Sj1_sos_soc = departure_soc
+                    Sj1_sos_payload = departure_payload
 
                 else:
                     # Arrival state at next node
-                    arrival_time_S1 = departure_time + self.network.t(S0, S1, departure_time)
-                    arrival_soc_S1 = departure_soc - self.network.e(S0, S1, departure_payload, ev.weight,
-                                                                    departure_time) * 100 / ev.battery_capacity
-                    arrival_payload_S1 = departure_payload
+                    j1 = 1
+                    Sj1_arrival_time = departure_time + self.network.t(S[0], S[1], departure_time)
+                    Sj1_sos_soc = departure_soc - self.network.E(S[0], S[1], departure_payload + ev.weight,
+                                                                 departure_time) * 100 / ev.battery_capacity
+                    Sj1_sos_payload = departure_payload
 
             else:
-                ev = self.fleet.vehicles[id_ev]
+                j1 = 1
                 eta = meas.eta
 
                 # Arrival state at next node
-                arrival_time_S1 = meas.time + (1 - eta) * self.network.t(S0, S1, meas.time)
-                arrival_soc_S1 = meas.soc - 100. * (1 - eta) * self.network.e(S0, S1, meas.payload, ev.weight,
-                                                                              meas.time) / ev.battery_capacity
-                arrival_payload_S1 = meas.payload
+                Sj1_arrival_time = meas.time + (1 - eta) * self.network.t(S[0], S[1], meas.time)
+                Sj1_sos_soc = meas.soc - 100. * (1 - eta) * self.network.E(S[0], S[1], meas.payload + ev.weight,
+                                                                           meas.time) / ev.battery_capacity
+                Sj1_sos_payload = meas.payload
 
-            S_ahead = S[j_next:]
-            L_ahead = L[j_next:]
-            w1_ahead = w1[j_next:]
+            nS = S[j1:]
+            nL = L[j1:]
+            nw1 = w1[j1:]
 
-            Lj1 = L_ahead[0] if arrival_soc_S1 + L_ahead[0] <= ev.alpha_up else ev.alpha_up - arrival_soc_S1
+            Lj1 = nL[0] if Sj1_sos_soc + nL[0] <= ev.alpha_up else ev.alpha_up - Sj1_sos_soc
 
-            next_node_low_tw = self.network.nodes[S1].time_window_low
-            time_at_start_of_service = arrival_time_S1 if arrival_time_S1 > next_node_low_tw else next_node_low_tw
-            t_service = self.network.spent_time(S1, arrival_soc_S1, Lj1)
+            Sj1_low_tw = self.network.nodes[nS[0]].time_window_low
+            Sj1_sos_time = Sj1_arrival_time if Sj1_arrival_time > Sj1_low_tw else Sj1_low_tw
+            Sj1_service_time = self.network.spent_time(nS[0], Sj1_sos_soc, Lj1)
 
-            x1_0 = time_at_start_of_service + t_service + w1_ahead[0]
-            x2_0 = arrival_soc_S1 + Lj1
-            x3_0 = arrival_payload_S1 - self.network.demand(S1)
+            x1_0 = Sj1_sos_time + Sj1_service_time + nw1[0]
+            x2_0 = Sj1_sos_soc + Lj1
+            x3_0 = Sj1_sos_payload - self.network.demand(nS[0])
 
             # Iterate from the first non-visited node
-            reaching_state = np.asarray([time_at_start_of_service, arrival_soc_S1, arrival_payload_S1])
-            ev.set_route((S_ahead, L_ahead), x1_0, x2_0, x3_0, reaching_state=reaching_state)
+            reaching_state = np.asarray([Sj1_sos_time, Sj1_sos_soc, Sj1_sos_payload])
+            ev.set_route(nS, nL, x1_0, x2_0, x3_0)
+            # ev.set_route((nS, nL), x1_0, x2_0, x3_0, reaching_state=reaching_state)
             ev.step(self.network)
-
-            # ev.state_reaching[:, 0] = np.asarray([time_at_start_of_service, arrival_soc_S1, arrival_payload_S1])
 
             """
             SECOND - Calculate critical points and states
             """
-            for k, time_at_start_of_service in enumerate(ev.state_reaching[0, :]):
-                if time_at_start_of_service - meas.time >= self.ga_time + self.offset_time:
-                    j_critical = j_next + k + j_start
-                    # There are no more customers ahead
-                    if sum([1 for i in S_ahead[k:] if self.network.is_customer(i)]) <= 1:
-                        continue
+            for k, (sos_time, S0, L0) in enumerate(zip(ev.state_reaching[0, :], nS, nL)):
+                if sos_time - meas.time >= self.ga_time + self.offset_time:
+                    # Few customers ahead. Pass.
+                    if sum([1 for i in nS[k:] if self.network.is_customer(i)]) <= 1:
+                        break
 
-                    # Otherwise, it is a critical point
+                    j_critical = j0 + j1 + k
                     x1_critical = float(ev.state_reaching[0, k])
                     x2_critical = float(ev.state_reaching[1, k])
                     x3_critical = float(ev.state_reaching[2, k])
-                    ev.assigned_customers = tuple(i for i in S_ahead if self.network.is_customer(i))
-
-                    critical_nodes_info[id_ev] = (j_critical, x1_critical, x2_critical, x3_critical)
+                    ev.assigned_customers = tuple(i for i in nS if self.network.is_customer(i))
+                    critical_nodes[id_ev] = onGA.CriticalPoint(j_critical, S0, L0, x1_critical, x2_critical,
+                                                               x3_critical)
+                    routes_with_critical_nodes[id_ev] = (nS[k:], nL[k:])
+                    ev.current_max_tour_duration = ev.max_tour_duration + meas.departure_time - x1_critical
                     break
-
-        return critical_nodes_info
+        return critical_nodes, routes_with_critical_nodes
 
     def optimize_online(self, exec_time_filepath):
-        cp_info = self.synchronization()
-        if not bool(cp_info):
+        critical_points, routes_with_critical_points = self.synchronization()
+        if not bool(critical_points):
             return
-        routes_from_critical_points = {}
-
-        for id_ev in cp_info.keys():
-            r = self.routes[id_ev]
-            j_critical = cp_info[id_ev][0]
-            x1_0 = cp_info[id_ev][1]
-            x2_0 = cp_info[id_ev][2]
-            x3_0 = cp_info[id_ev][3]
-            ev = self.fleet.vehicles[id_ev]
-            ev.current_max_tour_duration = ev.max_tour_duration + self.depart_info[id_ev][0] - x1_0
-
-            routes_from_critical_points[id_ev] = ((r[0][j_critical:], r[1][j_critical:]), x1_0, x2_0, x3_0)
-
-        self.fleet.set_vehicles_to_route([id_ev for id_ev in routes_from_critical_points.keys()])
-        best_ind, critical_points = onGA.code(self.fleet, routes_from_critical_points, allowed_charging_operations=2)
-        routes, opt_data, toolbox = onGA.onGA(self.fleet, self.onGA_hyper_parameters, critical_points, save_to=None,
-                                              best_ind=best_ind)
+        self.fleet.set_vehicles_to_route([id_ev for id_ev in critical_points.keys()])
+        best_ind = onGA.code(self.fleet, routes_with_critical_points, r=self.onGA_hyper_parameters.r)
+        routes, toolbox, report = onGA.onGA(self.fleet, self.onGA_hyper_parameters, critical_points, save_to=None,
+                                            best_ind=best_ind)
 
         # Save execution time
-        self.exec_times.append(opt_data.algo_time)
+        self.exec_times.append(report.algo_time)
         pd.Series(self.exec_times, name='execution_time (seg)').to_csv(exec_time_filepath)
 
         for id_ev in self.fleet.vehicles_to_route:
-            j_critical = cp_info[id_ev][0]
-            S_ahead = routes[id_ev][0][0]
-            L_ahead = routes[id_ev][0][1]
-            w1_ahead = tuple(self.fleet.vehicles[id_ev].waiting_times0)
+            j_critical = critical_points[id_ev][0]
+            S_ahead = routes[id_ev][0]
+            L_ahead = routes[id_ev][1]
+            # w1_ahead = tuple(self.fleet.vehicles[id_ev].waiting_times0)
 
             S = self.routes[id_ev][0][:j_critical] + S_ahead
             L = self.routes[id_ev][1][:j_critical] + L_ahead
-            w1 = self.routes[id_ev][2][:j_critical] + w1_ahead
+            # w1 = self.routes[id_ev][2][:j_critical] + w1_ahead
+            w1 = (0, ) * len(S)
 
-            # Fix routes
-            _S = []
-            _L = []
-            _w1 = []
-            add = True
-            for S0, S1, L0, L1, w10, w11 in zip(S[:-1], S[1:], L[:-1], L[1:], w1[:-1], w1[1:]):
-                if S1 == S0 and add:
-                    _S.append(S0)
-                    _L.append(L0)
-                    _w1.append(w10)
-                    add = False
-                elif S1 == S0 and not add:
-                    _L[-1] += L0
-                    _w1[-1] += w10
-                elif S1 != S0 and add:
-                    _S.append(S0)
-                    _L.append(L0)
-                    _w1.append(w10)
-                else:
-                    _L[-1] += L0
-                    _w1[-1] += w10
-                    add = True
-
-            if S1 == S0 and add:
-                _S.append(S1)
-                _L.append(L1)
-                _w1.append(w11)
-            elif S1 == S0 and not add:
-                _L[-1] += L1
-                _w1[-1] += w11
-            elif S1 != S0 and add:
-                _S.append(S1)
-                _L.append(L1)
-                _w1.append(w11)
-            else:
-                _L[-1] += L1
-                _w1[-1] += w11
-
-            self.routes[id_ev] = (tuple(_S), tuple(_L), tuple(_w1))
-
-            if routes[id_ev][0][0][0] == 0:
-                # Save depart info
-                dep_x1_0 = routes[id_ev][1]
-                dep_x2_0 = routes[id_ev][2]
-                dep_x3_0 = routes[id_ev][3]
-
-                self.depart_info[id_ev] = (dep_x1_0, dep_x2_0, dep_x3_0)
-                self.measurements[id_ev].time_finishing_service = dep_x1_0
-
+            self.routes[id_ev] = (tuple(S), tuple(L), tuple(w1))
         self.write_routes()
-
-if __name__ == '__main__':
-    network_path = "../../data/online/instance21/init_files/network.xml"
-    fleet_path = "../../data/online/instance21/init_files/fleet.xml"
-    measurements_path = "../../data/online/instance21/init_files/measurements.xml"
-    routes_path = "../../data/online/instance21/init_files/routes.xml"
-
-    d = Dispatcher(network_path, fleet_path, measurements_path, routes_path)
-
-    cp = d.synchronization()

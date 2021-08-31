@@ -6,6 +6,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
+import os
 
 import res.models.Edge as Edge
 import res.models.Node as Node
@@ -30,20 +31,6 @@ def integer_to_tuple2(k: int):
     if k % 2:
         return val, 1
     return val, 0
-
-
-def theta_matrix(matrix, time_vectors, events_count):
-    counters = [[TupleIndex([0, 0]), 0] for _ in range(len(time_vectors))]
-    for k in range(1, events_count):
-        min_t, ind_ev = min([(time_vectors[ind][x[0][1]][x[0][0]], ind) for ind, x in enumerate(counters) if not x[1]])
-        event = 1 if counters[ind_ev][0][1] else -1
-        node = time_vectors[ind_ev][2][counters[ind_ev][0][0] + counters[ind_ev][0][1]]
-        matrix[:, k] = matrix[:, k - 1]
-        matrix[node, k] += event
-        counters[ind_ev][0] = counters[ind_ev][0] + 1
-        if not counters[ind_ev][0][1] and len(time_vectors[ind_ev][2]) - 1 == counters[ind_ev][0][0] + \
-                counters[ind_ev][0][1]:
-            counters[ind_ev][1] = 1
 
 
 """
@@ -114,6 +101,20 @@ class Network:
     def time_window_upp(self, node: int):
         return self.nodes[node].time_window_upp
 
+    def t(self, node_from: int, node_to: int, time_of_day: float) -> float:
+        v = self.v(node_from, node_to, time_of_day)
+        v = v[0] if len(v) else v
+        return self.edges[node_from][node_to].length / v
+
+    def E(self, node_from: int, node_to: int, m: float, time_of_day: float, Cr=1.75, c1=4.575, c2=1.75, rho_air=1.2256,
+          Af=2.3316, Cd=0.28, g=9.8, v=None) -> float:
+        v = self.v(node_from, node_to, time_of_day)
+        v = v[0] if len(v) else v
+        edge = self.edges[node_from][node_to]
+        f = m * (edge.road_cos_length * g * Cr * (c1 * v + c2) / 1000 + edge.road_sin_length * g)
+        g = rho_air * Af * Cd * edge.length * v ** 2 / 2
+        return f + g
+
     def is_depot(self, node: int):
         return self.nodes[node].is_depot()
 
@@ -175,8 +176,9 @@ class Network:
                 _node_from.append(_node_to)
         return _network
 
-    def write_xml(self, filepath: str, print_pretty=False):
+    def write_xml(self, filepath: Path, print_pretty=False):
         tree = self.xml_tree()
+        os.makedirs(filepath.parent, exist_ok=True)
         if print_pretty:
             IOTools.write_pretty_xml(filepath, tree)
         else:
@@ -215,6 +217,25 @@ class Network:
             return cls.from_xml_element(_network)
 
 
+"""
+DETERMINISTIC CAPACITATED NETWORK
+"""
+
+
+def theta_matrix(matrix, time_vectors, events_count):
+    counters = [[TupleIndex([0, 0]), 0] for _ in range(len(time_vectors))]
+    for k in range(1, events_count):
+        min_t, ind_ev = min([(time_vectors[ind][x[0][1]][x[0][0]], ind) for ind, x in enumerate(counters) if not x[1]])
+        event = 1 if counters[ind_ev][0][1] else -1
+        node = time_vectors[ind_ev][2][counters[ind_ev][0][0] + counters[ind_ev][0][1]]
+        matrix[:, k] = matrix[:, k - 1]
+        matrix[node, k] += event
+        counters[ind_ev][0] = counters[ind_ev][0] + 1
+        if not counters[ind_ev][0][1] and len(time_vectors[ind_ev][2]) - 1 == counters[ind_ev][0][0] + \
+                counters[ind_ev][0][1]:
+            counters[ind_ev][1] = 1
+
+
 @dataclass
 class DeterministicCapacitatedNetwork(Network):
     theta_matrix: Union[None, np.ndarray] = None
@@ -251,6 +272,9 @@ class DeterministicCapacitatedNetwork(Network):
             for j in i.values():
                 j.velocity_deviation *= factor
 
+    def get_occupation_data(self):
+        return self.theta_matrix
+
     def check_feasibility(self):
         self.penalization = 0.0
         self.constraint_cs_capacities()
@@ -270,9 +294,29 @@ CAPACITATED GAUSSIAN NETWORK - DEFINITION
 """
 
 
+def single_ev_box(container: np.ndarray, dt: float, cs_id: int, reaching_times: np.ndarray, leaving_times: np.ndarray,
+                  destinations: Tuple[int, ...], stds: np.ndarray, std_factor: float = 3.0):
+    for i, node in enumerate(destinations):
+        if node == cs_id:
+            a = int((reaching_times[i] - std_factor * stds[i]) / dt)
+            b = int((leaving_times[i] + std_factor * stds[i]) / dt)
+
+            for k in range(a, b):
+                off1 = 0 if k >= 0 else len(container)
+                off2 = 0 if k < len(container) else -len(container)
+                container[k + off1 + off2] += 1
+    return
+
+
+def check_capacity_from_box(max_capacity: int, constraint_container: np.ndarray, box_container: np.ndarray):
+    for k, _ in enumerate(constraint_container):
+        constraint_container[k] = 1 if box_container[k] > max_capacity else 0
+    return
+
+
 def evaluate_saturation(cs_id: int, num_customers: int, constraints: List[List],
-                        probability_matrices: Dict[int, np.ndarray],
-                        result_container: np.ndarray, num_depots: int = 1):
+                        probability_matrices: Dict[int, np.ndarray], result_container: np.ndarray,
+                        do_evaluation_container: np.ndarray, num_depots: int = 1):
     """
     Evaluates the saturation probability of a CS, given an operational behavior of EVs
     @param cs_id: ID of the CS to evaluate
@@ -280,20 +324,34 @@ def evaluate_saturation(cs_id: int, num_customers: int, constraints: List[List],
     @param constraints:
     @param probability_matrices: matrix
     @param result_container:
+    @param do_evaluation_container:
     @param num_depots:
     @return:
     """
     row = cs_id - num_depots - num_customers
-    for k in range(len(result_container)):
-        probability = sum([m[row, k] if constraints[k] else 1 - m[row, k] for m in probability_matrices.values()])
-        result_container[k] = probability
+    for k, evaluate in enumerate(do_evaluation_container):
+        if evaluate:
+            probability = sum([m[row, k] if constraints[k] else 1 - m[row, k] for m in probability_matrices.values()])
+            result_container[k] = probability
 
 
 def probability_saturation(description: List[Tuple], probabilities_in_nodes: List[np.ndarray]):
+    """
+    Calculates probability of saturation of several events
+    @param description:
+    @param probabilities_in_nodes:
+    @return:
+    """
     return sum([single_saturation_probability(d, probabilities_in_nodes) for d in description])
 
 
 def single_saturation_probability(description: Tuple, probabilities_in_nodes: List[np.ndarray]):
+    """
+    Calculates probability of saturation for a single event
+    @param description:
+    @param probabilities_in_nodes:
+    @return:
+    """
     if len(description) != len(probabilities_in_nodes):
         raise ValueError("Length of probability descriptions does not match number of calculated probabilities")
     p = 1
@@ -307,24 +365,68 @@ def heuristic_1(self):
     num_of_evs_that_recharge = sum([1 if ev.visits_a_cs else 0 for ev in self.vehicles.values()])
 
 
-def heuristic_2(self):
+def heuristic_2(capacity: int, deterministic_capacity: np.ndarray, num_std: float = 3.0):
+    """
+    Decides whether to evaluate the probability of saturation or not by using the deterministic evaluation of CS
+    capacities.
+    @param capacity: maximum capacity of the CS
+    @param deterministic_capacity: an nd
+    @param num_std:
+    @return:
+    """
+
     return
 
 
 @dataclass
-class CapacitatedGaussianNetwork(Network):
-    sample_time_occupation_probability: float = 5.
+class GaussianCapacitatedNetwork(Network):
+    sample_time_op: float = 180.  # s
     cdf_container: Union[np.ndarray, None] = None
-    probability_of_occupation: Union[np.ndarray, None] = None
+    occupation_probability_container: Union[np.ndarray, None] = None
+    low_res_occupation_container: Union[np.ndarray, None] = None
+    do_evaluation_container: Union[np.ndarray, None] = None
+    cs_capacities_combinations: Dict[int, List[List]] = None
 
     def __post_init__(self):
-        self.setup_saturation_container(self.sample_time_occupation_probability)
+        super(GaussianCapacitatedNetwork, self).__post_init__()
+        self.setup_containers()
 
-    def setup_saturation_container(self, sample_time: float = None):
-        if sample_time:
-            self.sample_time_occupation_probability = sample_time
-        self.probability_of_occupation = np.zeros(
-            (len(self.charging_stations), 24 * 60 / self.sample_time_occupation_probability))
+    def set_sample_time_occupation_probability(self, sample_time: float):
+        self.sample_time_op = sample_time
+        self.setup_containers()
+
+    def setup_containers(self):
+        shape = (len(self.charging_stations), int(86400 / self.sample_time_op))
+        self.occupation_probability_container = np.zeros(shape)
+        self.low_res_occupation_container = np.zeros(shape)
+        self.do_evaluation_container = np.zeros(shape)
+
+    def reset_containers(self):
+        self.low_res_occupation_container.fill(0)
+        self.occupation_probability_container.fill(0)
+        self.do_evaluation_container.fill(0)
+
+    def fill_deterministics_occupation(self, evaluation_info: Dict[int, Tuple[np.ndarray, np.ndarray, np.ndarray,
+                                                                              Tuple[int]]], std_factor: float = 3.0):
+        """
+        Heuristic to calculate low-res occupation boxes
+        @param evaluation_info: dictionary containing info of leaving and reaching times after evaluation. The structure
+        is as follows: {..., idEVj: (leav_timesj, reach_timesj, cov_matrixj, Sj), ...}
+        @param std_factor: extra space given to boxes as a factod of std at each stop
+        @return: None. The results are stored in self.det_occupation_container
+        """
+        for cs_id in self.charging_stations:
+            pos = cs_id - len(self.depots) - len(self.customers)
+            for ev_id, (leaving_times, reaching_times, cov_matrix, S) in evaluation_info.items():
+                var_array = np.array([np.sqrt(x) for x in cov_matrix[0, ::3]])
+                single_ev_box(self.low_res_occupation_container[pos, :], self.sample_time_op, cs_id, reaching_times,
+                              leaving_times, S, var_array, std_factor)
+            check_capacity_from_box(self.nodes[cs_id].capacity, self.do_evaluation_container[pos, :],
+                                    self.low_res_occupation_container[pos, :])
+
+    def setup_cs_capacities_combinations(self, fleet_size):
+        cs = self.charging_stations
+        self.cs_capacities_combinations = {i: self.nodes[i].saturation_combinations(fleet_size) for i in cs}
 
     def constraint_cs_capacities(self):
         p = 0.0
@@ -334,6 +436,9 @@ class CapacitatedGaussianNetwork(Network):
         self.penalization = 0.0
         self.constraint_cs_capacities()
         return self.penalization
+
+    def get_occupation_data(self):
+        return self.occupation_probability_container
 
 
 def from_xml_element(element: ET.Element):

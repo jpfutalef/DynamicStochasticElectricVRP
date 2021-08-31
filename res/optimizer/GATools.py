@@ -57,6 +57,15 @@ class BetaGA_HyperParameters(HyperParameters):
 
 
 @dataclass
+class OnGA_HyperParameters(HyperParameters):
+    r: int = 2
+    alpha_up: float = 95.
+    crossover_repeat: int = 1
+    mutation_repeat: int = 1
+    algorithm_name: str = 'OnGA'
+
+
+@dataclass
 class GenerationsData:
     generation: List = None
     best_fitness: List = None
@@ -88,9 +97,9 @@ class OptimizationData:
     def save(self, folder_path):
         # Occupation file
         nodes_occupation_filepath = Path(folder_path, 'nodes_occupation.csv')
-        theta_matrix = self.fleet.network.theta_matrix.T
-        events = list(range(int(len(theta_matrix[:, 0]))))
-        df_nodes_occupation = pd.DataFrame(theta_matrix, index=events)
+        occupation_matrix = self.fleet.network.get_occupation_data().T
+        events = list(range(int(occupation_matrix.shape[0])))
+        df_nodes_occupation = pd.DataFrame(occupation_matrix, index=events)
         df_nodes_occupation.to_csv(nodes_occupation_filepath)
 
         # Fleet operation
@@ -108,14 +117,14 @@ class OptimizationData:
         departure_info = {}
         for id_ev, ev in self.fleet.vehicles.items():
             S, L = ev.S, ev.L
-            w1 = (0.,)*len(ev.S)
+            w1 = (0.,) * len(ev.S)
             routes[id_ev] = (S, L, w1)
             departure_info[id_ev] = (ev.x1_0, ev.x2_0, ev.x3_0)
         IOTools.write_routes(routes_path, routes, departure_info)
 
         # Costs file
         cost_filepath = Path(folder_path, 'costs.csv')
-        weight_tt, weight_ec, weight_chg_op, weight_chg_cost= self.hyper_parameters.weights
+        weight_tt, weight_ec, weight_chg_op, weight_chg_cost = self.hyper_parameters.weights
         cost_tt, cost_ec, cost_chg_op, cost_chg_cost = self.fleet.cost_function()
         index = ['weight', 'cost']
         data = [[weight_tt, weight_ec, weight_chg_op, weight_chg_cost],

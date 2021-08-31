@@ -2,6 +2,7 @@ import xml.dom.minidom
 import xml.etree.ElementTree as ET
 from typing import Tuple, Dict, Union
 import os
+from pathlib import Path
 
 """
 XML read/out tools
@@ -14,7 +15,7 @@ def read_write_pretty_xml(path):
         file.write(xml_pretty)
 
 
-def write_pretty_xml(filepath: str, tree: ET.Element):
+def write_pretty_xml(filepath: Path, tree: ET.Element):
     s = ET.tostring(tree)
     pretty = xml.dom.minidom.parseString(s).toprettyxml()
     with open(filepath, 'w') as file:
@@ -89,7 +90,7 @@ def route_from_element(route_element: ET.Element) -> Union[RouteVector]:
     return tuple(S), tuple(L), tuple(w1)
 
 
-def write_routes(filepath: str, routes: RouteDict, depart_info: DepartDict = None,
+def write_routes(filepath: Path, routes: RouteDict, depart_info: DepartDict = None,
                  write_pretty: bool = False) -> ET.Element:
     """
     Saves specified routes to an XML file. This XML file will be used by the vehicles to operate. It overwrites the
@@ -121,7 +122,7 @@ def write_routes(filepath: str, routes: RouteDict, depart_info: DepartDict = Non
     return tree_element
 
 
-def read_routes(filepath: str, read_depart_info: bool = False) -> Tuple[RouteDict, Union[DepartDict, None]]:
+def read_routes(filepath: Path, read_depart_info: bool = False) -> Tuple[RouteDict, Union[DepartDict, None]]:
     """
     Reads a route's XML file and return a dictionary containing the routes (without initial conditions).
     :param filepath: the file file path

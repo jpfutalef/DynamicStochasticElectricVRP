@@ -458,25 +458,32 @@ def heuristic_population_2(m: int, r: int, fleet: Fleet):
     return pop, m
 
 
-def heuristic_population_3(r: int, fleet: Fleet, fill_up_to=1.0, additional_vehicles=1):
+def heuristic_population_3(r: int, fleet: Fleet.GaussianFleet, fill_up_to=1.0, additional_vehicles=1):
     net = fleet.network
     tw = {i: net.nodes[i].time_window_low for i in net.customers}
     sorted_customers = sorted(tw, key=tw.__getitem__)
 
     max_weight = fleet.vehicles[0].max_payload * fill_up_to
+    max_tour_time = fleet.vehicles[0].max_tour_duration
 
     routes = []
     current_route = []
-    cum_weight = 0
-    for i in sorted_customers:
+    cum_weight, cum_av_time, t = 0, 0, 0
+    for k, i in enumerate(sorted_customers):
         d = net.demand(i)
-        if cum_weight + d >= max_weight:
+        if k > 0:
+            j = sorted_customers[k - 1]
+            edge = net.edges[i][j]
+            t = edge.length / np.min(edge.velocity)
+        if cum_weight + d >= max_weight or cum_av_time + t >= max_tour_time :
             routes.append(current_route)
             current_route = [i]
             cum_weight = 0
+            cum_av_time = 0
         else:
             current_route.append(i)
             cum_weight += d
+            cum_av_time += t
 
     # Check if there are residual customers after loop
     if current_route:
@@ -628,7 +635,7 @@ def alphaGA(fleet: Fleet, hp: AlphaGA_HyperParameters, save_to: str = None, init
     print(f"Best individual  : {bestOfAll}\n Fitness: {bestOfAll.fitness.wvalues[0]} Feasible: {bestOfAll.feasible}")
 
     # Store best fitness average in previous generations
-    best_fitness_criterion = len(fleet.network)
+    best_fitness_criterion = 10 * len(fleet.network)
     last_best_fitnesses = [0] * best_fitness_criterion
 
     # Block probabilities
@@ -703,7 +710,12 @@ Population Avg: {mean}
 Population Std: {std}"""
 
         print(to_print, end="\r")
-        toolbox.evaluate(bestOfAll)
+        deb = False
+        if deb:
+            toolbox.evaluate(bestOfAll)
+            fleet.plot_operation_pyplot()
+            plt.show()
+
 
         if save_to:
             generations_data_container.generation.append(g)

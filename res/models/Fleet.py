@@ -123,7 +123,7 @@ class Fleet:
         for id_ev in self.vehicles_to_route:
             ev = self.vehicles[id_ev]
             time_vectors.append((ev.state_leaving[0, :-1], ev.state_reaching[0, 1:], ev.S))
-        if init_theta:
+        if init_theta is not None:
             self.network.iterate_cs_capacities(init_theta, time_vectors, len(self))
         else:
             self.network.iterate_cs_capacities(self.default_init_theta, time_vectors, len(self))
@@ -174,7 +174,7 @@ class Fleet:
             _fleet.append(vehicle.xml_element(assign_customers, with_routes))
         return _fleet
 
-    def write_xml(self, filepath: str, network_in_file=False, assign_customers=False, with_routes=False,
+    def write_xml(self, filepath: Path, network_in_file=False, assign_customers=False, with_routes=False,
                   print_pretty=False):
         tree = self.xml_element(assign_customers, with_routes)
         if network_in_file and self.network is not None:
@@ -218,8 +218,14 @@ class Fleet:
 
         return fleet
 
-    def plot_operation_pyplot(self, arrow_colors=('SteelBlue', 'Crimson', 'SeaGreen'), fig_size=(16, 5),
-                              label_offset=(.15, -6), subplots=True, save_to=None, arrival_at_depot_times: Dict = None):
+    def plot_operation_pyplot(self, size_ev_op=(16, 5), size_cs_occupation=(16, 5), **kwargs):
+        figs = []
+        figs += self.plot_ev_operation(fig_size=size_ev_op)
+        figs.append(self.plot_cs_occupation(figsize=size_cs_occupation))
+        return figs
+
+    def plot_ev_operation(self, arrow_colors=('SteelBlue', 'Crimson', 'SeaGreen'), fig_size=(16, 5),
+                          label_offset=(.15, -6), subplots=True, save_to=None, arrival_at_depot_times: Dict = None):
         figs = []
         for id_ev, vehicle in self.vehicles.items():
             Si, Li = vehicle.S, vehicle.L
@@ -246,7 +252,7 @@ class Fleet:
                     [np.sqrt(q) for i, q in enumerate(vehicle.state_reaching_covariance[0, :]) if i % 3 == 0])
                 plt.fill_between(range(si), l_time - 3 * Y_leaving_std, l_time + 3 * Y_leaving_std, color='green',
                                  alpha=0.2)
-            except ValueError:
+            except AttributeError:
                 pass
 
             # time windows
@@ -310,14 +316,14 @@ class Fleet:
             try:
                 Y_reaching_std = np.array(
                     [np.sqrt(q) for i, q in enumerate(vehicle.state_reaching_covariance[1, 1:]) if i % 3 == 0])
-                plt.fill_between(range(si), r_soc - 3 * Y_reaching_std, r_soc + 3 * Y_reaching_std, color='red',
+                plt.fill_between(range(si), r_soc - 2 * Y_reaching_std, r_soc + 3 * Y_reaching_std, color='red',
                                  alpha=0.2)
 
                 Y_leaving_std = np.array(
                     [np.sqrt(q) for i, q in enumerate(vehicle.state_reaching_covariance[1, 1:]) if i % 3 == 0])
-                plt.fill_between(range(si), l_soc - 3 * Y_leaving_std, l_soc + 3 * Y_leaving_std, color='green',
+                plt.fill_between(range(si), l_soc - 2 * Y_leaving_std, l_soc + 3 * Y_leaving_std, color='green',
                                  alpha=0.2)
-            except ValueError:
+            except AttributeError:
                 pass
 
             # SOC in Customer
@@ -402,17 +408,19 @@ class Fleet:
 
             figs.append(fig)
 
+        return figs
+
+    def plot_cs_occupation(self, figsize=(16, 5)):
         # Charging stations occupation
         num_cs = len(self.network.charging_stations)
-        fig = plt.figure(figsize=fig_size)
+        fig = plt.figure(figsize=figsize)
         x = range(len(self.network.theta_matrix[0, :]))
         plt.step(x, self.network.theta_matrix[-num_cs:, :].T)
         plt.title('CS Occupation')
         plt.xlabel('Event')
         plt.ylabel('Number of EVs')
         plt.legend(tuple(f'CS {i}' for i in self.network.charging_stations))
-        figs.append(fig)
-        return figs
+        return fig
 
     def draw_operation(self, color_route='red', **kwargs):
         fig, g = self.network.draw(**kwargs)
@@ -435,29 +443,49 @@ GAUSSIAN FLEET DEFINITION
 
 class GaussianFleet(Fleet):
     vehicles: Dict[int, EV.GaussianElectricVehicle]
-    network: Network.CapacitatedGaussianNetwork
-    cs_capacities_combinations: Dict[int, List[List]]  # CS: CS_combinations
-    sample_time_cs_probability: Union[float, int]
+    network: Network.GaussianCapacitatedNetwork
 
     def __post_init__(self):
         super(GaussianFleet, self).__post_init__()
-        self.setup_cs_capacities_combinations()
-        self.set_sample_time_cs_probability(5.0)
 
-    def iterate(self):
+    def iterate(self, **kwargs):
         for ev in self.vehicles.values():
             ev.step(self.network)
 
-    def choose_which_cs_evaluate(self):
-        return [1 for _ in self.network.charging_stations]  # TODO heuristic
+        self.network.reset_containers()
+        iteration_info = {ev.id: (ev.state_leaving[0, :], ev.state_reaching[0, :], ev.state_reaching_covariance,
+                                  ev.S) for ev in self.vehicles.values()}
+        self.network.fill_deterministics_occupation(iteration_info, **kwargs)
+        return
 
-    def setup_cs_capacities_combinations(self):
-        n = self.network
-        cs = self.network.charging_stations
-        self.cs_capacities_combinations = {i: n.nodes[i].saturation_combinations(len(self)) for i in cs}
+    def set_network(self, network: Network = None):
+        self.network = network
+        if network:
+            self.network.setup_cs_capacities_combinations(len(self))
 
-    def set_sample_time_cs_probability(self, sample_time: Union[int, float]):
-        self.sample_time_cs_probability = sample_time
+    def resize_fleet(self, new_size, based_on=None):
+        ev_base = deepcopy(based_on) if based_on else deepcopy(self.vehicles[0])
+        ev_base.reset(self.network)
+        self.vehicles = {}
+        for i in range(new_size):
+            ev = deepcopy(ev_base)
+            ev.id = i
+            self.vehicles[i] = ev
+        self.set_vehicles_to_route()
+
+        if self.network:
+            self.network.setup_cs_capacities_combinations(len(self))
+
+    def plot_cs_occupation(self, figsize=(16, 5)):
+        # Charging stations occupation
+        fig = plt.figure(figsize=figsize)
+        x = np.arange(0, 24*3600, self.network.sample_time_op)
+        plt.step(x, self.network.low_res_occupation_container.T)
+        plt.title('CS Occupation')
+        plt.xlabel('Event')
+        plt.ylabel('Number of EVs')
+        plt.legend(tuple(f'CS {i}' for i in self.network.charging_stations))
+        return fig
 
 
 def routes_from_csv_folder(folder_path: str, fleet: Fleet):

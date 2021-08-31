@@ -299,7 +299,7 @@ class GaussianElectricVehicle(ElectricVehicle):
         self.state_leaving_covariance = None
         self.reset_visited_nodes_array(network)
 
-    def create_visited_nodes_array(self, network: Network.CapacitatedGaussianNetwork):
+    def create_visited_nodes_array(self, network: Network.GaussianCapacitatedNetwork):
         self.visited_nodes = np.zeros(len(network))
 
     def create_probability_in_cs_array(self, network_length: int):
@@ -323,7 +323,7 @@ class GaussianElectricVehicle(ElectricVehicle):
         if init_covariance:
             self.state_reaching_covariance[0:3, 0:3] = init_covariance
 
-    def step(self, network: Network.CapacitatedGaussianNetwork, g=9.8):
+    def step(self, network: Network.GaussianCapacitatedNetwork, g=9.8):
         S, L = self.S, self.L
         Sk0, Sk1, Lk0, Lk1, k = S[0], S[1], L[0], L[1], 0
         for k, (Sk0, Sk1, Lk0, Lk1) in enumerate(zip(S[:-1], S[1:], L[:-1], L[1:])):
@@ -398,7 +398,7 @@ class GaussianElectricVehicle(ElectricVehicle):
             self.penalization += penalization_constant
         return self.penalization
 
-    def constraint_max_tour_time(self, PRB=0.97):
+    def constraint_max_tour_time(self, PRB=.9545):
         MU = self.state_reaching[0, -1]
         SIG = np.sqrt(self.state_reaching_covariance[0, -3])
         VAL = self.max_tour_duration + self.x1_0
@@ -416,7 +416,7 @@ class GaussianElectricVehicle(ElectricVehicle):
                 """
                 TIME WINDOW - LOWER BOUND
                 """
-                PRB = 0.97
+                PRB = .9545
                 MU = self.state_reaching[0, k]
                 SIG = np.sqrt(self.state_reaching_covariance[0, 3 * k])
                 VAL = node.time_window_low
@@ -426,7 +426,7 @@ class GaussianElectricVehicle(ElectricVehicle):
                 """
                 TIME WINDOW - UPPER BOUND
                 """
-                PRB = 0.97
+                PRB = .9545
                 MU = self.state_leaving[0, k]
                 SIG = np.sqrt(self.state_reaching_covariance[0, 3 * k])
                 VAL = node.time_window_upp
@@ -436,7 +436,7 @@ class GaussianElectricVehicle(ElectricVehicle):
             """
             SOC BOUND - REACHING
             """
-            PRB = 0.97
+            PRB = .9545
             MU = self.state_reaching[1, k]
             SIG = np.sqrt(self.state_reaching_covariance[1, 3 * k + 1])
             VAL1 = self.alpha_up
@@ -449,7 +449,7 @@ class GaussianElectricVehicle(ElectricVehicle):
             """
             SOC BOUND LOWER - LEAVING
             """
-            PRB = 0.97
+            PRB = .9545
             MU = self.state_leaving[1, k]
             SIG = SIG
             VAL1 = self.alpha_up

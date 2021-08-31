@@ -1,30 +1,43 @@
-import os
-import time
+import os, time
 from random import randint, uniform, sample
-from typing import Tuple, Dict
+from typing import Tuple, Dict, NamedTuple
+
+import matplotlib.pyplot as plt
 
 import numpy as np
 from deap import tools, base, creator
 
-from res.optimizer.GATools import HyperParameters, GenerationsData, RouteDict, IndividualType, IndicesType
-from res.models import Fleet
+from res.optimizer.GATools import OnGA_HyperParameters, GenerationsData, OptimizationData, RouteDict
+from res.optimizer.GATools import IndividualType, IndicesType, Fleet
+
+
+class CriticalPoint(NamedTuple):
+    j0: int
+    S0: int
+    L0: float
+    x1_0: float
+    x2_0: float
+    x3_0: float
+
+
+StartingPointsType = Dict[int, CriticalPoint]
 
 
 # FUNCTIONS
-def decode(individual: IndividualType, indices: IndicesType, critical_points: Dict, fleet: Fleet,
-           hp: HyperParameters) -> RouteDict:
+def decode(individual: IndividualType, indices: IndicesType, critical_points: StartingPointsType, fleet: Fleet.Fleet,
+           hp: OnGA_HyperParameters, offset_time_depot: float = 600.) -> RouteDict:
     routes = {}
     for id_ev, (i0, i1, i2) in indices.items():
-        initial_condition = critical_points[id_ev]
+        critical_point = critical_points[id_ev]
         S = individual[i0:i1]
         chg_block = individual[i1:i2]
-        offset = individual[i2]
+        offset = individual[i2] if abs(individual[i2]) > 1e-8 else 0.
 
         L = [0] * len(S)
         chg_ops = [(chg_block[3 * i], chg_block[3 * i + 1], chg_block[3 * i + 2]) for i in range(hp.r)]
         for customer, charging_station, amount in chg_ops:
             if customer != -1:
-                index = S.index(customer) + 1 if customer != initial_condition.S0 else 0
+                index = S.index(customer) + 1 if customer != critical_point.S0 else 0
                 if index == len(S):
                     S.insert(index, charging_station)
                     L.insert(index, amount)
@@ -34,30 +47,38 @@ def decode(individual: IndividualType, indices: IndicesType, critical_points: Di
                     S.insert(index, charging_station)
                     L.insert(index, amount)
 
-        S0 = initial_condition.S0
+        S0 = critical_point.S0
         if S0 == 0:
             # Initial node is the depot
-            L0 = initial_condition.L0
-            x10 = initial_condition.x1_0 + offset
-            x20 = initial_condition.x2_0
+            L0 = critical_point.L0
+            x10 = critical_point.x1_0 + offset if critical_point.x1_0 + offset >= critical_point.x1_0 - offset_time_depot else critical_point.x1_0 - offset_time_depot
+            x20 = critical_point.x2_0
         elif critical_points[id_ev].L0 > 0:
             # Initial node is a CS
-            L0 = abs(initial_condition.L0 + offset) if abs(initial_condition.L0 + offset) + initial_condition.x2_0 <= fleet.vehicles[id_ev].alpha_up else fleet.vehicles[id_ev].alpha_up
-            x10 = initial_condition.x1_0 + fleet.network.spent_time(S0, initial_condition.x2_0, L0)
-            x20 = initial_condition.x2_0 + L0
+            L0 = abs(critical_point.L0 + offset) if abs(critical_point.L0 + offset) + critical_point.x2_0 <= \
+                                                    fleet.vehicles[id_ev].alpha_up else fleet.vehicles[
+                id_ev].alpha_up
+            x10 = critical_point.x1_0 + fleet.network.spent_time(S0, critical_point.x2_0, L0)
+            x20 = critical_point.x2_0 + L0
         else:
             # Initial node is a customer
-            L0 = initial_condition.L0
-            x10 = initial_condition.x1_0 + fleet.network.spent_time(S0, initial_condition.x2_0, L0) + offset
-            x20 = initial_condition.x2_0
-        x30 = initial_condition.x3_0 - fleet.network.demand(S0)
+            L0 = critical_point.L0
+            x10 = critical_point.x1_0 + fleet.network.spent_time(S0, critical_point.x2_0, L0) + offset
+            x20 = critical_point.x2_0
+        x30 = critical_point.x3_0 - fleet.network.demand(S0)
+
         S = tuple([S0] + S + [0])
         L = tuple([L0] + L + [0])
-        routes[id_ev] = ((S, L), x10, x20, x30)
+
+        if S[1] == S0:
+            S = S[1:]
+            L = (L[0] + L[1],) + L[2:]
+
+        routes[id_ev] = (S, L, x10, x20, x30)
     return routes
 
 
-def mutate(individual: IndividualType, indices: IndicesType, starting_points: Dict,
+def mutate(individual: IndividualType, indices: IndicesType, starting_points: StartingPointsType,
            customers_to_visit: Dict[int, Tuple[int, ...]], charging_stations: Tuple, allowed_charging_operations=2,
            index=None) -> IndividualType:
     # Choose a random index if not passed
@@ -90,7 +111,10 @@ def mutate(individual: IndividualType, indices: IndicesType, starting_points: Di
                 i = i1 + 3 * int((index - i1) / 3)
                 r = allowed_charging_operations
                 rr = i1 - i0
-                sample_space = individual[i0:i1] + [starting_points[id_ev].S0]*r + [-1]*rr + [individual[i]]*rr
+                if starting_points[id_ev].S0 in charging_stations or not starting_points[id_ev].S0:
+                    sample_space = individual[i0:i1] + [-1] + [individual[i]]
+                else:
+                    sample_space = individual[i0:i1] + [starting_points[id_ev].S0] + [-1] + [individual[i]]
                 individual[i] = sample(sample_space, 1)[0]
                 individual[i + 1] = sample(charging_stations, 1)[0]
                 new_val = abs(individual[i + 2] + np.random.normal(0, 10))
@@ -100,12 +124,12 @@ def mutate(individual: IndividualType, indices: IndicesType, starting_points: Di
             # Case offset of initial condition
             else:
                 if starting_points[id_ev].L0:
-                    amount = individual[i2] + np.random.normal(-2, 2)
+                    amount = individual[i2] + np.random.normal(0, 2)
                 elif starting_points[id_ev].S0 == 0:
-                    amount = individual[i2] + np.random.normal(-2, 2)
-                    amount = amount if amount > -15. else -15
+                    amount = individual[i2] + np.random.normal(0, 2*60)
+                    amount = amount if amount > -10*60. else -10*60
                 else:
-                    amount = abs(individual[i2] + np.random.normal(-1, 1))
+                    amount = abs(individual[i2] + np.random.normal(0, 60))
                 individual[i2] = amount
     return individual
 
@@ -183,7 +207,7 @@ def block_indices(customers_to_visit: Dict[int, Tuple[int, ...]], allowed_chargi
     return indices
 
 
-def random_individual(indices: IndicesType, starting_points: Dict,
+def random_individual(indices: IndicesType, starting_points: StartingPointsType,
                       customers_to_visit: Dict[int, Tuple[int, ...]], charging_stations: Tuple[int, ...],
                       allowed_charging_operations=2):
     """
@@ -199,7 +223,10 @@ def random_individual(indices: IndicesType, starting_points: Dict,
     for id_ev, (i0, i1, i2) in indices.items():
         init_point, customers = starting_points[id_ev], customers_to_visit[id_ev]
         customer_block = sample(customers, len(customers))
-        sample_space = customers + (init_point.S0,) + (-1,) * allowed_charging_operations
+        if init_point.S0 in charging_stations or not init_point.S0:
+            sample_space = customers + (-1,) * allowed_charging_operations
+        else:
+            sample_space = customers + (init_point.S0,) + (-1,) * allowed_charging_operations
         after_customers = sample(sample_space, allowed_charging_operations)
         charging_block = [0.] * allowed_charging_operations * 3
         for i, customer in enumerate(after_customers):
@@ -209,13 +236,13 @@ def random_individual(indices: IndicesType, starting_points: Dict,
         if init_point.L0:
             offset_block = [uniform(-8, 8)]
         else:
-            offset_block = [uniform(0, 15)]
+            offset_block = [uniform(0, 15*60)]
         individual += customer_block + charging_block + offset_block
     return individual
 
 
-def fitness(individual: IndividualType, indices: IndicesType, critical_points: Dict,
-            fleet: Fleet, hp: HyperParameters):
+def fitness(individual: IndividualType, indices: IndicesType, critical_points: StartingPointsType,
+            fleet: Fleet.Fleet, hp: OnGA_HyperParameters):
     """
     Calculates fitness of individual.
     """
@@ -227,8 +254,15 @@ def fitness(individual: IndividualType, indices: IndicesType, critical_points: D
     # Set routes
     reaching_states = {id_ev: (r.x1_0, r.x2_0, r.x3_0) for id_ev, r in critical_points.items()}
     vehicles_pos = [cp.S0 for cp in critical_points.values()]
-    init_theta = np.array([1 if i in vehicles_pos else 0 for i in range(len(fleet.network))])
-    fleet.set_routes_of_vehicles(routes, reaching_states=reaching_states, init_theta=init_theta)
+    init_theta = np.zeros(len(fleet.network))
+    for pos in vehicles_pos:
+        init_theta[pos] += 1
+
+    # Set routes
+    fleet.set_routes_of_vehicles(routes)
+
+    # Iterate
+    fleet.iterate(init_theta=init_theta)
 
     # Cost
     costs = np.array(fleet.cost_function())
@@ -236,10 +270,9 @@ def fitness(individual: IndividualType, indices: IndicesType, critical_points: D
     # Calculate penalization
     feasible, distance, accept = fleet.feasible()
 
+    accept = feasible
     penalization = 0
-    if not accept:
-        penalization = distance + hp.hard_penalization + hp.K2
-    elif accept and not feasible:
+    if not feasible:
         penalization = distance + hp.hard_penalization
 
     # Calculate fitness
@@ -248,37 +281,42 @@ def fitness(individual: IndividualType, indices: IndicesType, critical_points: D
     return fit, feasible, accept
 
 
-def code(fleet: Fleet, routes_with_critical_point: RouteDict, allowed_charging_operations=2) -> Tuple[
-    IndividualType, Dict]:
+def code(fleet: Fleet.Fleet, routes_with_critical_point: Dict[int, Tuple[Tuple[int, ...], Tuple[float, ...]]],
+         r=2) -> IndividualType:
     ind = []
-    critical_points = {}
     for id_ev, route in routes_with_critical_point.items():
         # Get the route starting from the critical point
-        (S, L), x1, x2, x3 = route
-
-        # Save critical points
-        critical_points[id_ev] = (S[0], L[0], x1, x2, x3)
+        S, L = route
 
         # Create individual from ahead route
         customer_sequence = [x for x in S[1:] if fleet.network.is_customer(x)]
         charging_operations, charging_operations_count = [], 0
+        last_customer = S[0]
         for k, LK in enumerate(L[1:]):
+            if fleet.network.is_customer(S[k]):
+                last_customer = S[k]
             if LK > 0.:
-                charging_operations += [S[k], S[k + 1], LK]
+                # Sk0, Sk1 = S[k], S[k + 1]
+                Sk0, Sk1 = last_customer, S[k + 1]
+                charging_operations += [Sk0, Sk1, LK]
                 charging_operations_count += 1
 
-        for i in range(allowed_charging_operations - charging_operations_count):
+        for i in range(r - charging_operations_count):
             charging_operations += [-1, sample(fleet.network.charging_stations, 1)[0], uniform(10, 90)]
 
         ind += customer_sequence + charging_operations + [0.]
         fleet.vehicles[id_ev].assigned_customers = tuple(customer_sequence)
 
-    return ind, critical_points
+    return ind
 
 
 # THE ALGORITHM
-def onGA(fleet: Fleet, hp: HyperParameters, critical_points: Dict, save_to: str = None,
+def onGA(fleet: Fleet.Fleet, hp: OnGA_HyperParameters, critical_points: StartingPointsType, save_to: str = None,
          best_ind: IndividualType = None, savefig=False):
+    # hp.num_individuals = 4 * len(fleet) + 2 * sum([len(fleet.vehicles[ev_id].assigned_customers) for
+    #                                                ev_id in fleet.vehicles_to_route]) + 15
+    # hp.max_generations = 3 * hp.num_individuals + 30
+
     customers_to_visit = {ev_id: fleet.vehicles[ev_id].assigned_customers for ev_id in fleet.vehicles_to_route}
     indices = block_indices(customers_to_visit, hp.r)
 
@@ -301,6 +339,11 @@ def onGA(fleet: Fleet, hp: HyperParameters, critical_points: Dict, save_to: str 
     toolbox.register("select_worst", tools.selWorst)
     toolbox.register("decode", decode, indices=indices, critical_points=critical_points, fleet=fleet, hp=hp)
 
+    # OPTIMIZATION ITERATIONS CONTAINER
+    generations_data_container = None
+    if save_to:
+        generations_data_container = GenerationsData()
+
     # BEGIN ALGORITHM
     t_init = time.time()
 
@@ -322,17 +365,9 @@ def onGA(fleet: Fleet, hp: HyperParameters, critical_points: Dict, save_to: str 
     bestOfAll = tools.selBest(pop, 1)[0]
     print(f"Best individual  : {bestOfAll}\n Fitness: {bestOfAll.fitness.wvalues[0]} Feasible: {bestOfAll.feasible}")
 
-    # These will save statistics
-    cs_capacity = fleet.network.nodes[fleet.network.charging_stations[0]].capacity
-    opt_data = GenerationsData([], [], [], [], [], [], fleet, hp, bestOfAll, bestOfAll.feasible, bestOfAll.acceptable,
-                               len(fleet), cs_capacity)
     print("################  Start of evolution  ################")
     # Begin the evolution
     for g in range(hp.max_generations):
-        # A new generation
-        print(f"-- Generation {g}/{hp.max_generations} --")
-        opt_data.generations.append(g)
-
         # Select the best individuals, if given
         if hp.elite_individuals:
             best_individuals = list(map(toolbox.clone, tools.selBest(pop, hp.elite_individuals)))
@@ -362,8 +397,6 @@ def onGA(fleet: Fleet, hp: HyperParameters, critical_points: Dict, save_to: str 
             ind.feasible = feasible
             ind.acceptable = acceptable
 
-        print(f'  Evaluated {len(invalid_ind)} individuals')
-
         # The population is entirely replaced by a sorted offspring
         pop[:] = offspring
         pop[:] = tools.selBest(pop, len(pop))
@@ -377,32 +410,35 @@ def onGA(fleet: Fleet, hp: HyperParameters, critical_points: Dict, save_to: str 
         if bestInd.fitness.wvalues[0] > bestOfAll.fitness.wvalues[0]:
             bestOfAll = bestInd
 
-        # Real-time info
-        print(f"Best individual  : {bestInd}\n Fitness: {bestInd.fitness.wvalues[0]} Feasible: {bestInd.feasible}")
-
+        # GUI info
         worstInd = tools.selWorst(pop, 1)[0]
-        print(f"Worst individual : {worstInd}\n Fitness: {worstInd.fitness.wvalues[0]} Feasible: {worstInd.feasible}")
-
-        print(
-            f"Curr. best-of-all: {bestOfAll}\n Fitness: {bestOfAll.fitness.wvalues[0]} Feasible: {bestOfAll.feasible}")
-
-        # Statistics
         fits = [sum(ind.fitness.wvalues) for ind in pop]
         mean = np.average(fits)
         std = np.std(fits)
+        to_print = f"""-- Generation {g}/{hp.max_generations} --
+Evaluated {len(invalid_ind)} individuals during genetic operations
+Curr. best-of-all: {bestOfAll}\n Fitness: {bestOfAll.fitness.wvalues[0]} Feasible: {bestOfAll.feasible}
+Worst individual : {worstInd}\n Fitness: {worstInd.fitness.wvalues[0]} Feasible: {worstInd.feasible}
 
-        print(f"Max {max(fits)}")
-        print(f"Min {min(fits)}")
-        print(f"Avg {mean}")
-        print(f"Std {std}")
+Pop. Max: {max(fits)}
+Pop. Min: {min(fits)}
+Pop. Avg: {mean}
+Pop. Std: {std}"""
+        print(to_print, end="\n\r")
 
-        opt_data.best_fitness.append(-max(fits))
-        opt_data.worst_fitness.append(-min(fits))
-        opt_data.average_fitness.append(mean)
-        opt_data.std_fitness.append(std)
-        opt_data.best_individuals.append(bestInd)
+        if save_to:
+            generations_data_container.generation.append(g)
+            generations_data_container.best_fitness.append(-max(fits))
+            generations_data_container.worst_fitness.append(-min(fits))
+            generations_data_container.feasible.append(bestOfAll.feasible)
+            generations_data_container.average_fitness.append(mean)
+            generations_data_container.std_fitness.append(std)
 
-        print()
+        deb = False
+        if deb:
+            toolbox.evaluate(bestOfAll)
+            fleet.plot_operation_pyplot()
+            plt.show()
 
     t_end = time.time()
     print("################  End of (successful) evolution  ################")
@@ -411,25 +447,11 @@ def onGA(fleet: Fleet, hp: HyperParameters, critical_points: Dict, save_to: str 
     print('Algorithm time:', algo_time)
 
     fit, feasible, acceptable = toolbox.evaluate(bestOfAll)
-    fit, feasible, acceptable = toolbox.evaluate(bestOfAll)
     routes = toolbox.decode(bestOfAll)
-
-    opt_data.bestOfAll = bestOfAll
-    opt_data.feasible = feasible
-    opt_data.acceptable = acceptable
-    opt_data.algo_time = algo_time
-    opt_data.fleet = fleet
-
+    toolbox.evaluate(bestOfAll)
+    report = OptimizationData(fleet, hp, feasible, len(fleet), algo_time)
     if save_to:
-        path = save_to
-        try:
-            os.mkdir(path)
-        except FileExistsError:
-            pass
-        opt_data.save_opt_data(path, savefig=savefig)
-
-    for r in routes.values():
-        L = r[0][1]
-        if sum([1 for Lk in L if Lk < 0]):
-            print('negative')
-    return routes, opt_data, toolbox
+        os.makedirs(save_to)
+        generations_data_container.save(save_to)
+        report.save(save_to)
+    return routes, toolbox, report
