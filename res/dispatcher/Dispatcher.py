@@ -52,7 +52,7 @@ class ElectricVehicleMeasurement:
             self.__dict__[key] = type(self.__dict__[key])(attrib)
 
 
-def create_measurements_file(filepath: Path, routes_path: Path, offset_time: float = 600.,
+def create_measurements_file(filepath: Path, routes_path: Path, offset_time: float = 1200.,
                              based_on: Dict[int, ElectricVehicleMeasurement] = None,
                              previous_day_measurements: Dict[int, ElectricVehicleMeasurement] = None
                              ) -> Tuple[Dict[int, ElectricVehicleMeasurement], ET.Element]:
@@ -137,8 +137,8 @@ class Dispatcher:
     network: Network.Network = None
     fleet: Fleet.Fleet = None
 
-    ga_time: float = 5.  # min
-    offset_time: float = 1.  # min
+    ga_time: float = 300.  # min
+    offset_time: float = 60.  # min
     measurements: Dict[int, ElectricVehicleMeasurement] = None
     routes: RouteDict = None
     depart_info: DepartDict = None
@@ -200,6 +200,94 @@ class Dispatcher:
         self.fleet.set_network(self.network)
 
     def synchronization(self) -> Tuple[Dict[int, onGA.CriticalPoint], Dict[int, Tuple]]:
+        critical_nodes = {}
+        routes_with_critical_nodes = {}
+        for id_ev, meas in self.measurements.items():
+            # Vehicle finished the operation. Pass.
+            if meas.done:
+                continue
+
+            """
+            FIRST - Find next node the EV will visit and iterate from there
+            """
+            j0 = meas.visited_nodes - 1
+            route = self.routes[id_ev]
+            (S, L, w1) = route[0][j0:], route[1][j0:], route[2][j0:]
+
+            # Few customers ahead. Pass.
+            if sum([1 for i in S if self.network.is_customer(i)]) <= 1:
+                continue
+
+            # Get the EV
+            ev = self.fleet.vehicles[id_ev]
+
+            # EV is performing an operation at the first node of S
+            if meas.stopped_at_node_from:
+                departure_time = meas.time_finishing_service + w1[j0]  # TODO check this
+                departure_soc = meas.soc_finishing_service
+                departure_payload = meas.payload_finishing_service
+
+                if S[0] == 0:
+                    # Consider this node as the critical node.
+                    j1 = 0
+                    Sj1_arrival_time = departure_time
+                    Sj1_sos_soc = departure_soc
+                    Sj1_sos_payload = departure_payload
+
+                else:
+                    # Arrival state at next node
+                    j1 = 1
+                    Sj1_arrival_time = departure_time + self.network.t(S[0], S[1], departure_time)
+                    Sj1_sos_soc = departure_soc - self.network.E(S[0], S[1], departure_payload + ev.weight,
+                                                                 departure_time) * 100 / ev.battery_capacity
+                    Sj1_sos_payload = departure_payload
+
+            else:
+                j1 = 1
+                eta = meas.eta
+
+                # Arrival state at next node
+                Sj1_arrival_time = meas.time + (1 - eta) * self.network.t(S[0], S[1], meas.time)
+                Sj1_sos_soc = meas.soc - 100. * (1 - eta) * self.network.E(S[0], S[1], meas.payload + ev.weight,
+                                                                           meas.time) / ev.battery_capacity
+                Sj1_sos_payload = meas.payload
+
+            nS = S[j1:]
+            nL = L[j1:]
+            nw1 = w1[j1:]
+
+            Lj1 = L[j1] if Sj1_sos_soc + L[j1] <= ev.alpha_up else ev.alpha_up - Sj1_sos_soc
+
+            Sj1_low_tw = self.network.nodes[S[j1]].time_window_low
+            Sj1_sos_time = Sj1_arrival_time if Sj1_arrival_time > Sj1_low_tw else Sj1_low_tw
+            Sj1_service_time = self.network.spent_time(S[j1], Sj1_sos_soc, Lj1)
+
+            # Iterate from the first non-visited node
+            ev.set_route(nS, nL, Sj1_sos_time, Sj1_sos_soc, Sj1_sos_payload)
+            ev.step(self.network)
+
+            """
+            SECOND - Calculate critical points and states
+            """
+            for k, (sos_time, S0, L0) in enumerate(zip(ev.state_reaching[0, :], nS, nL)):
+                if sos_time - meas.time >= self.ga_time + self.offset_time:
+                    # Few customers ahead. Pass.
+                    if sum([1 for i in nS[k:] if self.network.is_customer(i)]) <= 1:
+                        break
+
+                    j_critical = j0 + j1 + k
+                    x1_critical = float(ev.state_reaching[0, k])
+                    x2_critical = float(ev.state_reaching[1, k])
+                    x3_critical = float(ev.state_reaching[2, k])
+                    ev.assigned_customers = tuple(i for i in nS if self.network.is_customer(i))
+                    critical_nodes[id_ev] = onGA.CriticalPoint(j_critical, S0, L0, x1_critical, x2_critical,
+                                                               x3_critical)
+                    routes_with_critical_nodes[id_ev] = (nS[k:], nL[k:])
+                    ev.current_max_tour_duration = ev.max_tour_duration + meas.departure_time - x1_critical
+                    break
+        return critical_nodes, routes_with_critical_nodes
+
+    def synchronization_legacy(self) -> Tuple[Dict[int, onGA.CriticalPoint], Dict[int, Tuple]]:
         critical_nodes = {}
         routes_with_critical_nodes = {}
         for id_ev, meas in self.measurements.items():
@@ -318,4 +406,6 @@ class Dispatcher:
             w1 = (0, ) * len(S)
 
             self.routes[id_ev] = (tuple(S), tuple(L), tuple(w1))
+            if S_ahead[0] == 0:
+                self.depart_info[id_ev] = (routes[id_ev][2], routes[id_ev][3], routes[id_ev][4])
         self.write_routes()

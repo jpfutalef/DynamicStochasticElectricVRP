@@ -370,7 +370,7 @@ class GaussianElectricVehicle(ElectricVehicle):
             self.charging_times[k] = spent_time if network.is_charging_station(Sk0) else 0.
             self.service_time[k] = spent_time
 
-            self.visited_nodes[Sk0] += 1
+            # self.visited_nodes[Sk0] += 1
             if network.is_charging_station(Sk0):
                 self.visits_a_cs = True
 
@@ -379,7 +379,7 @@ class GaussianElectricVehicle(ElectricVehicle):
         f0k = np.array([spent_time, Lk1, -network.demand(Sk1)])
         self.service_time[k + 1] = spent_time
         self.state_leaving[:, k + 1] = self.state_reaching[:, k + 1] + f0k
-        self.visited_nodes[Sk1] += 1
+        # self.visited_nodes[Sk1] += 1
 
     def probability_in_node(self, k: int):
         Sk = self.S[k]

@@ -126,7 +126,7 @@ def mutate(individual: IndividualType, indices: IndicesType, starting_points: St
                 if starting_points[id_ev].L0:
                     amount = individual[i2] + np.random.normal(0, 2)
                 elif starting_points[id_ev].S0 == 0:
-                    amount = individual[i2] + np.random.normal(0, 2*60)
+                    amount = individual[i2] + np.random.normal(0, 8*60)
                     amount = amount if amount > -10*60. else -10*60
                 else:
                     amount = abs(individual[i2] + np.random.normal(0, 60))

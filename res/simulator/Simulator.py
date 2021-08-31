@@ -357,7 +357,7 @@ class Simulator:
             tij = self.network.t(S0, S1, measurement.time)
             Eij = self.network.E(S0, S1, measurement.payload + ev.weight, measurement.time)
             eij = 100 * Eij / ev.battery_capacity
-            delta = np.divide(step_time, tij)
+            delta = step_time / tij if tij else 1.0
 
             # Vehicle reaches next node
             if delta > 1 - measurement.eta:
@@ -446,21 +446,21 @@ class Simulator:
             measurement.cumulated_consumed_energy += energy_consumption_portion
 
             # Degrade if an energy consumption equal to the nominal capacity is reached
-            if self.eta_model and measurement.cumulated_consumed_energy > ev.battery_capacity_nominal:
-                eta_val = ev.degrade_battery(self.eta_table, self.eta_model, measurement.min_soc, measurement.max_soc)
-
-                # Save this data
-                data = {'time': [measurement.time], 'eta': [eta_val], 'min soc': [measurement.min_soc],
-                        'max soc': [measurement.max_soc]}
-                path = Path(self.main_folder, 'degradation_event.csv')
-                with_columns = False if path.is_file() else True
-                with open(path, 'a') as file:
-                    pd.DataFrame(data).to_csv(file, index=False, header=with_columns)
-
-                # Reset value
-                measurement.cumulated_consumed_energy -= ev.battery_capacity_nominal
-                measurement.min_soc = measurement.soc
-                measurement.max_soc = measurement.soc
+            # if self.eta_model and measurement.cumulated_consumed_energy > ev.battery_capacity_nominal:
+            #     eta_val = ev.degrade_battery(self.eta_table, self.eta_model, measurement.min_soc, measurement.max_soc)
+            #
+            #     # Save this data
+            #     data = {'time': [measurement.time], 'eta': [eta_val], 'min soc': [measurement.min_soc],
+            #             'max soc': [measurement.max_soc]}
+            #     path = Path(self.main_folder, 'degradation_event.csv')
+            #     with_columns = False if path.is_file() else True
+            #     with open(path, 'a') as file:
+            #         pd.DataFrame(data).to_csv(file, index=False, header=with_columns)
+            #
+            #     # Reset value
+            #     measurement.cumulated_consumed_energy -= ev.battery_capacity_nominal
+            #     measurement.min_soc = measurement.soc
+            #     measurement.max_soc = measurement.soc
 
     def forward_fleet(self):
         self.update_routes()
