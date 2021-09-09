@@ -429,7 +429,7 @@ def from_xml_element(element: ET.Element):
     return cls.from_xml_element(element)
 
 
-def from_xml(filepath: Union[str, Path]):
+def from_xml(filepath: Union[str, Path]) -> Union[Network, GaussianCapacitatedNetwork, DeterministicCapacitatedNetwork]:
     element = ET.parse(filepath).getroot()
     if element.tag == 'network':
         _network = element

@@ -121,6 +121,18 @@ class DynamicEdge:
 @dataclass
 class GaussianEdge(DynamicEdge):
     velocity_deviation: np.ndarray = None
+    velocity_source: np.ndarray = None
+    velocity_deviation_source: np.ndarray = None
+
+    def __post_init__(self):
+        super(GaussianEdge, self).__post_init__()
+        if self.velocity_deviation is None:
+            self.velocity_deviation = np.zeros_like(self.velocity)
+        self.velocity_source = np.copy(self.velocity)
+        self.velocity_deviation_source = np.copy(self.velocity_deviation)
+
+    def disturb(self, std_gain: float = 1.0):
+        self.velocity = np.random.normal(self.velocity_source, std_gain * self.velocity_deviation_source)
 
     def get_velocity(self, time_of_day: float) -> Tuple[float, float]:
         time_of_day = fix_tod(time_of_day)

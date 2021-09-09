@@ -366,7 +366,7 @@ class Fleet:
 
             # Scale yaxis from 0 to 100
             plt.ylim((0, 100))
-            plt.xlim(-.5, si - .5)
+            plt.xlim((-.5, si - .5))
             plt.xlabel('Stop')
             plt.ylabel('State Of Charge [%]')
             plt.title(f'EV Battery SOC (EV {id_ev})')

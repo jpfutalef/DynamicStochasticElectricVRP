@@ -41,6 +41,16 @@ class ElectricVehicleMeasurement:
     def xml_element(self) -> [ET.Element]:
         return ET.Element('measurement', attrib={str(i): str(j) for i, j in self.__dict__.items()})
 
+    def update_max_soc(self, soc: float):
+        if soc > self.max_soc:
+            self.max_soc = soc
+        return
+
+    def update_min_soc(self, soc: float):
+        if soc < self.min_soc:
+            self.min_soc = soc
+        return
+
     def update_from_element(self, etree: ET.Element):
         for key, attrib in etree.attrib.items():
             if attrib == 'True':
@@ -52,47 +62,40 @@ class ElectricVehicleMeasurement:
             self.__dict__[key] = type(self.__dict__[key])(attrib)
 
 
-def create_measurements_file(filepath: Path, routes_path: Path, offset_time: float = 1200.,
-                             based_on: Dict[int, ElectricVehicleMeasurement] = None,
-                             previous_day_measurements: Dict[int, ElectricVehicleMeasurement] = None
-                             ) -> Tuple[Dict[int, ElectricVehicleMeasurement], ET.Element]:
+def create_measurements_file(filepath: Path, routes_path: Path, start_earlier_by: float = 0.,
+                             based_on: Path = None) -> Tuple[Dict[int, ElectricVehicleMeasurement], ET.Element]:
+    routes, departure_info = read_routes(routes_path, read_depart_info=True)
     if based_on:
-        collection = copy.deepcopy(based_on)
+        collection = read_measurements(based_on)
     else:
         collection = {}
-        routes, departure_info = read_routes(routes_path, read_depart_info=True)
-        t = min([info[0] for info in departure_info.values()]) - offset_time
-        for ev_id, route, info in zip(routes.keys(), routes.values(), departure_info.values()):
-            m = ElectricVehicleMeasurement(ev_id)
-            m.stopped_at_node_from = True
-            m.node_from = route[0][0]
-            m.node_to = route[0][1]
-            m.eta = 0.
+        for id_ev in routes.keys():
+            collection[id_ev] = ElectricVehicleMeasurement(id_ev)
+            collection[id_ev].min_soc = departure_info[id_ev][1]
+            collection[id_ev].max_soc = departure_info[id_ev][1]
+    t = min([info[0] for info in departure_info.values()]) - start_earlier_by
+    for id_ev in routes.keys():
+        route = routes[id_ev]
+        info = departure_info[id_ev]
+        m = collection[id_ev]
 
-            m.time_finishing_service = info[0]
-            m.soc_finishing_service = info[1]
-            m.payload_finishing_service = info[2]
+        m.stopped_at_node_from = True
+        m.node_from = route[0][0]
+        m.node_to = route[0][1]
+        m.eta = 0.
 
-            m.time = t
-            m.departure_time = departure_info[ev_id][0]
-            m.soc = info[1]
-            m.payload = info[2]
+        m.time_finishing_service = info[0]
+        m.soc_finishing_service = info[1]
+        m.payload_finishing_service = info[2]
 
-            m.visited_nodes = 1
-            m.done = False
+        m.time = t
+        m.departure_time = departure_info[id_ev][0]
+        m.soc = info[1]
+        m.payload = info[2]
 
-            if previous_day_measurements:
-                pdm = previous_day_measurements[ev_id]
-                m.min_soc = pdm.min_soc if pdm.min_soc <= m.soc else m.soc
-                m.max_soc = pdm.max_soc if pdm.max_soc >= m.soc else m.soc
-                m.cumulated_consumed_energy = pdm.cumulated_consumed_energy
-
-            else:
-                m.min_soc = m.soc
-                m.max_soc = m.soc
-                m.cumulated_consumed_energy = 0.0
-
-            collection[ev_id] = m
+        m.visited_nodes = 1
+        m.done = False
+        # collection[id_ev] = m
 
     root = ET.Element('measurements')
     [root.append(m.xml_element()) for m in collection.values()]

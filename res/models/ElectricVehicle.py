@@ -2,6 +2,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Union, Tuple, NamedTuple, List
 import numpy as np
+import matplotlib.pyplot as plt
 
 import res.models.Network as Network
 from res.models.Penalization import penalization_deterministic, penalization_stochastic, normal_cdf
@@ -209,7 +210,49 @@ class ElectricVehicle:
             if self.state_leaving[1, k] > 100:
                 self.penalization += penalization_deterministic(self.state_leaving[1, k], 100, c=1e5, w=1e3)
 
-    def plot_operation(self, ax):
+    def plot_operation(self, network: Network.Network, **kwargs):
+        # Figure
+        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, **kwargs)
+
+        # Containers
+        X, XX, times, soc, payload = [], [], [], [], []
+        for k, Sk in enumerate(self.S):
+            X += [k]
+            XX += [k] + [k]
+            times += [self.state_reaching[0, k], self.state_leaving[0, k]]
+            soc += [self.state_reaching[1, k], self.state_leaving[1, k]]
+            payload += [self.state_reaching[2, k], self.state_leaving[2, k]]
+
+        # Time windows
+        twu = network.time_window_upp
+        twl = network.time_window_low
+        tws = np.array([[(twu(i) + twl(i)) / 2, (twu(i) - twl(i)) / 2] if network.is_customer(i)
+                        else [-1, -1] for i in self.S])
+
+        # FIGURE 1 - Time
+        for k, (Sk, Xk) in enumerate(zip(self.S, X)):
+            if network.is_customer(Sk):
+                ax1.errorbar(Xk, tws[k, 0], tws[k, 1], ecolor='black', fmt='none', capsize=6, elinewidth=1,)
+        ax1.plot(XX, times)
+        ax1.set_xlabel('Stop')
+        ax1.set_ylabel('Time of day [s]')
+        ax1.set_title(f'Time EV {self.id}')
+
+        # SOC figure
+        ax2.plot(XX, soc)
+        ax2.axhline(self.alpha_down, linestyle='--', color='black', label='SOH policy')
+        ax2.axhline(self.alpha_up, linestyle='--', color='black', label=None)
+        ax2.fill_between([-1, len(self.S)], self.alpha_down, self.alpha_up, color='lightgrey', alpha=.35)
+        ax2.set_xlabel('Stop')
+        ax2.set_ylabel('SOC [%]')
+        ax2.set_title(f'SOC EV {self.id}')
+        ax2.set_ylim((0, 100))
+
+        # Payload figure
+        ax3.plot(XX, payload)
+        ax2.set_xlabel('Stop')
+        ax2.set_ylabel('Payload [kg]')
+        ax2.set_title(f'Payload EV {self.id}')
         return
 
     def xml_element(self, assign_customers=False, with_route=False, this_id=None):

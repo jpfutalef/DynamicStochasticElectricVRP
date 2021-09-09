@@ -32,6 +32,8 @@ parser.add_argument('--repetitions', type=int, help='Experiment repetitions. Def
 parser.add_argument('--sample_time', type=float, help='Online sample time in seconds. Default=300.0', default=300.0)
 parser.add_argument('--keep_times', type=int, help='How many steps keep realizations. Default=0', default=0)
 parser.add_argument('--std_factor', type=float, help='Noise gain. Default: 1.0', default=1.0)
+parser.add_argument('--start_earlier_by', type=float,
+                    help='Start the online operation earlier by this amount of seconds. Default: 0.0', default=0.0)
 
 # degradation options
 parser.add_argument('--soc_policy', type=int, nargs=2,
@@ -62,15 +64,15 @@ if __name__ == '__main__':
     elif args.operation == 2:
         source_folder = Path(args.target_folder, 'source')
         simulations_folder = Path(args.target_folder, 'simulations_OpenLoop')
-        online_operation(source_folder, simulations_folder, hp, optimize=False, repetitions=args.repetitions,
-                         std_factor=args.std_factor, sample_time=args.sample_time, keep_times=args.keep_times)
+        online_operation(args.target_folder, source_folder, False, hp, args.repetitions, args.keep_times,
+                         args.sample_time, args.std_factor, args.start_earlier_by, args.soc_policy, False)
 
     # Closed loop
     elif args.operation == 3:
         source_folder = Path(args.target_folder, 'source')
         simulations_folder = Path(args.target_folder, 'simulations_ClosedLoop')
-        online_operation(source_folder, simulations_folder, hp, optimize=True, repetitions=args.repetitions,
-                         std_factor=args.std_factor, sample_time=args.sample_time, keep_times=args.keep_times)
+        online_operation(args.target_folder, source_folder, True, hp, args.repetitions, args.keep_times,
+                         args.sample_time, args.std_factor, False)
 
     elif args.operation == 4:
         print(f'Considering the following policy:\n {args.soc_policy}')

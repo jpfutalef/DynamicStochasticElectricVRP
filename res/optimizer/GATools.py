@@ -32,7 +32,7 @@ class HyperParameters:
     def __str__(self):
         string = 'Current hyper-parameters:\n'
         for key, val in self.__dict__.items():
-            string += f'{key}:   {val}\n'
+            string += f'        {key}:   {val}\n'
         return string
 
     def get_dataframe(self) -> pd.Series:

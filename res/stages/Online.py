@@ -1,64 +1,109 @@
 import datetime, sys
 from pathlib import Path
 from typing import NamedTuple, Union, Tuple
+from dataclasses import dataclass
 from sklearn.neighbors import NearestNeighbors
 import numpy as np
 from typing import Dict
-import matplotlib.pyplot as plt
 
 import res.simulator.Simulator as Simulator
 import res.dispatcher.Dispatcher as Dispatcher
 from res.optimizer.GATools import OnGA_HyperParameters as HyperParameters
 
 
-class OnlineParameters(NamedTuple):
+@dataclass
+class OnlineParameters:
     source_folder: Path
     simulation_folder: Path
     optimize: bool
+    soc_policy: Tuple[float, float]
     hyper_parameters: Union[HyperParameters, None]
     keep_times: int = 1
-    sample_time: Union[float, int] = 5.0
+    sample_time: Union[float, int] = 300
     std_factor: float = 1.0
+    start_earlier_by: float = 600.
+    network_path: Path = None
+    fleet_path: Path = None
+    routes_path: Path = None
+    eta_model: NearestNeighbors = None
+    eta_table: np.ndarray = None
+
+    def __post_init__(self):
+        if self.network_path is None:
+            self.network_path = Path(self.source_folder, "network.xml")
+        if self.fleet_path is None:
+            self.fleet_path = Path(self.source_folder, "fleet.xml")
+        if self.routes_path is None:
+            self.routes_path = Path(self.source_folder, "routes.xml")
+
+    def __str__(self):
+        s = ""
+        skip = ["hyper_parameters", "eta_model", "eta_table"]
+        for (key, val) in {x: y for x, y in self.__dict__.items() if x not in skip}:
+            s += f"        {key}:  {val}\n"
+        return s
 
 
-def setup_simulator(source_folder: Path, save_to_folder: Path, sample_time=180.0, std_factor=(1., 1.),
-                    fleet_filepath: Path = None,
-                    previous_day_measurements: Dict[int, Dispatcher.ElectricVehicleMeasurement] = None,
-                    routes_filepath: Path = None, network_filepath=None, mat_filepath=None, new_soc_policy=None,
-                    include_mat=False):
-    for file in source_folder.iterdir():
-        if mat_filepath is None and (file.stem == 'data' or file.suffix == '.mat'):
-            mat_filepath = file
-        elif file.stem == 'network':
-            network_filepath = file
-        elif routes_filepath is None and file.stem == 'routes':
-            routes_filepath = file
-        elif fleet_filepath is None and file.stem == 'fleet':
-            fleet_filepath = file
+def online_operation(main_folder: Path, source_folder: Path, optimize: bool = False, onGA_hp: HyperParameters = None,
+                     repetitions: int = 5, hold_by: int = 0, sample_time: float = 300.,
+                     std_factor: float = 1.0, start_earlier_by: float = 600,
+                     soc_policy: Tuple[float, float] = (20., 95), display_gui: bool = False):
+    for i in range(repetitions):
+        single_simulation(main_folder, source_folder, optimize, onGA_hp, hold_by, sample_time, std_factor,
+                          start_earlier_by, soc_policy, display_gui)
 
-    measurements_filepath = Path(save_to_folder, 'measurements.xml')
-    history_filepath = Path(save_to_folder, 'history.xml')
-    if include_mat:
-        sim = Simulator.Simulator(network_filepath, fleet_filepath, measurements_filepath, routes_filepath,
-                                  history_filepath, mat_filepath, sample_time, save_to_folder, std_factor,
-                                  create_routes_xml=True, create_measurements_xml=True, create_history_xml=True,
-                                  previous_day_measurements=previous_day_measurements, new_soc_policy=new_soc_policy)
+
+def single_simulation(main_folder: Path, source_folder: Path = None, optimize: bool = False,
+                      onGA_hp: HyperParameters = None, hold_by: int = 0, sample_time: float = 300.0,
+                      std_factor: float = 1.0, start_earlier_by: float = 600,
+                      soc_policy: Tuple[float, float] = (20., 95), display_gui: bool = True,
+                      previous_simulation_folder: Path = None, simulation_name: str = None):
+    if simulation_name is None:
+        simulation_name = datetime.datetime.now().strftime("%H-%M-%S_%d-%m-%y")
+    simulation_folder = Path(main_folder, simulation_name)
+    p = OnlineParameters(source_folder, simulation_folder, optimize, soc_policy, onGA_hp, hold_by, sample_time,
+                         std_factor, start_earlier_by)
+    if display_gui:
+        text = f"""The simulation will run using the following parameters:
+{p}
+Simulation results will be saved to:
+        {simulation_folder}
+Press any key to continue..."""
+        input(text)
     else:
-        sim = Simulator.Simulator(network_filepath, fleet_filepath, measurements_filepath, routes_filepath,
-                                  history_filepath, None, sample_time, save_to_folder, std_factor,
-                                  create_routes_xml=True, create_measurements_xml=True, create_history_xml=True,
-                                  previous_day_measurements=previous_day_measurements, new_soc_policy=new_soc_policy)
+        print(f"Initializing simulation at {simulation_folder}")
+
+    if optimize and onGA_hp is None:
+        raise ValueError("Optimization was requested, but no hyper parameters were given.")
+    elif optimize:
+        online_operation_closed_loop(p)
+    else:
+        online_operation_open_loop(p, previous_simulation_folder)
+    print('Done!')
+    return
+
+
+def setup_simulator(op: OnlineParameters, previous_simulation_folder: Path = None):
+    if previous_simulation_folder is not None:
+        previous_history_path = Path(previous_simulation_folder, "history.xml")
+        previous_measurements_path = Path(previous_simulation_folder, "measurements.xml")
+
+    else:
+        previous_history_path = None
+        previous_measurements_path = None
+
+    sim = Simulator.Simulator(op.simulation_folder, op.network_path, op.fleet_path, op.routes_path, op.sample_time,
+                              previous_history_path, previous_measurements_path, op.std_factor, op.eta_model,
+                              op.eta_table, op.soc_policy, op.start_earlier_by)
     return sim
 
 
-def online_operation_open_loop(p: OnlineParameters):
-    simulator = setup_simulator(p.source_folder, p.simulation_folder, p.sample_time, p.std_factor)
+def online_operation_open_loop(p: OnlineParameters, previous_simulation_folder: Path = None):
+    # Create simulator instance
+    simulator = setup_simulator(p, previous_simulation_folder)
+
     # Start loop
-    dont_alter = 0
     while not simulator.done():
-        if not dont_alter:
-            simulator.disturb_network()
-        dont_alter = dont_alter + 1 if dont_alter + 1 < p.keep_times else 0
         simulator.forward_fleet()
         simulator.save_history()
     return 1
@@ -80,22 +125,6 @@ def online_operation_closed_loop(p: OnlineParameters):
         simulator.forward_fleet()
         simulator.save_history()
     return
-
-
-def online_operation(source_folder: Path, simulations_folder: Path, hp: HyperParameters, optimize: bool = False,
-                     repetitions: int = 5, keep_times: int = 4, sample_time: float = 2.0,
-                     std_factor: float = 1.0):
-    for i in range(repetitions):
-        now = datetime.datetime.now().strftime("%H-%M-%S_%d-%m-%y")
-        simulation_folder = Path(simulations_folder, now)
-        p = OnlineParameters(source_folder, simulation_folder, optimize, hp, keep_times, sample_time,
-                             std_factor)
-        print(f'Initializing simulation #{i + 1} in folder: /{simulation_folder.stem}')
-        if p.optimize:
-            online_operation_closed_loop(p)
-        else:
-            online_operation_open_loop(p)
-        print('Done!\n')
 
 
 def online_operation_degradation(source_folder: Path, main_folder: Path, hp: HyperParameters, eta_table: np.ndarray,
