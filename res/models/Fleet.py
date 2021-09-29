@@ -14,6 +14,7 @@ import res.models.ElectricVehicle as EV
 import res.models.Network as Network
 import res.tools.IOTools as IOTools
 from res.models.Penalization import penalization_deterministic, penalization_stochastic, normal_cdf
+import res.models.NonLinearOps as NL
 
 '''
 MAIN FLEET DEFINITION
@@ -31,7 +32,8 @@ class Fleet:
 
     def __post_init__(self):
         self.set_vehicles_to_route(self.vehicles_to_route)
-        self.set_network(self.network)
+        if self.network is not None:
+            self.set_network(self.network)
         self.type = self.__class__.__name__
 
     def __len__(self):
@@ -43,7 +45,7 @@ class Fleet:
     def set_vehicles(self, vehicles: Dict[int, EV.ElectricVehicle]):
         self.vehicles = vehicles
 
-    def set_network(self, network: Network = None):
+    def set_network(self, network: Network):
         self.network = network
         self.set_default_init_theta()
 
@@ -105,16 +107,18 @@ class Fleet:
             for charging_station, capacity in zip(self.network.charging_stations, new_capacity):
                 self.network.nodes[charging_station].capacity = capacity
 
+        self.set_network(self.network)
+
     def assign_customers_in_route(self):
         [ev.assign_customers_in_route(self.network) for ev in self.vehicles.values()]
 
     def set_vehicle_route(self, ev_id: int, S: Tuple[int, ...], L: Tuple[float, ...], x1_0: float, x2_0: float,
-                          x3_0: float):
-        self.vehicles[ev_id].set_route(S, L, x1_0, x2_0, x3_0)
+                          x3_0: float, first_pwt=0.0):
+        self.vehicles[ev_id].set_route(S, L, x1_0, x2_0, x3_0, first_pwt)
 
     def set_routes_of_vehicles(self, routes: Dict[int, Tuple[Tuple[int, ...], Tuple[float, ...], float, float, float]]):
-        for id_ev, (S, L, x1_0, x2_0, x3_0) in routes.items():
-            self.set_vehicle_route(id_ev, S, L, x1_0, x2_0, x3_0)
+        for id_ev, (S, L, x1_0, x2_0, x3_0, first_post_wt) in routes.items():
+            self.set_vehicle_route(id_ev, S, L, x1_0, x2_0, x3_0, first_post_wt)
 
     def iterate(self, init_theta: np.ndarray = None):
         for ev in self.vehicles.values():
@@ -166,22 +170,23 @@ class Fleet:
 
         return is_feasible, penalization, accept
 
-    def xml_element(self, assign_customers=False, with_routes=False):
-        _fleet = ET.Element('fleet')
-        _fleet.set('type', self.type)
-        _fleet.set('hard_penalization', str(self.hard_penalization))
+    def xml_element(self, network_in_file = False):
+        tree = ET.Element('fleet')
+        tree.set('type', self.type)
+        tree.set('hard_penalization', str(self.hard_penalization))
         for vehicle in self.vehicles.values():
-            _fleet.append(vehicle.xml_element(assign_customers, with_routes))
-        return _fleet
+            tree.append(vehicle.xml_element())
 
-    def write_xml(self, filepath: Path, network_in_file=False, assign_customers=False, with_routes=False,
-                  print_pretty=False):
-        tree = self.xml_element(assign_customers, with_routes)
         if network_in_file and self.network is not None:
             instance_tree = ET.Element('instance')
-            instance_tree.append(self.network.xml_tree())
             instance_tree.append(tree)
+            instance_tree.append(self.network.xml_tree())
             tree = instance_tree
+
+        return tree
+
+    def write_xml(self, filepath: Path, network_in_file=False, print_pretty=False):
+        tree = self.xml_element(network_in_file)
 
         if print_pretty:
             IOTools.write_pretty_xml(filepath, tree)
@@ -189,29 +194,29 @@ class Fleet:
             ET.ElementTree(tree).write(filepath)
 
     @classmethod
-    def from_xml_element(cls, element: ET.Element):
-        hard_penalization = float(element.get('hard_penalization'))
+    def from_xml_element(cls, element: ET.Element, ev_type: str = None, include_network=False):
+        is_instance = True if element.tag == 'instance' else False
+        _fleet = element.find('fleet') if is_instance else element
+
+        hard_penalization = float(_fleet.get('hard_penalization'))
         vehicles = {}
-        for _vehicle in element:
-            ev = EV.from_xml_element(_vehicle)
+        for _vehicle in _fleet:
+            ev = EV.from_xml_element(_vehicle, ev_type)
             vehicles[ev.id] = ev
-        return cls(vehicles, hard_penalization=hard_penalization)
 
-    @classmethod
-    def from_xml(cls, xml_file: Union[str, ET.Element], return_etree=False):
-        if type(xml_file) == str:
-            tree = ET.parse(xml_file).getroot()
-        else:
-            tree = xml_file
-        is_instance = True if tree.tag == 'instance' else False
-        _fleet = tree.find('fleet') if is_instance else tree
+        fleet = cls(vehicles, hard_penalization=hard_penalization)
 
-        fleet = cls.from_xml_element(_fleet)
-
-        if is_instance:
-            _network = tree.find('network')
+        if is_instance and include_network:
+            _network = element.find('network')
             network = Network.from_xml_element(_network)
             fleet.set_network(network)
+
+        return fleet
+
+    @classmethod
+    def from_xml(cls, xml_file: Path, return_etree=False, ev_type: str = None, include_network=False):
+        tree = ET.parse(xml_file).getroot()
+        fleet = cls.from_xml_element(tree, ev_type, include_network=include_network)
 
         if return_etree:
             return fleet, tree
@@ -441,27 +446,89 @@ GAUSSIAN FLEET DEFINITION
 '''
 
 
+def single_ev_box(box_container: np.ndarray, dt: float, cs_id: int, reaching_times: np.ndarray, leaving_times: np.ndarray,
+                  destinations: Tuple[int, ...], stds: np.ndarray, description_mu: np.ndarray = None,
+                  description_std: np.ndarray=None, std_factor: float = 3.0):
+    for i, node in enumerate(destinations):
+        if node == cs_id:
+            a = int((reaching_times[i] - std_factor * stds[i]) / dt)
+            b = int((leaving_times[i] + std_factor * stds[i]) / dt)
+
+            for k in range(a, b):
+                off1 = 0 if k >= 0 else len(box_container)
+                off2 = 0 if k < len(box_container) else -len(box_container)
+                box_container[k + off1 + off2] += 1
+                #description_mu[k + off1 + off2] = reaching_times[i]
+                #description_std[k + off1 + off2] = stds[i]
+    return
+
+
+def check_capacity_from_box(max_capacity: int, do_evaluation_container: np.ndarray, box_container: np.ndarray):
+    for k, _ in enumerate(do_evaluation_container):
+        do_evaluation_container[k] = 1 if box_container[k] > max_capacity else 0
+    return
+
+
 class GaussianFleet(Fleet):
     vehicles: Dict[int, EV.GaussianElectricVehicle]
     network: Network.GaussianCapacitatedNetwork
 
     def __post_init__(self):
+        self.sat_prob_sample_time = 300.
         super(GaussianFleet, self).__post_init__()
+
+    def set_network(self, network: Network.GaussianCapacitatedNetwork):
+        self.network = network
+        self.set_saturation_probability_sample_time(self.sat_prob_sample_time)
+
+    def set_saturation_probability_sample_time(self, sample_time: float):
+        self.sat_prob_sample_time = sample_time
+        if self.network is not None:
+            self.network.setup_containers(sample_time, len(self))
+        for ev_id, ev in self.vehicles.items():
+            ev.setup(len(self.network), self.sat_prob_sample_time)
 
     def iterate(self, **kwargs):
         for ev in self.vehicles.values():
             ev.step(self.network)
-
-        self.network.reset_containers()
-        iteration_info = {ev.id: (ev.state_leaving[0, :], ev.state_reaching[0, :], ev.state_reaching_covariance,
-                                  ev.S) for ev in self.vehicles.values()}
-        self.network.fill_deterministics_occupation(iteration_info, **kwargs)
+        self.compute_saturation_probability()
         return
 
-    def set_network(self, network: Network = None):
-        self.network = network
-        if network:
-            self.network.setup_cs_capacities_combinations(len(self))
+    def compute_saturation_probability(self):
+        self.network.reset_containers()
+        self.fill_deterministic_occupation()    # Boxes Heuristic
+        for cs in self.network.which_cs_evaluate:
+            combs = self.network.cs_capacities_combinations[cs]
+            sat_prob_container = self.network.saturation_probability_container[cs, :]
+            for ev_id in self.vehicles_to_route:
+                ev = self.vehicles[ev_id]
+                ev.probability_in_node(cs, self.network.do_evaluation_container[cs, :])
+
+            for comb in combs:
+                product = np.ones_like(self.vehicles[self.vehicles_to_route[0]].probability_in_node_container[cs, :])
+                for ev_id in self.vehicles_to_route:
+                    if comb[ev_id]:
+                        product *= self.vehicles[ev_id].probability_in_node_container[cs, :]
+                    else:
+                        product *= (1 - self.vehicles[ev_id].probability_in_node_container[cs, :])
+                sat_prob_container += product
+        return
+
+    def fill_deterministic_occupation(self, std_factor: float = 3.0):
+        """
+        Heuristic to calculate low-res occupation boxes
+        @param std_factor: extra space given to boxes as a factod of std at each stop
+        @return: None. The results are stored in self.det_occupation_container
+        """
+        for cs_id in self.network.charging_stations:
+            for ev_id, ev in self.vehicles.items():
+                var_array = np.array([np.sqrt(x) for x in ev.state_reaching_covariance[0, ::3]])
+                single_ev_box(self.network.low_res_occupation_container[cs_id, :], self.sat_prob_sample_time, cs_id,
+                              ev.state_reaching[0, :], ev.state_leaving[0, :], ev.S, var_array, std_factor=std_factor)
+            check_capacity_from_box(self.network.nodes[cs_id].capacity, self.network.do_evaluation_container[cs_id, :],
+                                    self.network.low_res_occupation_container[cs_id, :])
+
+        return
 
     def resize_fleet(self, new_size, based_on=None):
         ev_base = deepcopy(based_on) if based_on else deepcopy(self.vehicles[0])
@@ -479,13 +546,18 @@ class GaussianFleet(Fleet):
     def plot_cs_occupation(self, figsize=(16, 5)):
         # Charging stations occupation
         fig = plt.figure(figsize=figsize)
-        x = np.arange(0, 24*3600, self.network.sample_time_op)
+        x = np.arange(0, 24 * 3600, self.network.sample_time_op)
         plt.step(x, self.network.low_res_occupation_container.T)
         plt.title('CS Occupation')
         plt.xlabel('Event')
         plt.ylabel('Number of EVs')
         plt.legend(tuple(f'CS {i}' for i in self.network.charging_stations))
         return fig
+
+
+"""
+MISCELLANEOUS FUNCTIONS
+"""
 
 
 def routes_from_csv_folder(folder_path: str, fleet: Fleet):
@@ -499,12 +571,15 @@ def routes_from_csv_folder(folder_path: str, fleet: Fleet):
     return routes
 
 
-def from_xml(filepath: Union[Path, str]) -> Union[Fleet, GaussianFleet]:
+def from_xml(filepath: Union[Path, str], fleet_type: Union[Fleet, str] = None,
+             ev_type: Union[EV.ElectricVehicle, str] = None, include_network=False) -> Union[Fleet, GaussianFleet]:
     element = ET.parse(filepath).getroot()
-    if element.tag == 'fleet':
-        _fleet = element
+
+    if fleet_type is None:
+        cls = globals()[element.get('type')]
+    elif type(fleet_type) is str:
+        cls = globals()[fleet_type]
     else:
-        _fleet = element.find('fleet')
-    t = _fleet.get('type')
-    cls = globals()[t]
-    return cls.from_xml(element)
+        cls = fleet_type
+
+    return cls.from_xml_element(element, ev_type=ev_type)

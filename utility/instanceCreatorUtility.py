@@ -1,16 +1,11 @@
-# %% Instance creator utility
-import sys
-
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import rcParams
 from scipy.io import loadmat
 
-# rcParams['text.usetex'] = True
-
-sys.path.append('..')
 import res.models.Fleet as Fleet
 import res.models.Network as Network
+
+# rcParams['text.usetex'] = True
 
 # %% Configuration
 # Paths

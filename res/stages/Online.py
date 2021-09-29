@@ -49,18 +49,17 @@ def online_operation(main_folder: Path, source_folder: Path, optimize: bool = Fa
                      std_factor: float = 1.0, start_earlier_by: float = 600,
                      soc_policy: Tuple[float, float] = (20., 95), display_gui: bool = False):
     for i in range(repetitions):
-        single_simulation(main_folder, source_folder, optimize, onGA_hp, hold_by, sample_time, std_factor,
-                          start_earlier_by, soc_policy, display_gui)
+        simulate(main_folder, source_folder, optimize, onGA_hp, hold_by, sample_time, std_factor,
+                 start_earlier_by, soc_policy, display_gui)
 
 
-def single_simulation(main_folder: Path, source_folder: Path = None, optimize: bool = False,
-                      onGA_hp: HyperParameters = None, hold_by: int = 0, sample_time: float = 300.0,
-                      std_factor: float = 1.0, start_earlier_by: float = 600,
-                      soc_policy: Tuple[float, float] = (20., 95), display_gui: bool = True,
-                      previous_simulation_folder: Path = None, simulation_name: str = None):
+def simulate(main_folder: Path, source_folder: Path = None, optimize: bool = False, onGA_hp: HyperParameters = None,
+             hold_by: int = 0, sample_time: float = 300.0, std_factor: float = 1.0, start_earlier_by: float = 600,
+             soc_policy: Tuple[float, float] = (20., 95), display_gui: bool = True,
+             previous_simulation_folder: Path = None, simulation_name: str = None):
     if simulation_name is None:
         simulation_name = datetime.datetime.now().strftime("%H-%M-%S_%d-%m-%y")
-    simulation_folder = Path(main_folder, simulation_name)
+    simulation_folder = Path(main_folder, 'simulations', simulation_name)
     p = OnlineParameters(source_folder, simulation_folder, optimize, soc_policy, onGA_hp, hold_by, sample_time,
                          std_factor, start_earlier_by)
     if display_gui:
@@ -76,54 +75,57 @@ Press any key to continue..."""
     if optimize and onGA_hp is None:
         raise ValueError("Optimization was requested, but no hyper parameters were given.")
     elif optimize:
-        online_operation_closed_loop(p)
+        online_operation_closed_loop(p, previous_simulation_folder)
     else:
         online_operation_open_loop(p, previous_simulation_folder)
     print('Done!')
     return
 
 
-def setup_simulator(op: OnlineParameters, previous_simulation_folder: Path = None):
-    if previous_simulation_folder is not None:
-        previous_history_path = Path(previous_simulation_folder, "history.xml")
-        previous_measurements_path = Path(previous_simulation_folder, "measurements.xml")
-
-    else:
-        previous_history_path = None
-        previous_measurements_path = None
-
-    sim = Simulator.Simulator(op.simulation_folder, op.network_path, op.fleet_path, op.routes_path, op.sample_time,
-                              previous_history_path, previous_measurements_path, op.std_factor, op.eta_model,
-                              op.eta_table, op.soc_policy, op.start_earlier_by)
-    return sim
-
-
-def online_operation_open_loop(p: OnlineParameters, previous_simulation_folder: Path = None):
+def online_operation_open_loop(p: OnlineParameters, previous_simulation_folder: Path = None, history_figsize=(16, 5)):
     # Create simulator instance
     simulator = setup_simulator(p, previous_simulation_folder)
 
+    # Disturb to create first network realization
+    simulator.disturb_network()
+    simulator.save_network()
+
     # Start loop
     while not simulator.done():
         simulator.forward_fleet()
         simulator.save_history()
-    return 1
+
+    # Save history figures
+    simulator.save_history_figures(history_figsize=history_figsize)
+    return
 
 
-def online_operation_closed_loop(p: OnlineParameters):
-    simulator = setup_simulator(p.source_folder, p.simulation_folder, p.sample_time, p.std_factor)
+def online_operation_closed_loop(p: OnlineParameters, previous_simulation_folder: Path = None, history_figsize=(16, 5)):
+    # Create simulator instance
+    simulator = setup_simulator(p, previous_simulation_folder)
+
+    # Create dispatcher instance
     dispatcher = Dispatcher.Dispatcher(simulator.network_path, simulator.fleet_path, simulator.measurements_path,
                                        simulator.routes_path, onGA_hyper_parameters=p.hyper_parameters)
+
     exec_time_path = Path(p.simulation_folder, 'exec_time.csv')
+
+    # Disturb to create first network realization
+    simulator.disturb_network()
+    simulator.save_network()
+
     # Start loop
-    dont_alter = 0
     while not simulator.done():
-        if not dont_alter:
-            simulator.disturb_network()
-            dispatcher.update()
-            dispatcher.optimize_online(exec_time_filepath=exec_time_path)
-        dont_alter = dont_alter + 1 if dont_alter + 1 < p.keep_times else 0
+        # Measure and update
+        dispatcher.update()
+        dispatcher.optimize_online(exec_time_filepath=exec_time_path)
+
+        # Simulate one step
         simulator.forward_fleet()
         simulator.save_history()
+
+    # Save history figures
+    simulator.save_history_figures(history_figsize=history_figsize)
     return
 
 
@@ -177,3 +179,18 @@ def online_operation_degradation(source_folder: Path, main_folder: Path, hp: Hyp
         previous_day_measurements = simulator.measurements
         day += 1
     return
+
+
+def setup_simulator(op: OnlineParameters, previous_simulation_folder: Path = None):
+    if previous_simulation_folder is not None:
+        previous_history_path = Path(previous_simulation_folder, "history.xml")
+        previous_measurements_path = Path(previous_simulation_folder, "measurements.xml")
+
+    else:
+        previous_history_path = None
+        previous_measurements_path = None
+
+    sim = Simulator.Simulator(op.simulation_folder, op.network_path, op.fleet_path, op.routes_path, op.sample_time,
+                              previous_history_path, previous_measurements_path, op.std_factor, op.eta_model,
+                              op.eta_table, op.soc_policy, op.start_earlier_by)
+    return sim

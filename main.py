@@ -8,32 +8,40 @@ import numpy as np
 from res.stages.PreOperation import folder_pre_operation
 from res.stages.Online import online_operation, online_operation_degradation
 from res.optimizer.GATools import OnGA_HyperParameters, AlphaGA_HyperParameters
+import res.models.Fleet as Fleet
+import res.models.Network as Network
 
 operation_help = """Operation to perform.
-(1) Pre-operation
-(2) Online operation without optimization
-(3) Online operation with optimization
-(4) Online operation with optimization + degradation
+(1) Pre-operation stage (deterministic)
+(2) Pre-operation stage (deterministic with waiting times)
+(3) Pre-operation stage (linear stochastic + deterministic CS capacities)
+(4) Pre-operation stage (full linear stochastic)
+(5) Online stage (open loop)
+(6) Online stage (closed loop deterministic)
+(7) Online stage (closed loop linear stochastic + deterministic CS capacities)
+(8) Online stage (closed loop full linear stochastic)
 """
-
+# create parser instance and mandatory arguments
 parser = argparse.ArgumentParser(description='Main file. You can execute all operational stages with it.')
 parser.add_argument('operation', type=int, help=operation_help)
 parser.add_argument('target_folder', type=Path, help='specifies working folder')
 
-# pre-operation
+# common options
+parser.add_argument('--cs_capacities', type=int, help='Capacity of CSs. Default=2', default=2)
+parser.add_argument('--repetitions', type=int, help='Experiment repetitions. Default=50', default=50)
+
+# pre-operation options
 parser.add_argument('--additional_vehicles', type=int, help='additional EVs in pre-operation. Default=0', default=0)
 parser.add_argument('--fill_up_to', type=float, help='fill the EV with a mass up to this value. Default=1.0',
                     default=1.0)
-
-# common options
-parser.add_argument('--repetitions', type=int, help='Experiment repetitions. Default=50', default=50)
 
 # online options
 parser.add_argument('--sample_time', type=float, help='Online sample time in seconds. Default=300.0', default=300.0)
 parser.add_argument('--keep_times', type=int, help='How many steps keep realizations. Default=0', default=0)
 parser.add_argument('--std_factor', type=float, help='Noise gain. Default: 1.0', default=1.0)
 parser.add_argument('--start_earlier_by', type=float,
-                    help='Start the online operation earlier by this amount of seconds. Default: 0.0', default=0.0)
+                    help='Start the simulation earlier by this amount of seconds. Default: 1200.0 [s] (20 min)',
+                    default=1200.0)
 
 # degradation options
 parser.add_argument('--soc_policy', type=int, nargs=2,
@@ -48,8 +56,13 @@ hp = OnGA_HyperParameters(num_individuals=60,
                           weights=(1., 1., 1., 0.),
                           r=2)
 
+ev_type = Fleet.EV.ElectricVehicle
+fleet_type = Fleet.Fleet
+network_type = Network.DeterministicCapacitatedNetwork
+edge_type = Network.Edge.DynamicEdge
+
 if __name__ == '__main__':
-    # Pre-operation
+    # Pre-operation stage (deterministic)
     if args.operation == 1:
         instances_folder = args.target_folder
         if not instances_folder.is_dir():
@@ -57,8 +70,42 @@ if __name__ == '__main__':
             sys.exit(0)
         print("Will solve instances at:\n  ", instances_folder)
         input("Press any key to continue... (ctrl+Z to end process)")
-        folder_pre_operation(instances_folder, repetitions=args.repetitions,
-                             additional_vehicles=args.additional_vehicles, fill_up_to=args.fill_up_to)
+        folder_pre_operation(instances_folder, args.repetitions, args.soc_policy, args.additional_vehicles,
+                             args.fill_up_to, fleet_type=fleet_type, ev_type=ev_type, network_type=network_type,
+                             edge_type=edge_type, cs_capacities=args.cs_capacities,
+                             results_folder_suffix="deterministic")
+
+    # Pre-operation stage (deterministic with waiting times)
+    elif args.operation == 2:
+        ev_type = Fleet.EV.GaussianElectricVehicle
+        edge_type = Network.Edge.GaussianEdge
+
+        instances_folder = args.target_folder
+        if not instances_folder.is_dir():
+            print("Directory is not valid: ", instances_folder)
+            sys.exit(0)
+        print("Will solve instances at:\n  ", instances_folder)
+        input("Press any key to continue... (ctrl+Z to end process)")
+        folder_pre_operation(instances_folder, args.repetitions, args.soc_policy, args.additional_vehicles,
+                             args.fill_up_to, fleet_type=fleet_type, ev_type=ev_type, network_type=network_type,
+                             edge_type=edge_type, cs_capacities=args.cs_capacities)
+
+
+    elif args.operation == 3:
+        ev_type = Fleet.EV.GaussianElectricVehicle
+        fleet_type = Fleet.GaussianFleet
+        network_type = Network.GaussianCapacitatedNetwork
+        edge_type = Network.Edge.GaussianEdge
+
+        instances_folder = args.target_folder
+        if not instances_folder.is_dir():
+            print("Directory is not valid: ", instances_folder)
+            sys.exit(0)
+        print("Will solve instances at:\n  ", instances_folder)
+        input("Press any key to continue... (ctrl+Z to end process)")
+        folder_pre_operation(instances_folder, args.repetitions, args.soc_policy, args.additional_vehicles,
+                             args.fill_up_to, fleet_type=fleet_type, ev_type=ev_type, network_type=network_type,
+                             edge_type=edge_type, cs_capacities=args.cs_capacities)
 
     # Open loop
     elif args.operation == 2:
@@ -72,8 +119,9 @@ if __name__ == '__main__':
         source_folder = Path(args.target_folder, 'source')
         simulations_folder = Path(args.target_folder, 'simulations_ClosedLoop')
         online_operation(args.target_folder, source_folder, True, hp, args.repetitions, args.keep_times,
-                         args.sample_time, args.std_factor, False)
+                         args.sample_time, args.std_factor, args.start_earlier_by, args.soc_policy, False)
 
+    # Closed loop with degradation
     elif args.operation == 4:
         print(f'Considering the following policy:\n {args.soc_policy}')
         input('Press any key to continue... (ctrl+Z to finish process)')

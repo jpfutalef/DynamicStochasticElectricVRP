@@ -56,10 +56,12 @@ def decode(individual: IndividualType, fleet: Fleet, hp: AlphaGA_HyperParameters
 
     # Store routes in dictionary
     routes = {}
-    for i, (S, L, dt) in enumerate(zip(customer_sequences, charging_sequences, depart_times)):
+    for i, (S, L, departure_time) in enumerate(zip(customer_sequences, charging_sequences, depart_times)):
         S = tuple([0] + S + [0])
         L = tuple([0.] + L + [0.])
-        routes[i] = (S, L, dt, hp.alpha_up, sum([fleet.network.demand(x) for x in S]))
+        departure_soc = hp.alpha_up
+        departure_payload = sum([fleet.network.demand(x) for x in S])
+        routes[i] = (S, L, departure_time, departure_soc, departure_payload, 0)
     return routes
 
 
@@ -710,12 +712,12 @@ Population Avg: {mean}
 Population Std: {std}"""
 
         print(to_print, end="\r")
+
         deb = False
         if deb:
             toolbox.evaluate(bestOfAll)
             fleet.plot_operation_pyplot()
             plt.show()
-
 
         if save_to:
             generations_data_container.generation.append(g)

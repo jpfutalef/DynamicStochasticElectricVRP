@@ -1,6 +1,6 @@
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from typing import Dict, Tuple, Union, List
+from typing import Dict, Tuple, Union, List, Type
 
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -101,20 +101,23 @@ class Network:
     def time_window_upp(self, node: int):
         return self.nodes[node].time_window_upp
 
-    def t(self, node_from: int, node_to: int, time_of_day: float) -> float:
+    def t(self, node_from: int, node_to: int, time_of_day: float, additive_noise_gain: float = 0.0) -> float:
         if not self.edges[node_from][node_to].length:
             return 0.
         v = self.v(node_from, node_to, time_of_day)
-        v = v[0] if len(v) else v
+        if len(v) > 1:
+            return self.edges[node_from][node_to].length / v[0] + np.random.normal(0, v[1] * additive_noise_gain)
         return self.edges[node_from][node_to].length / v
 
     def E(self, node_from: int, node_to: int, m: float, time_of_day: float, Cr=1.75, c1=4.575, c2=1.75, rho_air=1.2256,
-          Af=2.3316, Cd=0.28, g=9.8, v=None) -> float:
-        v = self.v(node_from, node_to, time_of_day)
-        v = v[0] if len(v) else v
+          Af=2.3316, Cd=0.28, g=9.8, v=None, additive_noise_gain: float = 0.0) -> float:
+        vel = self.v(node_from, node_to, time_of_day)
+        v = vel[0] if len(vel) else vel
         edge = self.edges[node_from][node_to]
         f = m * (edge.road_cos_length * g * Cr * (c1 * v + c2) / 1000 + edge.road_sin_length * g)
         g = rho_air * Af * Cd * edge.length * v ** 2 / 2
+        if len(vel) > 1:
+            return f + g + np.random.normal(0, vel[1] * additive_noise_gain)
         return f + g
 
     def is_depot(self, node: int):
@@ -187,36 +190,34 @@ class Network:
             ET.ElementTree(tree).write(filepath)
 
     @classmethod
-    def from_xml_element(cls, element: ET.Element):
+    def from_xml_element(cls, element: ET.Element, edge_type: Union[object, str] = None):
+        is_instance = True if element.tag == 'instance' else False
+        _network = element.find('network') if is_instance else element
+
         nodes = {}
-        for _node in element.find('nodes'):
+        for _node in _network.find('nodes'):
             node = Node.from_xml_element(_node)
             nodes[node.id] = node
 
         edges = {}
-        for _node_from in element.find('edges'):
+        for _node_from in _network.find('edges'):
             node_from = int(_node_from.get('id'))
             dict_from = edges[node_from] = {}
             for _node_to in _node_from:
-                edge = Edge.from_xml_element(_node_to, node_from)
+                edge = Edge.from_xml_element(_node_to, node_from, edge_type)
                 dict_from[edge.node_to] = edge
 
         return cls(nodes, edges)
 
     @classmethod
-    def from_xml(cls, xml_file: Union[str, ET.Element], return_etree=False):
-        if type(xml_file) == str:
-            tree = ET.parse(xml_file).getroot()
-        else:
-            tree = xml_file
-
-        is_instance = True if tree.tag == 'instance' else False
-        _network = tree.find('network') if is_instance else tree
+    def from_xml(cls, filepath: Path, return_etree=False, edge_type: Union[object, str] = None):
+        tree = ET.parse(filepath).getroot()
+        instance = cls.from_xml_element(tree, edge_type)
 
         if return_etree:
-            return cls.from_xml_element(_network), tree
+            return instance, tree
         else:
-            return cls.from_xml_element(_network)
+            return instance
 
 
 """
@@ -351,8 +352,9 @@ def single_saturation_probability(do_evaluation: np.ndarray, description_mu: np.
 @dataclass
 class GaussianCapacitatedNetwork(Network):
     sample_time_op: float = 180.  # s
+    which_cs_evaluate: Union[np.ndarray, None] = None
     cdf_container: Union[np.ndarray, None] = None
-    occupation_probability_container: Union[np.ndarray, None] = None
+    saturation_probability_container: Union[np.ndarray, None] = None
     low_res_occupation_container: Union[np.ndarray, None] = None
     do_evaluation_container: Union[np.ndarray, None] = None
     ev_description_mu_containers: Dict[int, np.ndarray] = None
@@ -365,50 +367,56 @@ class GaussianCapacitatedNetwork(Network):
 
     def set_sample_time_occupation_probability(self, sample_time: float):
         self.sample_time_op = sample_time
-        self.setup_containers()
 
-    def setup_containers(self, num_evs:int=10):
-        shape = (len(self.charging_stations), int(86400 / self.sample_time_op))
-        self.occupation_probability_container = np.zeros(shape)
+    def setup_containers(self, sample_time: float = 300, fleet_size: int = 10):
+        self.set_sample_time_occupation_probability(sample_time)
+        shape = (len(self), int(86400 / self.sample_time_op))
+        self.saturation_probability_container = np.zeros(shape)
         self.low_res_occupation_container = np.zeros(shape)
-        self.do_evaluation_container = np.zeros(shape)
-        self.ev_description_mu_containers = {i: np.zeros((num_evs, shape[1])) for i in range(len(self.charging_stations))}
-        self.ev_description_std_containers = {i: np.zeros((num_evs, shape[1])) for i in range(len(self.charging_stations))}
+        self.do_evaluation_container = np.ones(shape)
+        self.ev_description_mu_containers = {i: np.zeros((fleet_size, shape[1])) for i in
+                                             range(len(self.charging_stations))}
+        self.ev_description_std_containers = {i: np.zeros((fleet_size, shape[1])) for i in
+                                              range(len(self.charging_stations))}
+        self.which_cs_evaluate = np.array(self.charging_stations)
+        self.setup_cs_capacities_combinations(fleet_size)
+
+    def setup_cs_capacities_combinations(self, fleet_size: int):
+        cs = self.charging_stations
+        self.cs_capacities_combinations = {i: self.nodes[i].saturation_combinations(fleet_size) for i in cs}
 
     def reset_containers(self):
         self.low_res_occupation_container.fill(0)
-        self.occupation_probability_container.fill(0)
-        self.do_evaluation_container.fill(0)
+        self.saturation_probability_container.fill(0)
+        self.do_evaluation_container[self.charging_stations, :].fill(1)
         [i.fill(0) for i in self.ev_description_mu_containers.values()]
         [i.fill(0) for i in self.ev_description_std_containers.values()]
+        for k, i in enumerate(self.charging_stations):
+            self.which_cs_evaluate[k] = i
 
-    def fill_deterministics_occupation(self, evaluation_info: Dict[int, Tuple[np.ndarray, np.ndarray, np.ndarray,
-                                                                              Tuple[int]]], std_factor: float = 3.0):
+    def fill_deterministic_occupation(self, evaluation_info: Dict[int, Tuple[np.ndarray, np.ndarray, np.ndarray,
+                                                                             Tuple[int]]], std_factor: float = 3.0):
         """
         Heuristic to calculate low-res occupation boxes
         @param evaluation_info: dictionary containing info of leaving and reaching times after evaluation. The structure
         is as follows: {..., idEVj: (leav_timesj, reach_timesj, cov_matrixj, Sj), ...}
-        @param std_factor: extra space given to boxes as a factod of std at each stop
+        @param std_factor: extra space given to boxes as a factor of std at each stop
         @return: None. The results are stored in self.det_occupation_container
         """
         num_evs = len(evaluation_info)
         for cs_id in self.charging_stations:
             ev_description_mu_matrix = self.ev_description_mu_containers[cs_id][:num_evs, :]
             ev_description_std_matrix = self.ev_description_std_containers[cs_id][:num_evs, :]
-            pos = cs_id - len(self.depots) - len(self.customers)
+            row = cs_id  # - len(self.depots) - len(self.customers)
             for ev_id, (leaving_times, reaching_times, cov_matrix, S) in evaluation_info.items():
                 var_array = np.array([np.sqrt(x) for x in cov_matrix[0, ::3]])
                 description_mu_array = ev_description_mu_matrix[ev_id]
                 description_std_array = ev_description_std_matrix[ev_id]
-                single_ev_box(self.low_res_occupation_container[pos, :], self.sample_time_op, cs_id, reaching_times,
+                single_ev_box(self.low_res_occupation_container[row, :], self.sample_time_op, cs_id, reaching_times,
                               leaving_times, S, var_array, description_mu_array, description_std_array, std_factor)
-            check_capacity_from_box(self.nodes[cs_id].capacity, self.do_evaluation_container[pos, :],
-                                    self.low_res_occupation_container[pos, :])
+            check_capacity_from_box(self.nodes[cs_id].capacity, self.do_evaluation_container[row, :],
+                                    self.low_res_occupation_container[row, :])
         return
-
-    def setup_cs_capacities_combinations(self, fleet_size):
-        cs = self.charging_stations
-        self.cs_capacities_combinations = {i: self.nodes[i].saturation_combinations(fleet_size) for i in cs}
 
     def constraint_cs_capacities(self, PRB=0.02):
         p = 0.0
@@ -420,21 +428,27 @@ class GaussianCapacitatedNetwork(Network):
         return self.penalization
 
     def get_occupation_data(self):
-        return self.occupation_probability_container
+        return self.saturation_probability_container
 
 
-def from_xml_element(element: ET.Element):
-    t = element.get('type')
-    cls = globals()[t]
+def from_xml_element(element: ET.Element, network_type: Type[Network] = None):
+    if network_type:
+        cls = network_type
+    else:
+        t = element.get('type')
+        cls = globals()[t]
     return cls.from_xml_element(element)
 
 
-def from_xml(filepath: Union[str, Path]) -> Union[Network, GaussianCapacitatedNetwork, DeterministicCapacitatedNetwork]:
+def from_xml(filepath: Union[str, Path], network_type: Union[object, str] = None,
+             edge_type: Union[object, str] = None) -> Union[Network, GaussianCapacitatedNetwork,
+                                                                          DeterministicCapacitatedNetwork]:
     element = ET.parse(filepath).getroot()
-    if element.tag == 'network':
-        _network = element
+
+    if network_type is None:
+        cls = globals()[element.get('type')]
+    elif network_type is str:
+        cls = globals()[network_type]
     else:
-        _network = element.find('network')
-    t = _network.get('type')
-    cls = globals()[t]
-    return cls.from_xml(element)
+        cls = network_type
+    return cls.from_xml_element(element, edge_type)

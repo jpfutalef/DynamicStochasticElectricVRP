@@ -163,7 +163,7 @@ class EVHistory:
         fig.tight_layout()
 
         # Info
-        info = (S, arriving_state, departing_state)
+        info = (self.id, S, arriving_state, departing_state)
 
         return fig, info
 
@@ -245,11 +245,11 @@ class FleetHistory:
         self.vehicles_history[id_ev].add_event(event)
 
     def draw_events(self, n: Network.Network, fleet: Fleet.Fleet, **kwargs):
-        vehicles_figs, vehicles_info = [], {}
+        vehicles_figs, vehicles_info = [], []
         for ev_history in self.vehicles_history.values():
             drawing = ev_history.draw_events(n, fleet, **kwargs)
             vehicles_figs.append(drawing[0])
-            vehicles_info[ev_history.id] = drawing[1]
+            vehicles_info.append(drawing[1])
         return vehicles_figs, vehicles_info
 
     @classmethod

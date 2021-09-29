@@ -16,14 +16,6 @@ class InitialCondition(NamedTuple):
     x3_0: float
 
 
-def saturate(val, min_val, max_val):
-    if val > max_val:
-        return max_val
-    elif val < min_val:
-        return min_val
-    return val
-
-
 """
 ELECTRIC VEHICLE CLASS
 """
@@ -65,6 +57,8 @@ class ElectricVehicle:
     state_reaching: Union[np.ndarray, None] = None
     state_leaving: Union[np.ndarray, None] = None
     penalization: float = 0.0
+    pre_service_waiting_time: Union[np.ndarray, None] = None
+    post_service_waiting_time: Union[np.ndarray, None] = None
 
     def __post_init__(self):
         if self.current_max_tour_duration is None:
@@ -84,6 +78,8 @@ class ElectricVehicle:
         self.service_time = None
         self.state_reaching = None
         self.state_leaving = None
+        self.pre_service_waiting_time = None
+        self.post_service_waiting_time = None
 
     def set_customers_to_visit(self, new_customers: Tuple[int, ...]):
         self.assigned_customers = new_customers
@@ -91,7 +87,8 @@ class ElectricVehicle:
     def assign_customers_in_route(self, network: Network.Network):
         self.assigned_customers = tuple([node for node in self.S if network.is_customer(node)])
 
-    def set_route(self, S: Tuple[int, ...], L: Tuple[float, ...], x1_0: float, x2_0: float, x3_0: float):
+    def set_route(self, S: Tuple[int, ...], L: Tuple[float, ...], x1_0: float, x2_0: float, x3_0: float,
+                  first_pwt: float = 0.):
         len_route = len(S)
         init_state = np.array((x1_0, x2_0, x3_0))
 
@@ -113,6 +110,9 @@ class ElectricVehicle:
         self.energy_consumption = np.zeros(len_route - 1)
         self.charging_times = np.zeros(len_route)
         self.service_time = np.zeros(len_route)
+        self.pre_service_waiting_time = np.zeros(len_route)
+        self.post_service_waiting_time = np.zeros(len_route)
+        self.post_service_waiting_time[0] = first_pwt
 
     def step(self, network: Network.DeterministicCapacitatedNetwork, g=9.8):
         S, L = self.S, self.L
@@ -122,8 +122,8 @@ class ElectricVehicle:
             f0k = np.array([spent_time, Lk0, -network.demand(Sk0)])
             self.state_leaving[:, k] = self.state_reaching[:, k] + f0k
 
-            v_ij = network.v(Sk0, Sk1, self.state_leaving[0, k])  # m/s
-            v_ij = v_ij[0] if len(v_ij) > 1 else v_ij
+            v_ij, _ = network.v(Sk0, Sk1, self.state_leaving[0, k])  # m/s
+            # v_ij = v_ij[0] if len(v_ij) > 1 else v_ij
 
             edge = network.edges[Sk0][Sk1]
             m = self.weight + self.state_leaving[2, k]  # kg
@@ -143,10 +143,10 @@ class ElectricVehicle:
             self.state_reaching[:, k + 1] = self.state_leaving[:, k] + f1k
 
         # Update what happens at the end
-        spent_time = network.spent_time(Sk1, self.state_reaching[1, k], Lk1)
-        f0k = np.array([spent_time, Lk1, -network.demand(Sk1)])
-        self.service_time[k + 1] = spent_time
-        self.state_leaving[:, k + 1] = self.state_reaching[:, k + 1] + f0k
+        k += 1
+        spent_time = network.spent_time(Sk0, self.state_reaching[1, k], Lk0)
+        f0k = np.array([spent_time, Lk0, -network.demand(Sk0)])
+        self.state_leaving[:, k] = self.state_reaching[:, k] + f0k
 
     def check_feasibility(self, network: Network.Network, penalization_constant=500000.0):
         self.penalization = 0.0
@@ -232,7 +232,7 @@ class ElectricVehicle:
         # FIGURE 1 - Time
         for k, (Sk, Xk) in enumerate(zip(self.S, X)):
             if network.is_customer(Sk):
-                ax1.errorbar(Xk, tws[k, 0], tws[k, 1], ecolor='black', fmt='none', capsize=6, elinewidth=1,)
+                ax1.errorbar(Xk, tws[k, 0], tws[k, 1], ecolor='black', fmt='none', capsize=6, elinewidth=1, )
         ax1.plot(XX, times)
         ax1.set_xlabel('Stop')
         ax1.set_ylabel('Time of day [s]')
@@ -253,7 +253,7 @@ class ElectricVehicle:
         ax2.set_xlabel('Stop')
         ax2.set_ylabel('Payload [kg]')
         ax2.set_title(f'Payload EV {self.id}')
-        return
+        return fig, (ax1, ax2, ax3)
 
     def xml_element(self, assign_customers=False, with_route=False, this_id=None):
         the_id = this_id if this_id is not None else self.id
@@ -297,28 +297,38 @@ class ElectricVehicle:
                    max_payload, assigned_customers=assigned_customers)
 
 
+class ElectricVehicleWithWaitingTimes(ElectricVehicle):
+    def step(self, network: Network.DeterministicCapacitatedNetwork, g=9.8):
+        pass
+
+
 """
 GAUSSIAN ELECTRIC VEHICLE CLASS
 """
 
 
-def probability_in_node(probability_container: np.ndarray, sample_time: float, mu: float, sigma: float,
-                        spent_time: float):
+def probability_in_node(probability_container: np.ndarray, mu: float, sigma: float, spent_time: float,
+                        do_evaluation_container: np.ndarray, dt=None):
     """
     Calculates the probability an EV is a node using Gaussian statistics
     @param probability_container: an array that will store the probabilities for each TOD
-    @param sample_time: time resolution of the calculation
     @param mu: expected time the EV arrives at the node
     @param sigma: std of the time the EV arrives at the node
     @param spent_time: the service time at the node
+    @param do_evaluation_container: array of ones and zeros. When 1, evaluate; whereas, when zero, do not evaluate
+    @param dt: sample time. Default: None (calculates it using the length of the container array)
     @return: None. The probability container is modified in place to store the probability values
     """
+    if dt is None:
+        dt = int(24*60*60/len(probability_container))
     t = 0
-    for i, _ in enumerate(probability_container):
-        cdf1 = normal_cdf(t, mu, sigma)
-        cdf2 = 1 - normal_cdf(t, mu + spent_time, sigma)
-        probability_container[i] = cdf1 * cdf2
-        t += sample_time
+    for i, (_, evaluate) in enumerate(zip(probability_container, do_evaluation_container)):
+        if evaluate:
+            cdf1 = normal_cdf(t, mu, sigma)
+            cdf2 = 1 - normal_cdf(t, mu + spent_time, sigma)
+            probability_container[i] += cdf1 * cdf2
+        t += dt
+    return
 
 
 @dataclass
@@ -328,15 +338,16 @@ class GaussianElectricVehicle(ElectricVehicle):
     Q: Union[np.ndarray, None] = None
     visits_a_cs: bool = False
     visited_nodes: Union[np.ndarray, None] = None
-    probability_in_cs: Union[np.ndarray, None] = None
+    probability_in_node_container: Union[np.ndarray, None] = None
     sample_time_probability_in_cs: float = 5.0
     num_customers: int = 0
+    evaluate_all_container: Union[np.ndarray, None] = None
 
     def __post_init__(self):
         super(GaussianElectricVehicle, self).__post_init__()
         self.Q = np.zeros((3, 3))
 
-    def reset(self, network: Network.Network):
+    def reset(self, network: Network.GaussianCapacitatedNetwork):
         super(GaussianElectricVehicle, self).reset(network)
         self.state_reaching_covariance = None
         self.state_leaving_covariance = None
@@ -345,16 +356,19 @@ class GaussianElectricVehicle(ElectricVehicle):
     def create_visited_nodes_array(self, network: Network.GaussianCapacitatedNetwork):
         self.visited_nodes = np.zeros(len(network))
 
-    def create_probability_in_cs_array(self, network_length: int):
-        self.probability_in_cs = np.zeros(network_length, 24 * 60 / self.sample_time_probability_in_cs)
+    def setup(self, network_size: int, sample_time: float):
+        self.sample_time_probability_in_cs = sample_time
+        size = (network_size, int(24 * 60 * 60 / self.sample_time_probability_in_cs))
+        self.probability_in_node_container = np.zeros(size)
+        self.evaluate_all_container = np.ones(size)
 
-    def reset_visited_nodes_array(self, network: Network.Network):
+    def reset_visited_nodes_array(self, network: Network.GaussianCapacitatedNetwork):
         if self.visited_nodes is None:
             self.create_visited_nodes_array(network)
         self.visited_nodes.fill(0)
 
     def reset_probability_in_cs_array(self):
-        self.probability_in_cs.fill(0)
+        self.probability_in_node_container.fill(0)
 
     def set_num_of_customers(self, num_customers: int):
         self.num_customers = num_customers
@@ -385,13 +399,13 @@ class GaussianElectricVehicle(ElectricVehicle):
             b2 = edge.road_cos_length * g * self.Cr * self.c1 * m / 1000
 
             mu_E_ij = a1 + a2 + a3  # J
-            sigma_E_ij = (b1 + b2) * sigma_ij   # J
+            sigma_E_ij = (b1 + b2) * sigma_ij  # J
 
             mu_e_ij = 100 * mu_E_ij / self.battery_capacity
             sigma_e_ij = 100 * sigma_E_ij / self.battery_capacity
 
             mu_t_ij = edge.length / v_ij if v_ij else 0.0  # s
-            sigma_t_ij = -edge.length * sigma_ij / v_ij ** 2  if v_ij else 0.0  # s
+            sigma_t_ij = -edge.length * sigma_ij / v_ij ** 2 if v_ij else 0.0  # s
 
             f1k = np.array([mu_t_ij, -mu_e_ij, 0])
             self.state_reaching[:, k + 1] = self.state_leaving[:, k] + f1k
@@ -424,13 +438,24 @@ class GaussianElectricVehicle(ElectricVehicle):
         self.state_leaving[:, k + 1] = self.state_reaching[:, k + 1] + f0k
         # self.visited_nodes[Sk1] += 1
 
-    def probability_in_node(self, k: int):
-        Sk = self.S[k]
-        sample_time = self.sample_time_probability_in_cs
-        mu = self.state_reaching[0, k]
-        sigma = np.sqrt(self.state_reaching_covariance[0, 3 * k])  # TODO is this better than math.sqrt(.)?
-        spent_time = self.service_time[k]
-        probability_in_node(self.probability_in_cs[Sk, :], sample_time, mu, sigma, spent_time)
+    def probability_in_node(self, node_id: int, do_evaluation_container: np.ndarray):
+        """
+        Calculates the probability of being in a node
+        @param node_id: the node id
+        @param do_evaluation_container: array of ones and zeros that represent when to evaluate
+        @return: None. Results are stored in self.probability_in_node[node_id, :]
+        """
+        if do_evaluation_container is None:
+            do_evaluation_container = self.evaluate_all_container
+        position_in_S = [k for k, Sk in enumerate(self.S) if Sk == node_id]
+        # sample_time = self.sample_time_probability_in_cs
+        for k in position_in_S:
+            mu = self.state_reaching[0, k]
+            sigma = np.sqrt(self.state_reaching_covariance[0, 3 * k])  # TODO is this better than math.sqrt(.)?
+            spent_time = self.service_time[k]
+            probability_in_node(self.probability_in_node_container[node_id, :], mu, sigma, spent_time,
+                                do_evaluation_container, self.sample_time_probability_in_cs)
+        return
 
     def check_feasibility(self, network: Network.Network, penalization_constant=0.) -> float:
         self.penalization = 0.0
@@ -514,7 +539,11 @@ class GaussianElectricVehicle(ElectricVehicle):
         return instance
 
 
-def from_xml_element(element: ET.Element):
-    t = element.get('type')
-    cls = globals()[t]
+def from_xml_element(element: ET.Element, ev_type: Union[object, str] = None):
+    if ev_type is None:
+        cls = globals()[element.get('type')]
+    elif type(ev_type) is str:
+        cls = globals()[ev_type]
+    else:
+        cls = ev_type
     return cls.from_xml_element(element)

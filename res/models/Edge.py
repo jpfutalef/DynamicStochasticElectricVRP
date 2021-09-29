@@ -76,10 +76,10 @@ class DynamicEdge:
         self.road_sin_length = np.dot(np.sin(self.road_inclination_profile), self.road_length_profile)
         self.type = self.__class__.__name__
 
-    def get_velocity(self, time_of_day: float) -> float:
+    def get_velocity(self, time_of_day: float) -> Tuple[float, float]:
         time_of_day = fix_tod(time_of_day)
         v = interpolate(time_of_day, self.sample_time, self.velocity)
-        return v
+        return v, 0.
 
     def xml_element(self):
         attribs = {'id': str(self.node_to), 'length': str(self.length), 'type': self.type,
@@ -176,7 +176,11 @@ class GaussianEdge(DynamicEdge):
         return fig
 
 
-def from_xml_element(element: ET.Element, node_from: int):
-    t = element.get('type')
-    cls = globals()[t]
+def from_xml_element(element: ET.Element, node_from: int, edge_type: Union[object, str] = None):
+    if edge_type is None:
+        cls = globals()[element.get('type')]
+    elif type(edge_type) is str:
+        cls = globals()[edge_type]
+    else:
+        cls = edge_type
     return cls.from_xml_element(element, node_from)

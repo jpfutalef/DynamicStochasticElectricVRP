@@ -1,7 +1,6 @@
 from os import makedirs
-from os import makedirs
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Tuple, Union, List
 
 import numpy as np
 import pandas as pd
@@ -10,7 +9,7 @@ from sklearn.neighbors import NearestNeighbors
 import res.dispatcher.Dispatcher as Dispatcher
 import res.models.Fleet as Fleet
 import res.models.Network as Network
-from res.simulator.History import FleetHistory, ConstraintViolation, NodeEvent
+import res.simulator.History as History
 
 
 def disturb_network(network_source: Network.Network, network: Network.Network, std_factor=1.):
@@ -55,6 +54,8 @@ class Simulator:
         self.history_path_original = history_path
         self.history_path = Path(operation_folder, "history.xml")
 
+        self.history_figure_path = Path(operation_folder)
+
         # Setup sample time
         self.sample_time = sample_time
 
@@ -82,7 +83,7 @@ class Simulator:
         self.measurements, _ = self.create_measurements_file(start_earlier_by)
 
         # Create or read history file
-        self.history = FleetHistory().create_from_routes(self.routes)
+        self.history = History.FleetHistory().create_from_routes(self.routes)
         self.save_history()
 
         # Setup other variables
@@ -103,6 +104,13 @@ class Simulator:
 
     def disturb_edge(self, node_from: int, node_to: int):
         self.network.edges[node_from][node_to].disturb()
+
+    def disturb_edges(self, node_sequence: Union[List[int], Tuple[int, ...]], probability=0.1):
+        if len(node_sequence) <= 1:
+            return
+        for i, j in zip(node_sequence[:-1], node_sequence[1:]):
+            if np.random.uniform() <= probability:
+                self.network.edges[i][j].disturb()
 
     def save_network(self):
         self.network.write_xml(self.network_path)
@@ -132,7 +140,7 @@ class Simulator:
 
     def forward_node_service(self, measurement: Dispatcher.ElectricVehicleMeasurement, simulation_step: float,
                              S: Tuple[int, ...], L: [float, ...], wt1: Tuple[float, ...], k: int,
-                             ev: Fleet.EV.ElectricVehicle):
+                             ev: Fleet.EV.ElectricVehicle, additive_noise_gain=0.0):
         """
         Simulates the at-node service of one EV
         @param measurement: EV measurement instance containing current measurements
@@ -161,7 +169,6 @@ class Simulator:
             measurement.soc = departure_soc
             measurement.payload = departure_payload
 
-            measurement.eta = 0.
             measurement.stopped_at_node_from = False
 
             # measurement.max_soc = departure_soc if departure_soc > measurement.max_soc else measurement.max_soc
@@ -173,30 +180,30 @@ class Simulator:
 
             # Check constraints violations
             if departure_time > self.network.time_window_upp(Sk):
-                v = ConstraintViolation('time_window_upp', self.network.time_window_upp(Sk), departure_time, Sk,
-                                        'leaving')
+                v = History.ConstraintViolation('time_window_upp', self.network.time_window_upp(Sk), departure_time, Sk,
+                                                'leaving')
                 self.history.add_vehicle_constraint_violation(ev.id, v)
 
             if ev.alpha_up < measurement.soc_finishing_service:
-                v = ConstraintViolation('alpha_up', ev.alpha_up, departure_soc, Sk, 'finishing_service')
+                v = History.ConstraintViolation('alpha_up', ev.alpha_up, departure_soc, Sk, 'finishing_service')
                 self.history.add_vehicle_constraint_violation(ev.id, v)
 
             if ev.alpha_down > measurement.soc_finishing_service:
-                v = ConstraintViolation('alpha_down', ev.alpha_down, departure_soc, Sk, 'finishing_service')
+                v = History.ConstraintViolation('alpha_down', ev.alpha_down, departure_soc, Sk, 'finishing_service')
                 self.history.add_vehicle_constraint_violation(ev.id, v)
 
             # Add event
-            event = NodeEvent(False, eos_time, departure_soc, departure_payload, Sk,
-                              post_service_waiting_time=post_waiting_time)
+            event = History.NodeEvent(False, eos_time, departure_soc, departure_payload, Sk,
+                                      post_service_waiting_time=post_waiting_time)
             self.history.add_vehicle_event(ev.id, event)
 
-            # Disturb the edge the EV will traverse
-            self.disturb_edge(measurement.node_from, measurement.node_to)
+            # Disturb remaining route
+            self.disturb_edges(S[k:], probability=0.3)
 
             # Continue recursive iteration
             next_step_size = future_time - departure_time
             if next_step_size > 0:
-                self.forward_vehicle(ev.id, next_step_size)
+                self.forward_vehicle(ev.id, next_step_size, additive_noise_gain=additive_noise_gain)
 
         # Vehicle stays at the node
         else:
@@ -205,7 +212,7 @@ class Simulator:
 
     def forward_arc_travel(self, measurement: Dispatcher.ElectricVehicleMeasurement, simulation_step: float,
                            S: Tuple[int, ...], L: [float, ...], wt1: Tuple[float, ...], k: int,
-                           ev: Fleet.EV.ElectricVehicle):
+                           ev: Fleet.EV.ElectricVehicle, additive_noise_gain: float = 0.0):
         S0 = S[k]
         S1 = S[k + 1]
         current_time = measurement.time
@@ -215,9 +222,10 @@ class Simulator:
         future_time = current_time + simulation_step
         departure_time_from_S0 = eos_time_at_S0 + post_waiting_time_at_S0
 
-        edge = self.network.edges[S0][S1]
-        tij = self.network.t(S0, S1, departure_time_from_S0)
-        Eij = self.network.E(S0, S1, measurement.payload + ev.weight, departure_time_from_S0)
+        tij = self.network.t(S0, S1, departure_time_from_S0, additive_noise_gain=additive_noise_gain)
+        Eij = self.network.E(S0, S1, measurement.payload + ev.weight, departure_time_from_S0,
+                             additive_noise_gain=additive_noise_gain)
+
         eij = 100 * Eij / ev.battery_capacity
         delta = simulation_step / tij if tij else 1.0
         delta = delta if delta < 1 - measurement.eta else 1 - measurement.eta
@@ -239,11 +247,11 @@ class Simulator:
 
             # Check constraints violations when arriving
             if arrival_soc > ev.alpha_up:
-                v = ConstraintViolation('alpha_up', ev.alpha_up, arrival_soc, S1, 'arriving')
+                v = History.ConstraintViolation('alpha_up', ev.alpha_up, arrival_soc, S1, 'arriving')
                 self.history.add_vehicle_constraint_violation(ev.id, v)
 
             if arrival_soc < ev.alpha_down:
-                v = ConstraintViolation('alpha_down', ev.alpha_down, arrival_soc, S1, 'arriving')
+                v = History.ConstraintViolation('alpha_down', ev.alpha_down, arrival_soc, S1, 'arriving')
                 self.history.add_vehicle_constraint_violation(ev.id, v)
 
             # The node is not the depot
@@ -275,8 +283,8 @@ class Simulator:
                 measurement.done = True
 
                 if arrival_time - measurement.departure_time > ev.max_tour_duration:
-                    v = ConstraintViolation('max_tour_time', ev.max_tour_duration,
-                                            arrival_time - measurement.departure_time, 0, 'arriving')
+                    v = History.ConstraintViolation('max_tour_time', ev.max_tour_duration,
+                                                    arrival_time - measurement.departure_time, 0, 'arriving')
                     self.history.add_vehicle_constraint_violation(ev.id, v)
 
             measurement.node_from = S1
@@ -288,8 +296,9 @@ class Simulator:
             measurement.soc = arrival_soc
             measurement.payload = arrival_payload
             measurement.update_min_soc(arrival_soc)
+            measurement.eta = 0
 
-            event = NodeEvent(True, arrival_time, arrival_soc, arrival_payload, S1, waiting_time)
+            event = History.NodeEvent(True, arrival_time, arrival_soc, arrival_payload, S1, waiting_time)
             self.history.add_vehicle_event(ev.id, event)
 
             next_step_size = future_time - arrival_time
@@ -323,10 +332,10 @@ class Simulator:
         self.history.update_consumed_energy(ev.id, Eij_traveled)
 
         if next_step_size > 0:
-            self.forward_vehicle(ev.id, next_step_size)
+            self.forward_vehicle(ev.id, next_step_size, additive_noise_gain=additive_noise_gain)
         return
 
-    def forward_vehicle(self, id_ev: int, step_time: float = None):
+    def forward_vehicle(self, id_ev: int, step_time: float = None, additive_noise_gain: float = 0.0):
         # Select measurement
         measurement = self.measurements[id_ev]
 
@@ -348,199 +357,24 @@ class Simulator:
 
         # Vehicle is stopped at a node
         if measurement.stopped_at_node_from:
-            self.forward_node_service(measurement, step_time, S, L, wt1, k0, ev)
+            self.forward_node_service(measurement, step_time, S, L, wt1, k0, ev, additive_noise_gain=additive_noise_gain)
 
         # Vehicle is traversing an an arc
         else:
-            self.forward_arc_travel(measurement, step_time, S, L, wt1, k0, ev)
+            self.forward_arc_travel(measurement, step_time, S, L, wt1, k0, ev, additive_noise_gain=additive_noise_gain)
 
-    def forward_vehicle_legacy(self, id_ev: int, step_time: float = None):
-        # Select measurement
-        measurement = self.measurements[id_ev]
-
-        # If vehicle finished the operation, do nothing
-        if measurement.done:
-            return
-
-        # If forward time not passed, set it and iterate from there
-        if step_time is None:
-            step_time = self.sample_time
-
-        # Select EV and its route tuple
-        ev = self.fleet.vehicles[id_ev]
-        route = self.routes[id_ev]
-
-        # Obtain relevant variables
-        current_time = measurement.time
-        S0 = measurement.node_from
-        S1 = measurement.node_to
-        k0 = measurement.visited_nodes - 1
-
-        future_time = current_time + step_time
-        S = route[0][k0:]
-        L = route[1][k0:]
-        w1 = route[2][k0:]
-
-        j1 = 1
-
-        # Get departure info from S0
-        departure_time_from_S0 = measurement.time_finishing_service + w1[0]
-        departure_soc_from_S0 = measurement.soc_finishing_service
-        departure_payload_from_S0 = measurement.payload_finishing_service
-
-        # Vehicle is stopped at a node and then it departs towards the next stop
-        if measurement.stopped_at_node_from and future_time >= departure_time_from_S0:
-            measurement.time = departure_time_from_S0
-            measurement.soc = departure_soc_from_S0
-            measurement.payload = departure_payload_from_S0
-
-            measurement.eta = 0.
-            measurement.stopped_at_node_from = False
-
-            measurement.max_soc = measurement.soc if measurement.soc > measurement.max_soc else measurement.max_soc
-
-            # Record the moment the EV departs from the depot
-            if not S0:
-                measurement.departure_time = departure_time_from_S0
-
-            # Check constraints violations
-            if self.network.time_window_upp(S0) < departure_time_from_S0:
-                v = ConstraintViolation('time_window_upp', self.network.time_window_upp(S0), departure_time_from_S0,
-                                        S0, 'leaving')
-                self.history.add_vehicle_constraint_violation(id_ev, v)
-
-            if ev.alpha_up < measurement.soc_finishing_service:
-                v = ConstraintViolation('alpha_up', ev.alpha_up, departure_soc_from_S0, S0, 'finishing_service')
-                self.history.add_vehicle_constraint_violation(id_ev, v)
-
-            if ev.alpha_down > measurement.soc_finishing_service:
-                v = ConstraintViolation('alpha_down', ev.alpha_down, departure_soc_from_S0, S0, 'finishing_service')
-                self.history.add_vehicle_constraint_violation(id_ev, v)
-
-            # Continue recursive iteration
-            self.forward_vehicle(id_ev, future_time - departure_time_from_S0)
-
-        # Vehicle is stopped at a node and then it remains there
-        elif measurement.stopped_at_node_from and future_time < departure_time_from_S0:
-            measurement.time += step_time
-
-        # Vehicle is traversing an an arc
-        else:
-            tij = self.network.t(S0, S1, departure_time_from_S0)
-            Eij = self.network.E(S0, S1, measurement.payload + ev.weight, departure_time_from_S0)
-            eij = 100 * Eij / ev.battery_capacity
-            delta = step_time / tij if tij else 1.0
-            delta = delta if delta < 1 - measurement.eta else 1 - measurement.eta
-
-            tij_traveled = tij * delta
-            Eij_traveled = Eij * delta
-            eij_traveled = eij * delta
-
-            measurement.cumulated_consumed_energy += Eij_traveled
-
-            # Vehicle reaches next node
-            if delta >= 1 - measurement.eta:
-                arrival_time = current_time + tij_traveled
-                arrival_soc = measurement.soc - eij_traveled
-                arrival_payload = measurement.payload
-
-                measurement.visited_nodes += 1
-                measurement.stopped_at_node_from = True
-
-                # Update history
-                self.history.update_travelled_time(id_ev, tij_traveled)
-                self.history.update_consumed_energy(id_ev, Eij_traveled)
-
-                # Check constraints violations
-                if arrival_soc > ev.alpha_up:
-                    v = ConstraintViolation('alpha_up', ev.alpha_up, arrival_soc, S1, 'arriving')
-                    self.history.add_vehicle_constraint_violation(id_ev, v)
-
-                if arrival_soc < ev.alpha_down:
-                    v = ConstraintViolation('alpha_down', ev.alpha_down, arrival_soc, S1, 'arriving')
-                    self.history.add_vehicle_constraint_violation(id_ev, v)
-
-                # The node is the depot: the tour ends
-                if not S1:
-                    measurement.done = True
-                    measurement.node_from = 0
-                    measurement.node_to = 0
-                    measurement.soc = arrival_soc
-                    measurement.payload = arrival_payload
-                    measurement.time_finishing_service = arrival_time
-                    measurement.soc_finishing_service = arrival_soc
-                    measurement.payload_finishing_service = arrival_payload
-                    measurement.time = arrival_time
-                    measurement.min_soc = measurement.soc if measurement.soc < measurement.min_soc else measurement.min_soc
-                    if arrival_time - measurement.departure_time > ev.max_tour_duration:
-                        v = ConstraintViolation('max_tour_time', ev.max_tour_duration,
-                                                arrival_time - measurement.departure_time, 0, 'arriving')
-                        self.history.add_vehicle_constraint_violation(id_ev, v)
-
-                # The node is not the depot
-                else:
-                    tw_low = self.network.nodes[S1].time_window_low
-                    waiting_time = tw_low - arrival_time if tw_low > arrival_time else 0.
-
-                    measurement.node_from = S1
-                    measurement.node_to = S[j1 + 1]
-
-                    Lj1 = L[j1] if arrival_soc + L[j1] <= ev.alpha_up else ev.alpha_up - arrival_soc
-
-                    service_time = self.network.spent_time(S1, arrival_soc, Lj1)
-                    eos_time = arrival_time + waiting_time + service_time
-                    eos_soc = arrival_soc + Lj1
-                    eos_payload = arrival_payload - self.network.demand(S1)
-
-                    measurement.time_finishing_service = eos_time
-                    measurement.soc_finishing_service = eos_soc
-                    measurement.payload_finishing_service = eos_payload
-
-                    measurement.time = arrival_time
-                    measurement.soc = arrival_soc
-                    measurement.payload = arrival_payload
-
-                    measurement.min_soc = measurement.soc if measurement.soc < measurement.min_soc else measurement.min_soc
-
-                    if self.network.is_charging_station(S1):
-                        price = self.network.nodes[S1].price
-                        self.history.update_recharging_cost(id_ev, price * Lj1 * ev.battery_capacity)
-                        self.history.update_recharging_time(id_ev, service_time)
-
-                    self.forward_vehicle(id_ev, future_time - arrival_time)
-
-            # Vehicle continues traversing the arc
-            else:
-                measurement.time += tij_traveled
-                measurement.soc -= eij_traveled
-                measurement.eta += delta
-
-                self.history.update_travelled_time(id_ev, step_time)
-                self.history.update_consumed_energy(id_ev, delta * Eij)
-
-            # Degrade if an energy consumption equal to the nominal capacity is reached
-            # if self.eta_model and measurement.cumulated_consumed_energy > ev.battery_capacity_nominal:
-            #     eta_val = ev.degrade_battery(self.eta_table, self.eta_model, measurement.min_soc, measurement.max_soc)
-            #
-            #     # Save this data
-            #     data = {'time': [measurement.time], 'eta': [eta_val], 'min soc': [measurement.min_soc],
-            #             'max soc': [measurement.max_soc]}
-            #     path = Path(self.main_folder, 'degradation_event.csv')
-            #     with_columns = False if path.is_file() else True
-            #     with open(path, 'a') as file:
-            #         pd.DataFrame(data).to_csv(file, index=False, header=with_columns)
-            #
-            #     # Reset value
-            #     measurement.cumulated_consumed_energy -= ev.battery_capacity_nominal
-            #     measurement.min_soc = measurement.soc
-            #     measurement.max_soc = measurement.soc
-
-    def forward_fleet(self):
+    def forward_fleet(self, additive_noise_gain= 0.0):
         self.update_routes()
         for id_ev in self.measurements.keys():
-            self.forward_vehicle(id_ev)
+            self.forward_vehicle(id_ev, additive_noise_gain=additive_noise_gain)
         self.write_measurements()
         self.save_network()
+
+    def save_history_figures(self, history_figsize=(16, 5)):
+        figs, info = self.history.draw_events(self.network_source, self.fleet_source, figsize=history_figsize)
+        [f.savefig(Path(self.history_figure_path, f"real_operation_EV{i[0]}")) for f, i in zip(figs, info)]
+        [f.savefig(Path(self.history_figure_path, f"real_operation_EV{i[0]}.pdf")) for f, i in zip(figs, info)]
+        History.plt.close('all')
 
     def done(self):
         for m in self.measurements.values():

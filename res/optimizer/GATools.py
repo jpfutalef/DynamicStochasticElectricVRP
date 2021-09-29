@@ -14,7 +14,7 @@ import res.tools.IOTools as IOTools
 # TYPES
 IndividualType = List
 IndicesType = Dict[int, Tuple[int, int, int]]
-RouteDict = Dict[int, Tuple[Tuple[int, ...], Tuple[float, ...], float, float, float]]
+RouteDict = Dict[int, Tuple[Tuple[int, ...], Tuple[float, ...], float, float, float, float]]
 
 
 @dataclass
@@ -63,6 +63,7 @@ class OnGA_HyperParameters(HyperParameters):
     crossover_repeat: int = 1
     mutation_repeat: int = 1
     algorithm_name: str = 'OnGA'
+    offset_time_depot: float = 600.
 
 
 @dataclass
@@ -81,6 +82,48 @@ class GenerationsData:
     def save(self, data_folder):
         filepath = Path(data_folder, 'generations_data.csv')
         pd.DataFrame(self.__dict__, index=self.generation).to_csv(filepath)
+
+
+"""
+Useful functions for genetic operations
+"""
+
+
+def swap_elements(l, i, j):
+    """
+    This function allows to swap two elements in a list, given two positions.
+    :param l: the list
+    :param i: first position
+    :param j: second position
+    """
+    l[i], l[j] = l[j], l[i]
+
+
+def swap_block(l1, l2, i, j):
+    """
+    This function allows to swap block within a list, given two positions.
+    :param l1: first list
+    :param l2: second list
+    :param i: first position+
+
+    :param j: second position
+    """
+    l1[i: j], l2[i:j] = l2[i:j], l1[i:j]
+
+
+def repair_route(S: Tuple[int, ...], L: Tuple[float, ...]):
+    for k, (S0, S1, L0, L1) in enumerate(zip(S[:-1], S[1:], L[:-1], L[1:])):
+        if S0 == S1:
+            S = S[:k] + S[k]
+
+
+if __name__ == '__main__':
+    S1 = [0, 4, 3, 2, 5, 5, 1, 0]
+    S2 = [0, 4, 3, 2, 5, 5, 1, 6, 6, 0]
+
+"""
+Read-out tools
+"""
 
 
 @dataclass
