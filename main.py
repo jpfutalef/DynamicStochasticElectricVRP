@@ -38,6 +38,9 @@ parser.add_argument('--fill_up_to', type=float, help='fill the EV with a mass up
                     default=1.0)
 
 # online options
+parser.add_argument('--source_folder', type=Path,
+                    help='Source folder containing pre-operation results. Must be passed for simulations Default=None',
+                    default=None)
 parser.add_argument('--sample_time', type=float, help='Online sample time in seconds. Default=300.0', default=300.0)
 parser.add_argument('--keep_times', type=int, help='How many steps keep realizations. Default=0', default=0)
 parser.add_argument('--std_factor', type=float, help='Noise gain. Default: 1.0', default=1.0)
@@ -130,7 +133,7 @@ if __name__ == '__main__':
 
     # Online stage (open loop)
     elif args.operation == 5:
-        source_folder = Path(args.target_folder, 'source')
+        source_folder = args.source_folder
         simulations_folder = Path(args.target_folder, 'simulations_OpenLoop')
         online_operation(args.target_folder, source_folder, False, hp, args.repetitions, args.keep_times,
                          args.sample_time, args.std_factor, args.start_earlier_by, args.soc_policy, False)
