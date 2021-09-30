@@ -28,7 +28,9 @@ parser.add_argument('target_folder', type=Path, help='specifies working folder')
 
 # common options
 parser.add_argument('--cs_capacities', type=int, help='Capacity of CSs. Default=2', default=2)
-parser.add_argument('--repetitions', type=int, help='Experiment repetitions. Default=50', default=50)
+parser.add_argument('--repetitions', type=int, help='Experiment repetitions. Default=5', default=5)
+parser.add_argument('--sat_prob_sample_time', type=int,
+                    help='Sample time of CS capacity saturation probability. Default=120 (2 min)', default=120)
 
 # pre-operation options
 parser.add_argument('--additional_vehicles', type=int, help='additional EVs in pre-operation. Default=0', default=0)
@@ -73,12 +75,12 @@ if __name__ == '__main__':
         folder_pre_operation(instances_folder, args.repetitions, args.soc_policy, args.additional_vehicles,
                              args.fill_up_to, fleet_type=fleet_type, ev_type=ev_type, network_type=network_type,
                              edge_type=edge_type, cs_capacities=args.cs_capacities,
-                             results_folder_suffix="deterministic")
+                             results_folder_suffix="deterministic", sat_prob_sample_time=args.sat_prob_sample_time)
 
     # Pre-operation stage (deterministic with waiting times)
     elif args.operation == 2:
-        ev_type = Fleet.EV.GaussianElectricVehicle
-        edge_type = Network.Edge.GaussianEdge
+        ev_type = Fleet.EV.ElectricVehicleWithWaitingTimes
+        edge_type = Network.Edge.DynamicEdge
 
         instances_folder = args.target_folder
         if not instances_folder.is_dir():
@@ -88,14 +90,14 @@ if __name__ == '__main__':
         input("Press any key to continue... (ctrl+Z to end process)")
         folder_pre_operation(instances_folder, args.repetitions, args.soc_policy, args.additional_vehicles,
                              args.fill_up_to, fleet_type=fleet_type, ev_type=ev_type, network_type=network_type,
-                             edge_type=edge_type, cs_capacities=args.cs_capacities)
+                             edge_type=edge_type, cs_capacities=args.cs_capacities,
+                             results_folder_suffix="deterministic_waiting_times")
 
-
+    # Pre-operation stage (linear stochastic + deterministic CS capacities)
     elif args.operation == 3:
         ev_type = Fleet.EV.GaussianElectricVehicle
-        fleet_type = Fleet.GaussianFleet
-        network_type = Network.GaussianCapacitatedNetwork
         edge_type = Network.Edge.GaussianEdge
+        network_type = Network.DeterministicCapacitatedNetwork
 
         instances_folder = args.target_folder
         if not instances_folder.is_dir():
@@ -105,15 +107,34 @@ if __name__ == '__main__':
         input("Press any key to continue... (ctrl+Z to end process)")
         folder_pre_operation(instances_folder, args.repetitions, args.soc_policy, args.additional_vehicles,
                              args.fill_up_to, fleet_type=fleet_type, ev_type=ev_type, network_type=network_type,
-                             edge_type=edge_type, cs_capacities=args.cs_capacities)
+                             edge_type=edge_type, cs_capacities=args.cs_capacities,
+                             results_folder_suffix="stochastic_deterministic")
 
-    # Open loop
-    elif args.operation == 2:
+    # Pre-operation stage (full linear stochastic)
+    elif args.operation == 4:
+        ev_type = Fleet.EV.GaussianElectricVehicle
+        fleet_type = Fleet.GaussianFleet
+        edge_type = Network.Edge.GaussianEdge
+        network_type = Network.GaussianCapacitatedNetwork
+
+        instances_folder = args.target_folder
+        if not instances_folder.is_dir():
+            print("Directory is not valid: ", instances_folder)
+            sys.exit(0)
+        print("Will solve instances at:\n  ", instances_folder)
+        input("Press any key to continue... (ctrl+Z to end process)")
+        folder_pre_operation(instances_folder, args.repetitions, args.soc_policy, args.additional_vehicles,
+                             args.fill_up_to, fleet_type=fleet_type, ev_type=ev_type, network_type=network_type,
+                             edge_type=edge_type, cs_capacities=args.cs_capacities,
+                             results_folder_suffix="fully_stochastic")
+
+    # Online stage (open loop)
+    elif args.operation == 5:
         source_folder = Path(args.target_folder, 'source')
         simulations_folder = Path(args.target_folder, 'simulations_OpenLoop')
         online_operation(args.target_folder, source_folder, False, hp, args.repetitions, args.keep_times,
                          args.sample_time, args.std_factor, args.start_earlier_by, args.soc_policy, False)
-
+################
     # Closed loop
     elif args.operation == 3:
         source_folder = Path(args.target_folder, 'source')

@@ -545,13 +545,21 @@ class GaussianFleet(Fleet):
 
     def plot_cs_occupation(self, figsize=(16, 5)):
         # Charging stations occupation
-        fig = plt.figure(figsize=figsize)
+        fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=figsize)
         x = np.arange(0, 24 * 3600, self.network.sample_time_op)
-        plt.step(x, self.network.low_res_occupation_container.T)
-        plt.title('CS Occupation')
-        plt.xlabel('Event')
-        plt.ylabel('Number of EVs')
-        plt.legend(tuple(f'CS {i}' for i in self.network.charging_stations))
+        ax1.step(x, self.network.low_res_occupation_container[self.network.charging_stations, :].T)
+        ax1.set_title('Boxes')
+        ax1.set_xlabel('Time')
+        ax1.set_ylabel('Number of EVs')
+        ax1.legend(tuple(f'CS {i}' for i in self.network.charging_stations))
+
+        ax2.step(x, self.network.saturation_probability_container[self.network.charging_stations, :].T)
+        ax2.set_title('Probability of Saturation')
+        ax2.set_xlabel('Time')
+        ax2.set_ylabel('Probability')
+        ax2.legend(tuple(f'CS {i}' for i in self.network.charging_stations))
+
+        fig.tight_layout()
         return fig
 
 
