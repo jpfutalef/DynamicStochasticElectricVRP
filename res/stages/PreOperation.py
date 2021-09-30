@@ -48,8 +48,8 @@ def pre_operation(fleet_filepath: Union[Path, None], network_filepath: Union[Pat
         fleet.new_soc_policy(soc_policy[0], soc_policy[1])
 
     hp = HyperParameters(weights=(1., 1., 1., 0.),
-                         num_individuals=4 * len(fleet) + 4 * len(fleet.network) + 20,
-                         max_generations=4 * (4 * len(fleet) + 4 * len(fleet.network) + 20) + 40,
+                         num_individuals=2 * len(fleet) + 2 * len(fleet.network) + 20,
+                         max_generations=4 * (len(fleet) + len(fleet.network)) + 40,
                          CXPB=0.5,
                          MUTPB=0.8,
                          hard_penalization=1000 * len(fleet.network),

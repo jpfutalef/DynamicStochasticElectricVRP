@@ -11,6 +11,7 @@ import os
 import res.models.Edge as Edge
 import res.models.Node as Node
 import res.tools.IOTools as IOTools
+import res.models.Penalization as Penalization
 
 NodeDict = Dict[int, Union[Node.BaseNode, Node.DepotNode, Node.CustomerNode, Node.ChargingStationNode]]
 EdgeDict = Dict[int, Dict[int, Union[Edge.DynamicEdge, Edge.GaussianEdge]]]
@@ -288,7 +289,7 @@ class DeterministicCapacitatedNetwork(Network):
         for cs_id in self.charging_stations:
             row = self.theta_matrix[cs_id, :]
             capacity = self.nodes[cs_id].capacity
-            p += sum([val - capacity if val - capacity > 0 else 0 for val in row])
+            p += sum([1e3 * (val - capacity) if val > capacity else 0 for val in row])
         self.penalization += p
 
 
@@ -357,8 +358,6 @@ class GaussianCapacitatedNetwork(Network):
     saturation_probability_container: Union[np.ndarray, None] = None
     low_res_occupation_container: Union[np.ndarray, None] = None
     do_evaluation_container: Union[np.ndarray, None] = None
-    ev_description_mu_containers: Dict[int, np.ndarray] = None
-    ev_description_std_containers: Dict[int, np.ndarray] = None
     cs_capacities_combinations: Dict[int, List[List]] = None
 
     def __post_init__(self):
@@ -374,10 +373,6 @@ class GaussianCapacitatedNetwork(Network):
         self.saturation_probability_container = np.zeros(shape)
         self.low_res_occupation_container = np.zeros(shape)
         self.do_evaluation_container = np.ones(shape)
-        self.ev_description_mu_containers = {i: np.zeros((fleet_size, shape[1])) for i in
-                                             range(len(self.charging_stations))}
-        self.ev_description_std_containers = {i: np.zeros((fleet_size, shape[1])) for i in
-                                              range(len(self.charging_stations))}
         self.which_cs_evaluate = np.array(self.charging_stations)
         self.setup_cs_capacities_combinations(fleet_size)
 
@@ -387,10 +382,9 @@ class GaussianCapacitatedNetwork(Network):
 
     def reset_containers(self):
         self.low_res_occupation_container.fill(0)
+        # self.saturation_probability_container[self.charging_stations, :].fill(0)
         self.saturation_probability_container.fill(0)
         self.do_evaluation_container[self.charging_stations, :].fill(1)
-        [i.fill(0) for i in self.ev_description_mu_containers.values()]
-        [i.fill(0) for i in self.ev_description_std_containers.values()]
         for k, i in enumerate(self.charging_stations):
             self.which_cs_evaluate[k] = i
 
@@ -418,8 +412,12 @@ class GaussianCapacitatedNetwork(Network):
                                     self.low_res_occupation_container[row, :])
         return
 
-    def constraint_cs_capacities(self, PRB=0.02):
+    def constraint_cs_capacities(self, PRB=0.05):
         p = 0.0
+        for cs in self.charging_stations:
+            for prob, do_it in zip(self.saturation_probability_container[cs, :], self.do_evaluation_container[cs, :]):
+                if do_it:
+                    p += Penalization.penalization_stochastic(-prob, -PRB, w=1e3)
         self.penalization += p
 
     def check_feasibility(self):

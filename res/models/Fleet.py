@@ -475,11 +475,15 @@ class GaussianFleet(Fleet):
 
     def __post_init__(self):
         self.sat_prob_sample_time = 300.
+        self.apply_heuristics = True
         super(GaussianFleet, self).__post_init__()
 
     def set_network(self, network: Network.GaussianCapacitatedNetwork):
         self.network = network
         self.set_saturation_probability_sample_time(self.sat_prob_sample_time)
+
+    def set_do_heuristics(self, value: bool):
+        self.apply_heuristics = value
 
     def set_saturation_probability_sample_time(self, sample_time: float):
         self.sat_prob_sample_time = sample_time
@@ -496,7 +500,12 @@ class GaussianFleet(Fleet):
 
     def compute_saturation_probability(self):
         self.network.reset_containers()
-        self.fill_deterministic_occupation()    # Boxes Heuristic
+        for ev_id in self.vehicles_to_route:
+            ev = self.vehicles[ev_id]
+            # ev.probability_in_node_container[self.network.charging_stations, :].fill(0)
+            ev.probability_in_node_container.fill(0)
+        if self.apply_heuristics:
+            self.fill_deterministic_occupation()    # Boxes Heuristic
         for cs in self.network.which_cs_evaluate:
             combs = self.network.cs_capacities_combinations[cs]
             sat_prob_container = self.network.saturation_probability_container[cs, :]
