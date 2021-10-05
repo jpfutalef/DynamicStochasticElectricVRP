@@ -63,12 +63,14 @@ class Simulator:
         makedirs(operation_folder, exist_ok=True)
 
         # Read network, fleet and route files
-        self.network_source = Network.from_xml(self.network_path_original)
-        self.fleet_source = Fleet.from_xml(self.fleet_path_original)
-        self.routes, self.depart_info = Dispatcher.read_routes(routes_path, read_depart_info=True)
+        self.network_source = Network.GaussianCapacitatedNetwork.from_xml(self.network_path_original, False,
+                                                                          Network.Edge.GaussianEdge)
+        self.fleet_source = Fleet.GaussianFleet.from_xml(self.fleet_path_original, False)
 
-        self.network = Network.from_xml(self.network_path_original)
-        self.fleet = Fleet.from_xml(self.fleet_path_original)
+        self.network = Network.GaussianCapacitatedNetwork.from_xml(self.network_path_original, False,
+                                                                   Network.Edge.GaussianEdge)
+        self.fleet = Fleet.GaussianFleet.from_xml(self.fleet_path_original, False)
+        self.routes, self.depart_info = Dispatcher.read_routes(routes_path, read_depart_info=True)
 
         if new_soc_policy:
             self.fleet.new_soc_policy(new_soc_policy[0], new_soc_policy[1])
@@ -357,13 +359,14 @@ class Simulator:
 
         # Vehicle is stopped at a node
         if measurement.stopped_at_node_from:
-            self.forward_node_service(measurement, step_time, S, L, wt1, k0, ev, additive_noise_gain=additive_noise_gain)
+            self.forward_node_service(measurement, step_time, S, L, wt1, k0, ev,
+                                      additive_noise_gain=additive_noise_gain)
 
         # Vehicle is traversing an an arc
         else:
             self.forward_arc_travel(measurement, step_time, S, L, wt1, k0, ev, additive_noise_gain=additive_noise_gain)
 
-    def forward_fleet(self, additive_noise_gain= 0.0):
+    def forward_fleet(self, additive_noise_gain=0.0):
         self.update_routes()
         for id_ev in self.measurements.keys():
             self.forward_vehicle(id_ev, additive_noise_gain=additive_noise_gain)

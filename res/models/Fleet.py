@@ -194,7 +194,7 @@ class Fleet:
             ET.ElementTree(tree).write(filepath)
 
     @classmethod
-    def from_xml_element(cls, element: ET.Element, ev_type: str = None, include_network=False):
+    def from_xml_element(cls, element: ET.Element, ev_type: Union[str, Type[EV.ElectricVehicle]] = None):
         is_instance = True if element.tag == 'instance' else False
         _fleet = element.find('fleet') if is_instance else element
 
@@ -204,19 +204,12 @@ class Fleet:
             ev = EV.from_xml_element(_vehicle, ev_type)
             vehicles[ev.id] = ev
 
-        fleet = cls(vehicles, hard_penalization=hard_penalization)
-
-        if is_instance and include_network:
-            _network = element.find('network')
-            network = Network.from_xml_element(_network)
-            fleet.set_network(network)
-
-        return fleet
+        return cls(vehicles, hard_penalization=hard_penalization)
 
     @classmethod
-    def from_xml(cls, xml_file: Path, return_etree=False, ev_type: str = None, include_network=False):
+    def from_xml(cls, xml_file: Path, return_etree=False, ev_type: Union[str, Type[EV.ElectricVehicle]] = None):
         tree = ET.parse(xml_file).getroot()
-        fleet = cls.from_xml_element(tree, ev_type, include_network=include_network)
+        fleet = cls.from_xml_element(tree, ev_type)
 
         if return_etree:
             return fleet, tree
@@ -589,8 +582,17 @@ def routes_from_csv_folder(folder_path: str, fleet: Fleet):
 
 
 def from_xml(filepath: Union[Path, str], fleet_type: Union[Fleet, str] = None,
-             ev_type: Union[EV.ElectricVehicle, str] = None, include_network=False) -> Union[Fleet, GaussianFleet]:
+             ev_type: Union[EV.ElectricVehicle, str] = None) -> Union[Fleet, GaussianFleet]:
+    """
+    Reads fleet parameters from an XML file.
+    @param filepath: location of the XML file
+    @param fleet_type: cast the fleet using this type. Default: None (use type in the XML file)
+    @param ev_type: cast EVs in the fleet using this type. Default: None (use type in the XML file)
+    @return: Fleet instance
+    """
     element = ET.parse(filepath).getroot()
+    is_instance = True if element.tag == 'instance' else False
+    element = element.find('fleet') if is_instance else element
 
     if fleet_type is None:
         cls = globals()[element.get('type')]

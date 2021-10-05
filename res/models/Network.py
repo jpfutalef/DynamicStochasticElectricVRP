@@ -440,8 +440,17 @@ def from_xml_element(element: ET.Element, network_type: Type[Network] = None):
 
 def from_xml(filepath: Union[str, Path], network_type: Union[object, str] = None,
              edge_type: Union[object, str] = None) -> Union[Network, GaussianCapacitatedNetwork,
-                                                                          DeterministicCapacitatedNetwork]:
+                                                            DeterministicCapacitatedNetwork]:
+    """
+    Reads a network from an XML file
+    @param filepath: location of the XML file
+    @param network_type: cast network using this type. Default: None (use type in XML file)
+    @param edge_type: cas edges using this type. Default: None (use type in XML file)
+    @return: Network instance
+    """
     element = ET.parse(filepath).getroot()
+    is_instance = True if element.tag == 'instance' else False
+    element = element.find('network') if is_instance else element
 
     if network_type is None:
         cls = globals()[element.get('type')]

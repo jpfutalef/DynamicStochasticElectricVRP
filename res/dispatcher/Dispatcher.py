@@ -1,6 +1,6 @@
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from typing import Dict, Tuple, List, Union
+from typing import Dict, Tuple, List, Union, Type
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -150,10 +150,10 @@ class Dispatcher:
     onGA_hyper_parameters: OnGA_HyperParameters = None
     exec_times: List = None
 
-    ev_type: str = None
-    fleet_type: str = None
-    edge_type: str = None
-    network_type: str = None
+    ev_type: Type[Fleet.EV.ElectricVehicle]  = None
+    fleet_type: Type[Fleet.Fleet] = None
+    edge_type: Type[Network.Edge.DynamicEdge] = None
+    network_type: Type[Network.Network] = None
 
     def __post_init__(self):
         self.read_measurements()

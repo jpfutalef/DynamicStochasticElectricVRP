@@ -4,6 +4,7 @@ from deap import base
 import matplotlib.pyplot as plt
 import pandas as pd
 import xml.etree.ElementTree as ET
+import shutil
 
 from dataclasses import dataclass
 from typing import List, Tuple, Dict, NamedTuple, Union
@@ -136,6 +137,7 @@ class OptimizationData:
     best_fitness: float = None
     best_individual: List = None
     additional_info: Dict = None
+    instance_path: Path = None
 
     def save(self, folder_path):
         # Occupation file
@@ -220,9 +222,19 @@ class OptimizationData:
         with open(Path(folder_path, 'best_individual.txt'), 'w') as file:
             file.write(str(self.best_individual))
 
+        # Save instance
+        new_instance_path = Path(folder_path, 'instance.xml')
+        to_save_fleet = Fleet.GaussianFleet.from_xml(self.instance_path, False, Fleet.EV.GaussianElectricVehicle)
+        to_save_network = Fleet.Network.GaussianCapacitatedNetwork.from_xml(self.instance_path, False,
+                                                                            Fleet.Network.Edge.GaussianEdge)
+        to_save_fleet.set_network(to_save_network)
+        to_save_fleet.resize_fleet(len(self.fleet))
+        to_save_fleet.write_xml(new_instance_path, True)
+
         # write fleet
         fleet_path = Path(folder_path, 'fleet.xml')
         self.fleet.write_xml(fleet_path, network_in_file=False, print_pretty=False)
+
         # write network
         network_path = Path(folder_path, 'network.xml')
         self.fleet.network.write_xml(network_path, print_pretty=False)

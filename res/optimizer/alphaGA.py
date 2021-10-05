@@ -591,7 +591,7 @@ MAIN ALGORITHM
 '''
 
 
-def alphaGA(fleet: Fleet, hp: AlphaGA_HyperParameters, save_to: str = None, init_pop=None):
+def alphaGA(fleet: Fleet, hp: AlphaGA_HyperParameters, save_to: str = None, init_pop=None, instance_path=None):
     # OBJECTS
     creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
     creator.create("Individual", list, fitness=creator.FitnessMin, feasible=False, acceptable=False)
@@ -709,7 +709,8 @@ Worst individual : {worstInd}
 Population Max: {max(fits)}
 Population Min: {min(fits)}
 Population Avg: {mean}
-Population Std: {std}"""
+Population Std: {std}
+"""
 
         print(to_print, end="\r")
 
@@ -748,7 +749,8 @@ Population Std: {std}"""
 
     if save_to:
         os.makedirs(save_to)
-        report = OptimizationData(fleet, hp, feasible, len(fleet), algo_time, fit, bestOfAll)
+        report = OptimizationData(fleet, hp, feasible, len(fleet), algo_time, fit, bestOfAll,
+                                  instance_path=instance_path)
         generations_data_container.save(save_to)
         report.save(save_to)
 

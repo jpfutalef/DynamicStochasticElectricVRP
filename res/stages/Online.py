@@ -1,14 +1,15 @@
-import datetime, sys
-from pathlib import Path
-from typing import NamedTuple, Union, Tuple
+import datetime
 from dataclasses import dataclass
-from sklearn.neighbors import NearestNeighbors
-import numpy as np
-from typing import Dict
+from pathlib import Path
+from typing import Union, Tuple
 
-import res.simulator.Simulator as Simulator
-import res.dispatcher.Dispatcher as Dispatcher
+import numpy as np
+from sklearn.neighbors import NearestNeighbors
+
+from res.dispatcher import Dispatcher
 from res.optimizer.GATools import OnGA_HyperParameters as HyperParameters
+from res.results import OnlineResults
+from res.simulator import Simulator
 
 
 @dataclass
@@ -29,12 +30,12 @@ class OnlineParameters:
     eta_table: np.ndarray = None
 
     def __post_init__(self):
-        if self.network_path is None:
-            self.network_path = Path(self.source_folder, "network.xml")
-        if self.fleet_path is None:
+        self.fleet_path = Path(self.source_folder, "instance.xml")
+        self.network_path = Path(self.source_folder, "instance.xml")
+        if not self.fleet_path.is_file():
             self.fleet_path = Path(self.source_folder, "fleet.xml")
-        if self.routes_path is None:
-            self.routes_path = Path(self.source_folder, "routes.xml")
+            self.network_path = Path(self.source_folder, "network.xml")
+        self.routes_path = Path(self.source_folder, "routes.xml")
 
     def __str__(self):
         s = ""
@@ -48,9 +49,21 @@ def online_operation(main_folder: Path, source_folder: Path, optimize: bool = Fa
                      repetitions: int = 5, hold_by: int = 0, sample_time: float = 300.,
                      std_factor: float = 1.0, start_earlier_by: float = 600,
                      soc_policy: Tuple[float, float] = (20., 95), display_gui: bool = False):
+    # Save the source folder to main_folder in a text file
+    with open(Path(main_folder, 'source_folder.txt'), 'w') as file:
+        s = f"The best result from pre-operation is stored in folder:\n  {source_folder}"
+        file.write(s)
+
+    # Iterate
+    simulations_folder = Path()
     for i in range(repetitions):
-        simulate(main_folder, source_folder, optimize, onGA_hp, hold_by, sample_time, std_factor,
-                 start_earlier_by, soc_policy, display_gui)
+        simulations_folder = simulate(main_folder, source_folder, optimize, onGA_hp, hold_by, sample_time, std_factor,
+                                      start_earlier_by, soc_policy, display_gui, None, None)
+
+    # Summarize results
+    df_costs, df_constraints = OnlineResults.folder_data(simulations_folder.parent, source_folder)
+    df_costs.to_csv(Path(simulations_folder.parent, 'costs.csv'))
+    df_constraints.to_csv(Path(simulations_folder.parent, 'constraints.csv'))
 
 
 def simulate(main_folder: Path, source_folder: Path = None, optimize: bool = False, onGA_hp: HyperParameters = None,
@@ -79,7 +92,7 @@ Press any key to continue..."""
     else:
         online_operation_open_loop(p, previous_simulation_folder)
     print('Done!')
-    return
+    return simulation_folder
 
 
 def online_operation_open_loop(p: OnlineParameters, previous_simulation_folder: Path = None, history_figsize=(16, 5)):

@@ -1,30 +1,21 @@
 import argparse
-import os
-import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib import rcParams, rcParamsDefault
 
-sys.path.append('')
+from res.models import Fleet
 
-import res.models.Fleet as Fleet
-
+# Pandas options
 pd.set_option('display.float_format', '{:.1f}'.format)
 
 # Global parameters
-
-constraint_names = ['time_window_down', 'time_window_upp', 'alpha_up', 'alpha_down', 'max_tour_time', 'cs_capacity']
-constraint_names_pretty = ['Lower TW', 'UpperTW', 'Upper SOC policy', 'Lower SOC policy', 'Max. tour time',
-                           'CS capacity']
-constraints_mapper = {i: j for i, j in zip(constraint_names, constraint_names_pretty)}
-
-# boxplot_size = (513.11745 / 100, 0.28 * 657.65744 / 100)  # inches
-boxplot_size = (8.5, .8*11)  # inches
+constraints_mapper = {'time_window_down': 'Lower TW', 'time_window_upp': 'Upper TW', 'alpha_up': 'Upper SOC policy',
+                      'alpha_down': 'Lower SOC policy', 'max_tour_time': 'Max. tour time', 'cs_capacity': 'CS capacity'}
+boxplot_size = (8.5, .8 * 11)  # inches
 # boxplot_args = {'notch': True, 'sym': 'o', 'vert': True, 'whis': 1.5, 'meanline': True, 'showmeans': True}
 boxplot_args = {}
 
@@ -32,12 +23,12 @@ exec_time_size = (2 * 7.12663125, 2 * 1.826826222223)  # inches
 
 
 # Useful functions
-def one_folder_data(folder: Path, fleet: Fleet.Fleet = None):
+def one_folder_data(folder: Path, source_folder: Path, fleet: Fleet.Fleet = None):
     instance_name = "\_".join(folder.parent.parent.stem.split('_'))
     simulation_name = "\_".join(folder.stem.split('_'))
 
     fleet = fleet if fleet else Fleet.from_xml(Path(folder, 'fleet_temp.xml'))
-    offline_costs_df = pd.read_csv(Path(folder.parent.parent, 'source/costs.csv'), index_col=0)
+    offline_costs_df = pd.read_csv(Path(source_folder, 'costs.csv'), index_col=0)
 
     offline_costs: pd.Series = offline_costs_df.loc['cost']
     weights: pd.Series = offline_costs_df.loc['weight']
@@ -81,14 +72,14 @@ def one_folder_data(folder: Path, fleet: Fleet.Fleet = None):
     return cost_data, constraints_data
 
 
-def folder_data(folder: Path, simulations_number=30):
-    data_name = 'Offline' if 'OpenLoop' in folder.stem else 'Offline + Online'
+def folder_data(simulations_folder: Path, source_folder: Path, simulations_number=30,
+                data_name='Open Loop + Deterministic DM'):
     costs_table = pd.DataFrame(columns=[])
     constraints_table = pd.DataFrame(columns=[])
-    for simulation_folder in folder.iterdir():
+    for simulation_folder in simulations_folder.iterdir():
         if simulation_folder.is_file():
             continue
-        costs_row, constraints_row = one_folder_data(simulation_folder, None)
+        costs_row, constraints_row = one_folder_data(simulation_folder, source_folder, None)
         costs_table = costs_table.append(costs_row)
         constraints_table = constraints_table.append(constraints_row)
 
@@ -206,74 +197,22 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Obtains the results from online operation')
     parser.add_argument('target_folder', type=Path, help='specifies target folder')
+    parser.add_argument('source_folder', type=Path, help='folder containing source files')
     parser.add_argument('--results_folder', type=Path, help='folder where results will be saved')
     parser.add_argument('--number_simulation', type=int, help='num of simulations to consider. Default: 30', default=30)
     args = parser.parse_args()
 
     target_folder: Path = args.target_folder
+    source_folder: Path = args.source_folder
 
     # Get data
-    off_df, off_constraints_df = folder_data(Path(target_folder, 'simulations_OpenLoop'), args.number_simulation)
-    on_df, on_constraints_df = folder_data(Path(target_folder, 'simulations_ClosedLoop'), args.number_simulation)
+    df_costs, df_constraints = folder_data(target_folder, source_folder)
+    df_costs.to_csv(Path(target_folder, 'costs.csv'))
+    df_constraints.to_csv(Path(target_folder, 'constraints.csv'))
 
-    off_df.to_csv(Path(target_folder, 'costs_OpenLoop.csv'))
-    on_df.to_csv(Path(target_folder, 'costs_ClosedLoop.csv'))
+    characterized_constraints_df = characterize_constraints(df_constraints)
 
-    off_constraints_df.to_csv(Path(target_folder, 'constraints_OpenLoop.csv'))
-    on_constraints_df.to_csv(Path(target_folder, 'constraints_ClosedLoop.csv'))
-
-    characterized_off_constraints_df = characterize_constraints(off_constraints_df)
-    characterized_on_constraints_df = characterize_constraints(on_constraints_df)
-
-    constraints_summary = characterized_off_constraints_df.join(characterized_on_constraints_df)
-    constraints_summary.to_csv(Path(target_folder, 'constraints_summary.csv'))
-    constraints_summary.to_latex(Path(target_folder, 'constraints_summary.tex'),
-                                 caption='Summary of constraints violations',
-                                 label='tab: constraints violations summary')
-
-    # Boxplot comparison among costs
-    fig = plt.figure(figsize=boxplot_size)
-    ax1 = plt.subplot2grid((3, 2), (0, 0), colspan=2)
-    ax2 = plt.subplot2grid((3, 2), (1, 0))
-    ax3 = plt.subplot2grid((3, 2), (1, 1))
-    ax4 = plt.subplot2grid((3, 2), (2, 0))
-    ax5 = plt.subplot2grid((3, 2), (2, 1))
-
-    boxplot_column_comparison(off_df, on_df, 'Operational Cost', ax=ax1, **boxplot_args)
-    boxplot_column_comparison(off_df, on_df, 'J1 (min)', ax=ax2, **boxplot_args)
-    boxplot_column_comparison(off_df, on_df, 'J2 (min)', ax=ax3, **boxplot_args)
-    boxplot_column_comparison(off_df, on_df, 'J3 (CLP)', ax=ax4, **boxplot_args)
-    boxplot_column_comparison(off_df, on_df, 'J4 (kWh)', ax=ax5, **boxplot_args)
-    fig.tight_layout()
-
-    fig.savefig(Path(target_folder, 'boxplot_comparison.pdf'))
-
-    # OnGA execution time
-    exec_times_df, min_exec, max_exec = get_execution_times(Path(target_folder, 'simulations_ClosedLoop'))
-    exec_times_df.to_csv(Path(target_folder, 'OnGA_Full.csv'))
-    pd.Series({'Minimum OnGA executions': min_exec,
-               'Maximum OnGA executions': max_exec}).to_csv(Path(target_folder, 'OnGA_numOfExecutions.csv'))
-
-    exec_times_mean = exec_times_df.mean(1)
-    exec_times_mean.name = 'Mean'
-    exec_times_std = exec_times_df.std(1)
-    pd.DataFrame({'Mean': exec_times_mean,
-                  'Standard Deviation': exec_times_std},
-                 index=exec_times_df.index).to_csv(Path(target_folder, 'OnGA_ExecutionTimes.csv'))
-
-    fig, ax = plt.subplots(figsize=exec_time_size)
-    x = range(min_exec)
-    y0 = exec_times_mean + 3 * exec_times_std
-    y1 = exec_times_mean - 3 * exec_times_std
-
-    ax.fill_between(x, y0.values, y1.values, color='k', alpha=.2, interpolate=False, label='99.7% confidence interval')
-    exec_times_mean.plot(ax=ax, color='black', )
-
-    ax.legend()
-    ax.set_xlabel(r'Measurement instant $\bar k$')
-    ax.set_ylabel('Execution time [s]')
-    ax.grid(axis='y')
-    ax.set_title('OnGA execution time')
-
-    fig.tight_layout()
-    fig.savefig(Path(target_folder, 'OnGA_executionTime.pdf'))
+    characterized_constraints_df.to_csv(Path(target_folder, 'constraints_summary.csv'))
+    characterized_constraints_df.to_latex(Path(target_folder, 'constraints_summary.tex'),
+                                          caption='Summary of constraints violations',
+                                          label='tab: constraints violations summary')
