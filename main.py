@@ -101,15 +101,14 @@ if __name__ == '__main__':
 
     # Online stage
     elif args.stage == 2:
-        target_folder = args.target_folder
-        source_folder = args.source_folder
+        source_folder = args.target_folder
         if not source_folder.is_dir():
             print("Directory is not valid: ", source_folder)
             sys.exit(0)
         print("Will simulate results from:\n  ", source_folder)
-        print("Simulation results will be saved to:\n  ", f'{target_folder}/simulations/')
+        print("Simulation results will be saved to:\n  ", f'{source_folder.parent}/simulations/')
         input("Press ENTER to continue... (ctrl+Z to end process)")
-        Online.online_operation(target_folder, source_folder, args.optimize, hp, args.repetitions, args.keep_times,
+        Online.online_operation(source_folder.parent, source_folder, args.optimize, hp, args.repetitions, args.keep_times,
                                 args.sample_time, args.std_factor, args.start_earlier_by, args.soc_policy, False)
 
     # Complete day
