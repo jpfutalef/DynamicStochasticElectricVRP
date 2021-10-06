@@ -1,1 +1,0 @@
-<fleet hard_penalization="0.0" type="Fleet"><electric_vehicle alpha_down="20" alpha_up="95" battery_capacity="6.666666666666667" battery_capacity_nominal="6.666666666666667" id="0" max_payload="553" max_tour_duration="21600.0" type="GaussianElectricVehicle" weight="1520.0" /></fleet>
