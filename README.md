@@ -2,11 +2,15 @@
 
 ## About
 
+This repository contains plenty of python code that implements a GA-based
+closed-looop decision-making strategy to solve multiple E-VRP variants. The
+code also implements a simple simulation environment to test the solutions,
+considering both open and closed loop versions.
  
 ## Usage
 ### Before running the scripts
 
-Check the following aspects:
+Check the following:
 
 1. The python version is 3.7 (other versions haven't been tested).
 2. If using Anaconda:
@@ -28,7 +32,7 @@ The script runs as follows
 
 where:
 
-``STAGE`` sets the operation to execute. Select one of the following:
+``STAGE`` sets the stage to execute. Select one of the following:
 
 - 1: pre-operation
 - 2: online simulations
@@ -43,20 +47,56 @@ online stage.
 - 2: deterministic + waiting times
 - 3: linear stochastic
 
-``TARGET_FOLDER`` specifies the working folder.
+``TARGET_FOLDER`` specifies the target folder.
 
-#### The working folder
+#### The target folder
+
+Contains the necessary data to execute any stage. The folder must contain one
+or more instances defined as XML files. The script will perform the specified
+stage over each of the instances in the target folder. 
+
+The following directory structure shows how the results will be stored if 
+the target folder contains a single instance:
+
+```
+target_folder
+|   instance_name.xml
+└───instance_name
+    └───optimization_method_1
+        └───pre_operation
+            └───preop_results1
+                |   preop result files
+           ...
+            └───preop_resultsN
+                |   preop result files
+        └───online_open_loop
+            └───online_results1
+                |   online result files
+           ...
+            └───online_resultsN
+                |   online result files
+        └───online_closed_loop
+            └───online_results1
+                |   online result files
+           ...
+            └───online_resultsN
+                |   online result files
+    └───optimization_method_2
+            ...
+   ...
+    └───optimization_method_N
+            ...
+```
 
 #### Relevant optional arguments
 ``--optimize`` if passed, it enables OnGA during the online stage.
 
-``--pre_op_repetitions [N]`` number of pre-operation runs. Yields N
+``--preop_repetitions [N]`` number of pre-operation runs. Yields N
 pre-operation solutions. Default: 5
 
-``--num_of_simulations [N]`` number of online stage simulations. Default: 20
+``--online_simulations [N]`` number of online stage simulations. Default: 20
 
 ### The hyper_main.py file
-
 
 ## Examples
 Folder *data/* contains a few instances to test the proper working of 
@@ -65,6 +105,23 @@ space needed. The rest of the instances can be found at *(VRP REPO)*.
 
 ### Pre-operation stage
 
+The folder ``batch1, batch2, batch3`` in ``data/instances/`` contains a set 
+of ready-to-solve instances. Pick one of the three batch folders 
+(e.g batch1) and do
+
+``python main.py 1 1 data/instances/batch1/``
+
+This code performs an offline optimization over all instances in 
+``data/instances/batch1/`` considering a deterministic E-VRP.
+
+If you want to consider a deterministic E-VRP with waiting times variant, 
+modify the second mandatory argument:
+
+``python main.py 1 2 data/instances/batch1/``
+
+Similarly, to consider the linear stochastic E-VRP variant:
+
+``python main.py 1 3 data/instances/batch1/``
 
 ### Online stage
 

@@ -30,7 +30,7 @@ parser.add_argument('target_folder', type=Path, help='folder where target instan
 
 # common options
 parser.add_argument('--cs_capacities', type=int, help='Capacity of CSs. Default=2', default=2)
-parser.add_argument('--repetitions', type=int, help='Experiment optimization repetitions. Default=5', default=5)
+parser.add_argument('--preop_repetitions', type=int, help='Num. of pre-operation runs. Default=5', default=5)
 parser.add_argument('--sat_prob_sample_time', type=int,
                     help='Sample time of CS capacity saturation probability. Default=120 (2 min)', default=120)
 
@@ -50,7 +50,7 @@ parser.add_argument('--std_factor', type=float, help='Noise gain. Default: 1.0',
 parser.add_argument('--start_earlier_by', type=float,
                     help='Start the simulation earlier by this amount of seconds. Default: 1200.0 [s] (20 min)',
                     default=1200.0)
-parser.add_argument('--num_of_simulations', type=int, help='Number of online stage simulations', default=10)
+parser.add_argument('--online_simulations', type=int, help='Number of online stage simulations', default=20)
 
 # degradation options
 parser.add_argument('--soc_policy', type=int, nargs=2,
