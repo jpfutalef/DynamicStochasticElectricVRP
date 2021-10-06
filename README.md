@@ -18,15 +18,15 @@ Check the following:
       file *requirements.txt*. If it doesn't, you can install them by running 
       ``conda install  --file requirements.txt``
 
-### The main.py file
+### The ``main.py`` file
 
-The file *main.py* can be used to run the two operational stages independently
+``main.py`` can be used to run the operational stages independently
 (you run the stages manually) or in a single execution 
 (the script automatically runs pre-operation, and then, online). For the last
-case, the script detects if the pre-operation was run in the past; if so,
+case, the script detects if the pre-operation was run in the past. If so,
 the script doesn't runt it again.
 
-The script runs as follows
+Run the code by executing
 
 ``python main.py [optional arguments] STAGE OPT_METHOD TARGET_FOLDER``
 
@@ -36,8 +36,7 @@ where:
 
 - 1: pre-operation
 - 2: online simulations
-- 3: pre-operation\*, followed by online simulations (* skips it if already
-  executed in the past)
+- 3: full day (pre-operation + online. Doesn't do pre-operation if it exists)
 
 ``OPT_METHOD`` sets the E-VRP variant the optimizer solves during the
 pre-operation and online stages. Not considered when simulating the open loop
@@ -47,24 +46,25 @@ online stage.
 - 2: deterministic + waiting times
 - 3: linear stochastic
 
-``TARGET_FOLDER`` specifies the target folder.
+``TARGET_FOLDER`` specifies the target folder. For pre-operation stage and full 
+day, a folder containing a set of instances (XML files). For online stage, 
+a folder containing the results from the pre-operation.
 
 #### The target folder
 
-Contains the necessary data to execute any stage. The folder must contain one
-or more instances defined as XML files. The script will perform the specified
-stage over each of the instances in the target folder. 
+Contains the necessary data to execute any stage. Essentially, each instance
+is assigned a folder with its name. Inside each folder, you will find the
+results for each stage/method you choose.
 
-The following directory structure shows how the results will be stored if 
-the target folder contains a single instance:
+The folder structure for a folder containing one instance is as follows:
 
 ```
-target_folder
+main_folder  <-- target folder for pre-operation
 |   instance_name.xml
 └───instance_name
     └───optimization_method_1
         └───pre_operation
-            └───preop_results1
+            └───preop_results1  <-- could be source folder for online operation
                 |   preop result files
            ...
             └───preop_resultsN
@@ -105,23 +105,18 @@ space needed. The rest of the instances can be found at *(VRP REPO)*.
 
 ### Pre-operation stage
 
-The folder ``batch1, batch2, batch3`` in ``data/instances/`` contains a set 
-of ready-to-solve instances. Pick one of the three batch folders 
-(e.g batch1) and do
+Folders ``set1, set2, set3`` in ``data/instances/`` contain sets 
+of ready-to-solve instances. If you want to solve a set of instances
 
-``python main.py 1 1 data/instances/batch1/``
+```
+python main.py 1 1 data/instances/set1/ <-- deterministic
+python main.py 1 2 data/instances/set1/ <-- deterministic + waiting times
+python main.py 1 3 data/instances/set1/ <-- linear stochastic
+```
 
-This code performs an offline optimization over all instances in 
-``data/instances/batch1/`` considering a deterministic E-VRP.
-
-If you want to consider a deterministic E-VRP with waiting times variant, 
-modify the second mandatory argument:
-
-``python main.py 1 2 data/instances/batch1/``
-
-Similarly, to consider the linear stochastic E-VRP variant:
-
-``python main.py 1 3 data/instances/batch1/``
+All results will be stored in folders with the same names of the
+instances. In this case, ``data/instances/set1/c10_cs1_15x15km/``
+and ``data/instances/set1/c20_cs2_15x15km/``.
 
 ### Online stage
 
