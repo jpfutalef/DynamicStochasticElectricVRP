@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Union, Type, Tuple
 from dataclasses import dataclass
 import pandas as pd
+import multiprocessing
 
 import res.optimizer.alphaGA as alphaGA
 from res.models import Fleet
@@ -103,7 +104,21 @@ def folder_pre_operation(folder_path: Path, soc_policy: Tuple[float, float] = No
                          ev_type: Union[Type[Fleet.EV.ElectricVehicle], str] = None,
                          network_type: Union[Type[Fleet.Network.Network], str] = None,
                          edge_type: Union[Type[Fleet.Network.Edge.DynamicEdge], str] = None,
-                         sat_prob_sample_time: float = 120, cs_capacities: int = None):
-    for instance in [i for i in folder_path.iterdir() if i.suffix == '.xml']:
-        pre_operation(instance, soc_policy, additional_vehicles, fill_up_to, external_individual, sat_prob_sample_time,
-                      cs_capacities, method_name, repetitions, fleet_type, ev_type, network_type, edge_type)
+                         sat_prob_sample_time: float = 120, cs_capacities: int = None, parallel=True):
+    instances = [i for i in folder_path.iterdir() if i.suffix == '.xml']
+    other_args = (soc_policy, additional_vehicles, fill_up_to, external_individual, sat_prob_sample_time, cs_capacities,
+                  method_name, repetitions, fleet_type, ev_type, network_type, edge_type)
+    if parallel:
+        num_cores = multiprocessing.cpu_count()
+        pool_size = len(instances) if len(instances) < num_cores else num_cores
+        args = [(i,) + other_args for i in instances]
+        pool = multiprocessing.Pool(processes=pool_size)
+        pool.starmap_async(pre_operation, args)
+        pool.close()
+        pool.join()
+
+    else:
+        for instance in instances:
+            pre_operation(instance, soc_policy, additional_vehicles, fill_up_to, external_individual,
+                          sat_prob_sample_time, cs_capacities, method_name, repetitions, fleet_type,
+                          ev_type, network_type, edge_type)

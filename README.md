@@ -8,6 +8,11 @@ code also implements a simple simulation environment to test the solutions,
 considering both open and closed loop versions.
 
  
+## Installation
+
+Download 
+
+
 ## Code Usage
 ### Before running the scripts
 
@@ -26,7 +31,8 @@ Check the following:
 
 ### The ``main.py`` file
 
-``main.py`` can be used to run the operational stages independently
+``main.py`` can be used to run the operational stages. 
+independently
 (you run the stages manually) or in a single execution 
 (the script automatically runs pre-operation, and then, online). For the last
 case, the script detects if the pre-operation was run in the past. If so,
