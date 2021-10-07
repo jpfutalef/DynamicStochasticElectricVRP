@@ -16,7 +16,7 @@ Check the following:
 1. The python version is 3.7 (other versions haven't been tested).
    
 2. Update the repository in your computer by doing ``git fetch`` and then
-``git push``.
+``git pull``.
 
 3. If using Anaconda:
     * Check that the conda environment provides all packages listed in the 
