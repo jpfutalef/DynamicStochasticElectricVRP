@@ -6,9 +6,8 @@ import numpy as np
 from pathlib import Path
 import copy
 
-import res.models.Fleet as Fleet
-import res.models.Network as Network
-import res.models.NonLinearOps as NL
+from res.models import Fleet, Network
+from res.models import NonLinearOps as NL
 from res.tools.IOTools import RouteDict, DepartDict, write_routes, read_routes, write_pretty_xml
 
 from res.optimizer.GATools import OnGA_HyperParameters
@@ -137,28 +136,27 @@ class Dispatcher:
     fleet_path: Path
     measurements_path: Path
     routes_path: Path
+    ev_type: Type[Fleet.EV.ElectricVehicle] = None
+    fleet_type: Type[Fleet.Fleet] = None
+    edge_type: Type[Network.Edge.DynamicEdge] = None
+    network_type: Type[Network.Network] = None
+    onGA_hyper_parameters: OnGA_HyperParameters = None
+    ga_time: float = 300.  # min
+    offset_time: float = 60.  # min
 
     network: Network.Network = None
     fleet: Fleet.Fleet = None
-
-    ga_time: float = 300.  # min
-    offset_time: float = 60.  # min
     measurements: Dict[int, ElectricVehicleMeasurement] = None
     routes: RouteDict = None
     depart_info: DepartDict = None
     time: float = None
-    onGA_hyper_parameters: OnGA_HyperParameters = None
     exec_times: List = None
 
-    ev_type: Type[Fleet.EV.ElectricVehicle]  = None
-    fleet_type: Type[Fleet.Fleet] = None
-    edge_type: Type[Network.Edge.DynamicEdge] = None
-    network_type: Type[Network.Network] = None
 
     def __post_init__(self):
         self.read_measurements()
-        self.update_fleet()
         self.update_network()
+        self.update_fleet()
         self.read_routes(read_depart_info=True)
         t = min([m.time_finishing_service for m in self.measurements.values()])
         self.init_time = t
@@ -178,13 +176,13 @@ class Dispatcher:
         return True
 
     def update_network(self):
-        self.network = Network.from_xml(self.network_path)
+        self.network = Network.from_xml(self.network_path, self.network_type, self.edge_type)
 
     def update_measurements(self):
         update_measurements(self.measurements_path, self.measurements)
 
     def update_fleet(self):
-        self.fleet = Fleet.from_xml(self.fleet_path)
+        self.fleet = Fleet.from_xml(self.fleet_path, self.fleet_type, self.ev_type)
 
     def set_measurements(self, measurements: Dict[int, ElectricVehicleMeasurement]):
         self.measurements = measurements
@@ -306,7 +304,7 @@ class Dispatcher:
                 S_post = S_anchor[k:]
                 L_post = L_anchor[k:]
 
-                ev.assigned_customers = tuple(i for i in S_post if n.is_customer(i))
+                ev.assigned_customers = tuple(i for i in S_post[1:] if n.is_customer(i))
                 ev.current_max_tour_duration = ev.max_tour_duration + meas.departure_time - x1_critical
 
                 return critical_state, S_post, L_post
@@ -338,7 +336,7 @@ class Dispatcher:
         for id_ev in self.fleet.vehicles_to_route:
             critical_state, S_anchor, L_anchor = critical_states[id_ev]
             curr_route = self.routes[id_ev]
-            post_S, post_L, post_x10, post_x20, post_x30 = routes[id_ev]
+            post_S, post_L, post_x10, post_x20, post_x30, post_wt0 = routes[id_ev]
 
             j_crit = critical_state.j_crit
             # w1_ahead = tuple(self.fleet.vehicles[id_ev].waiting_times0)

@@ -1,7 +1,7 @@
 import datetime
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Union, Tuple
+from typing import Union, Tuple, Type
 
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
@@ -10,6 +10,7 @@ from res.dispatcher import Dispatcher
 from res.optimizer.GATools import OnGA_HyperParameters as HyperParameters
 from res.results import OnlineResults
 from res.simulator import Simulator
+from res.models import Fleet, Network
 
 
 @dataclass
@@ -23,6 +24,11 @@ class OnlineParameters:
     sample_time: Union[float, int] = 300
     std_factor: float = 1.0
     start_earlier_by: float = 600.
+    ev_type: Type[Fleet.EV.ElectricVehicle] = None
+    fleet_type: Type[Fleet.Fleet] = None
+    edge_type: Type[Network.Edge.DynamicEdge] = None
+    network_type: Type[Network.Network] = None
+
     network_path: Path = None
     fleet_path: Path = None
     routes_path: Path = None
@@ -48,17 +54,25 @@ class OnlineParameters:
 def online_operation(main_folder: Path, source_folder: Path, optimize: bool = False, onGA_hp: HyperParameters = None,
                      repetitions: int = 5, hold_by: int = 0, sample_time: float = 300.,
                      std_factor: float = 1.0, start_earlier_by: float = 600,
-                     soc_policy: Tuple[float, float] = (20., 95), display_gui: bool = False):
-    # Save the source folder to main_folder in a text file
-    with open(Path(main_folder, 'source_folder.txt'), 'w') as file:
-        s = f"The best result from pre-operation is stored in folder:\n  {source_folder}"
-        file.write(s)
+                     soc_policy: Tuple[float, float] = (20., 95), display_gui: bool = False,
+                     ev_type: Type[Fleet.EV.ElectricVehicle] = Fleet.EV.ElectricVehicle,
+                     fleet_type: Type[Fleet.Fleet] = Fleet.Fleet,
+                     edge_type: Type[Network.Edge.DynamicEdge] = Network.Edge.DynamicEdge,
+                     network_type: Type[Network.Network] = Network.Network):
+    simulation_type = 'closed_loop' if optimize else 'open_loop'
+    simulations_folder = Path(main_folder, simulation_type)
+    if not source_folder.is_dir():
+        print("Directory is not valid: ", source_folder)
+        return 0
+    print("Will simulate results from:\n  ", source_folder)
+    print("Simulation results will be saved to:\n  ", simulations_folder)
+    input("Press ENTER to continue... (ctrl+Z to end process)")
 
-    # Iterate
     simulations_folder = Path()
     for i in range(repetitions):
         simulations_folder = simulate(main_folder, source_folder, optimize, onGA_hp, hold_by, sample_time, std_factor,
-                                      start_earlier_by, soc_policy, display_gui, None, None)
+                                      start_earlier_by, soc_policy, display_gui, None, None, ev_type, fleet_type,
+                                      edge_type, network_type)
 
     # Summarize results
     df_costs, df_constraints = OnlineResults.folder_data(simulations_folder.parent, source_folder)
@@ -69,12 +83,19 @@ def online_operation(main_folder: Path, source_folder: Path, optimize: bool = Fa
 def simulate(main_folder: Path, source_folder: Path = None, optimize: bool = False, onGA_hp: HyperParameters = None,
              hold_by: int = 0, sample_time: float = 300.0, std_factor: float = 1.0, start_earlier_by: float = 600,
              soc_policy: Tuple[float, float] = (20., 95), display_gui: bool = True,
-             previous_simulation_folder: Path = None, simulation_name: str = None):
+             previous_simulation_folder: Path = None, simulation_name: str = None,
+             ev_type: Type[Fleet.EV.ElectricVehicle] = Fleet.EV.ElectricVehicle,
+             fleet_type: Type[Fleet.Fleet] = Fleet.Fleet,
+             edge_type: Type[Network.Edge.DynamicEdge] = Network.Edge.DynamicEdge,
+             network_type: Type[Network.Network] = Network.Network):
     if simulation_name is None:
         simulation_name = datetime.datetime.now().strftime("%H-%M-%S_%d-%m-%y")
-    simulation_folder = Path(main_folder, 'simulations', simulation_name)
+    simulation_type = 'closed_loop' if optimize else 'open_loop'
+    simulations_folder = Path(main_folder, simulation_type)
+    simulation_folder = Path(simulations_folder, simulation_name)
+
     p = OnlineParameters(source_folder, simulation_folder, optimize, soc_policy, onGA_hp, hold_by, sample_time,
-                         std_factor, start_earlier_by)
+                         std_factor, start_earlier_by, ev_type, fleet_type, edge_type, network_type)
     if display_gui:
         text = f"""The simulation will run using the following parameters:
 {p}
@@ -119,7 +140,8 @@ def online_operation_closed_loop(p: OnlineParameters, previous_simulation_folder
 
     # Create dispatcher instance
     dispatcher = Dispatcher.Dispatcher(simulator.network_path, simulator.fleet_path, simulator.measurements_path,
-                                       simulator.routes_path, onGA_hyper_parameters=p.hyper_parameters)
+                                       simulator.routes_path, p.ev_type, p.fleet_type, p.edge_type, p.network_type,
+                                       p.hyper_parameters)
 
     exec_time_path = Path(p.simulation_folder, 'exec_time.csv')
 

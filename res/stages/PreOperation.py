@@ -32,9 +32,10 @@ def pre_operation(instance_filepath: Path, soc_policy: Tuple[float, float] = Non
                   network_type: Union[Type[Network.Network], str] = None,
                   edge_type: Union[Type[Network.Edge.DynamicEdge], str] = None):
     # Setup directories
-    multiple_results_folder = Path(instance_filepath.parent, instance_filepath.stem)
     if method_name:
-        multiple_results_folder = Path(multiple_results_folder, method_name)
+        multiple_results_folder = Path(instance_filepath.parent, instance_filepath.stem, method_name, 'pre_operation')
+    else:
+        multiple_results_folder = Path(instance_filepath.parent, instance_filepath.stem, 'pre_operation')
 
     # An empty list that will contain multiple optimization results
     results = []
@@ -87,6 +88,11 @@ def pre_operation(instance_filepath: Path, soc_policy: Tuple[float, float] = Non
 
         # Append result to list
         results.append(result)
+
+    # write file with directory of best result
+    s = get_best_from_pre_operation(multiple_results_folder)
+    with open(Path(multiple_results_folder, 'source_folder.txt'), 'w') as file:
+        file.write(str(s))
 
     return results, multiple_results_folder
 

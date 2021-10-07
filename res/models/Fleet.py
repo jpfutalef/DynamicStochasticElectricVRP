@@ -581,8 +581,8 @@ def routes_from_csv_folder(folder_path: str, fleet: Fleet):
     return routes
 
 
-def from_xml(filepath: Union[Path, str], fleet_type: Union[Fleet, str] = None,
-             ev_type: Union[EV.ElectricVehicle, str] = None) -> Union[Fleet, GaussianFleet]:
+def from_xml(filepath: Union[Path, str], fleet_type: Union[Type[Fleet], str] = None,
+             ev_type: Union[Type[EV.ElectricVehicle], str] = None) -> Union[Fleet, GaussianFleet]:
     """
     Reads fleet parameters from an XML file.
     @param filepath: location of the XML file

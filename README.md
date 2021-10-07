@@ -6,8 +6,9 @@ This repository contains plenty of python code that implements a GA-based
 closed-looop decision-making strategy to solve multiple E-VRP variants. The
 code also implements a simple simulation environment to test the solutions,
 considering both open and closed loop versions.
+
  
-## Usage
+## Code Usage
 ### Before running the scripts
 
 Check the following:
@@ -28,7 +29,9 @@ the script doesn't runt it again.
 
 Run the code by executing
 
-``python main.py [optional arguments] STAGE OPT_METHOD TARGET_FOLDER``
+```commandline 
+python main.py [optional arguments] STAGE OPT_METHOD TARGET_FOLDER
+```
 
 where:
 
@@ -99,6 +102,7 @@ pre-operation solutions. Default: 5
 ### The hyper_main.py file
 
 ## Examples
+
 Folder *data/* contains a few instances to test the proper working of 
 the code. We avoid storing all instances in this repo to lower the storing
 space needed. The rest of the instances can be found at *(VRP REPO)*.
@@ -115,12 +119,61 @@ python main.py 1 3 data/instances/set1/ <-- linear stochastic
 ```
 
 All results will be stored in folders with the same names of the
-instances. In this case, ``data/instances/set1/c10_cs1_15x15km/``
-and ``data/instances/set1/c20_cs2_15x15km/``.
+instances. For example, for instance ``c10_cs1_15x15km``, 
+the folder ``data/instances/set1/c10_cs1_15x15km/`` will be created.
 
 ### Online stage
 
+In this example, we solve and simulate the deterministic E-VRP variant.
+Folder ``data/online/`` contains the ready-to-use instance 
+``c20_cs2_15x15km``.
+
+First, execute the pre-operation stage to 
+generate the initial route candidates. To do this, run one of the
+following:
+
+```
+python main.py 1 1 data/online/ <-- deterministic
+python main.py 1 2 data/online/ <-- deterministic + waiting times
+python main.py 1 3 data/online/ <-- linear stochastic
+```
+
+The directory ``data/online/c20_cs2_15x15km/`` will be created. Inside
+it, you'll find the directory ``/pre-operation/[optimization method name]``.
+Inside it, you will find several folders containing the
+offline optimization results (5 by default), and the file 
+``source_folder.txt`` that contains the folder with the best 
+optimization result. Copy that directory and simulate the closed loop online
+stage by executing:
+
+```
+python main.py --optimize 2 1 [best directory] <-- closed loop
+```
+
+To simulate the open loop online stage, remove the ``--optimize`` argument:
+
+```
+python main.py 2 1 [best directory] <-- open loop
+```
+
+In this case, the second argument (i.e., 1) doesn't do anything.
+
 ### Full day
+
+If you want to avoid running both stages independently, you can use the third
+STAGE option to run both stages sequentially. The following script will do this
+automatically over instances at ``data/instances/set2/`` considering 
+the deterministic E-VRP variant:
+
+```
+python main.py 3 1 data/instances/set2/ <-- open loop
+python main.py --optimize 3 1 data/instances/set2/ <-- closed loop
+```
+
+The code detects if the pre-operation was run by checking if the directory 
+``data/instances/set2/[instance_name]/pre_operation/`` exists and is not empty
+for each instance in ``data/instances/set2/``.
+
 
 ## Repository structure
 

@@ -165,12 +165,13 @@ def block_indices(fleet: Fleet.Fleet, hp: GA.OnGA_HyperParameters) -> GA.Indices
     i0 = 0
     i1 = 0
     i2 = 0
-    for id_vehicle, ev in fleet.vehicles.items():
+    for id_ev in fleet.vehicles_to_route:
+        ev = fleet.vehicles[id_ev]
         ni = len(ev.assigned_customers)
         i1 += ni
         i2 += ni + 3 * hp.r
 
-        indices[id_vehicle] = (i0, i1, i2)
+        indices[id_ev] = (i0, i1, i2)
 
         i0 += ni + 3 * hp.r + 1
         i1 += 3 * hp.r + 1
@@ -271,7 +272,6 @@ def onGA(fleet: Fleet.Fleet, hp: GA.OnGA_HyperParameters, critical_states: Criti
     #                                                ev_id in fleet.vehicles_to_route]) + 15
     # hp.max_generations = 3 * hp.num_individuals + 30
 
-    customers_to_visit = {ev_id: fleet.vehicles[ev_id].assigned_customers for ev_id in fleet.vehicles_to_route}
     indices = block_indices(fleet, hp)
 
     # Fitness objects

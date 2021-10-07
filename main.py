@@ -95,27 +95,22 @@ if __name__ == '__main__':
         print("Will solve instances at:\n  ", instances_folder)
         input("Press ENTER to continue... (or ctrl+Z to end process)")
         PreOperation.folder_pre_operation(args.target_folder, args.soc_policy, args.additional_vehicles,
-                                          args.fill_up_to, None, method, args.repetitions, fleet_type,
+                                          args.fill_up_to, None, method, args.preop_repetitions, fleet_type,
                                           ev_type, network_type, edge_type, args.sat_prob_sample_time,
                                           args.cs_capacities)
 
     # Online stage
     elif args.stage == 2:
         source_folder = args.target_folder
-        if not source_folder.is_dir():
-            print("Directory is not valid: ", source_folder)
-            sys.exit(0)
-        print("Will simulate results from:\n  ", source_folder)
-        print("Simulation results will be saved to:\n  ", f'{source_folder.parent}/simulations/')
-        input("Press ENTER to continue... (ctrl+Z to end process)")
-        Online.online_operation(source_folder.parent, source_folder, args.optimize, hp, args.repetitions, args.keep_times,
-                                args.sample_time, args.std_factor, args.start_earlier_by, args.soc_policy, False)
+        Online.online_operation(source_folder.parent.parent, source_folder, args.optimize, hp, args.online_simulations,
+                                args.keep_times, args.sample_time, args.std_factor, args.start_earlier_by,
+                                args.soc_policy, False, ev_type, fleet_type, edge_type, network_type)
 
     # Complete day
     elif args.stage == 3:
         OneDay.one_day_folder(args.target_folder, args.soc_policy, args.additional_vehicles, args.fill_up_to,
-                              None, method, args.repetitions, args.sat_prob_sample_time, args.cs_capacities,
-                              args.num_of_simulations, fleet_type, ev_type, network_type, edge_type, args.optimize,
+                              None, method, args.preop_repetitions, args.sat_prob_sample_time, args.cs_capacities,
+                              args.online_simulations, fleet_type, ev_type, network_type, edge_type, args.optimize,
                               hp)
 
     # Closed loop with degradation
