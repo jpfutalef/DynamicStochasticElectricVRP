@@ -14,10 +14,15 @@ considering both open and closed loop versions.
 Check the following:
 
 1. The python version is 3.7 (other versions haven't been tested).
-2. If using Anaconda:
+   
+2. Update the repository in your computer by doing ``git fetch`` and then
+``git push``.
+
+3. If using Anaconda:
     * Check that the conda environment provides all packages listed in the 
       file *requirements.txt*. If it doesn't, you can install them by running 
       ``conda install  --file requirements.txt``
+      
 
 ### The ``main.py`` file
 
@@ -112,7 +117,8 @@ space needed. The rest of the instances can be found at *(VRP REPO)*.
 ### Pre-operation stage
 
 Folders ``set1, set2, set3`` in ``data/instances/`` contain sets 
-of ready-to-solve instances. If you want to solve a set of instances
+of ready-to-solve instances. If you want to solve a set of instances, choose
+one of the following:
 
 ```
 python main.py 1 1 data/instances/set1/ <-- deterministic
@@ -122,7 +128,8 @@ python main.py 1 3 data/instances/set1/ <-- linear stochastic
 
 All results will be stored in folders with the same names of the
 instances. For example, for instance ``c10_cs1_15x15km``, 
-the folder ``data/instances/set1/c10_cs1_15x15km/`` will be created.
+the folder ``data/instances/set1/c10_cs1_15x15km/`` will be created. See the
+*Target folder* structure explained above to know how results are stored.
 
 ### Online stage
 
@@ -179,7 +186,10 @@ for each instance in ``data/instances/set2/``.
 
 ## Repository structure
 
- 
+ ``./res`` contains resource files. Here, you will find all methods and classes
+to run the system.
+
+```./notebooks``` contains
 
 
 
