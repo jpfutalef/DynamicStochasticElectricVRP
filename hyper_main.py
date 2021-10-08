@@ -2,7 +2,9 @@ from res.tools import multiprocess
 import os
 import multiprocessing as mp
 from time import sleep
-
+'''
+------ PARAMETERS ------
+'''
 # Types of pre-operation
 experiments1 = ["1 1 data/instances/ --preop_repetitions 2 --parallel",
                 "1 2 data/instances/ --preop_repetitions 2 --parallel",
@@ -18,7 +20,7 @@ experiments = experiments1
 parallel = True # Doesn't work yet
 
 '''
-CODE
+------ CODE -------
 '''
 
 
