@@ -3,14 +3,30 @@
 ## About
 
 This repository contains plenty of python code that implements a GA-based
-closed-looop decision-making strategy to solve multiple E-VRP variants. The
-code also implements a simple simulation environment to test the solutions,
-considering both open and closed loop versions.
-
+decision-making strategy to manage EV fleets. The system consists
+of: an offline and online optimizer to solve multiple E-VRP variants, and a 
+simple simulator to test the strategy.The goal is to analyze the behavior of 
+the EV routes during a single day via simulation.
  
+A day is divided into two stages: **pre-operation** and **online**. In the 
+**pre-operation** stage, an *offline solver* runs to calculate initial EV route
+candidates. Then, in the **online** stage, a simulation is run to simulate 
+semi-real-world environments. In this case, you can choose either to maintain the
+initial routes throughout the stage (open-loop), or to update them using
+an *online solver* (closed-loop).
+
+### E-VRP variants
+
+This repo implements three solvers, each considering a different E-VRP variants:
+* Deterministic E-VRP
+* Deterministic E-VRP with waiting times
+* Linear stochastic E-VRP
+
 ## Installation
 
-Download 
+Clone the repo by executing
+
+``git clone https://github.com/jpfutalef/DynamicStochasticElectricVRP.git``
 
 
 ## Code Usage
@@ -23,22 +39,18 @@ Check the following:
 2. Update the repository in your computer by doing ``git fetch`` and then
 ``git pull``.
 
-3. If using Anaconda:
-    * Check that the conda environment provides all packages listed in the 
-      file *requirements.txt*. If it doesn't, you can install them by running 
+3. Check your Python executable provides all pacagesin *requirements.txt*.
+    * If using Anaconda: you can install them by running 
       ``conda install  --file requirements.txt``
       
 
 ### The ``main.py`` file
 
-``main.py`` can be used to run the operational stages. 
-independently
-(you run the stages manually) or in a single execution 
-(the script automatically runs pre-operation, and then, online). For the last
-case, the script detects if the pre-operation was run in the past. If so,
-the script doesn't runt it again.
+``main.py`` can be used to run the operational stages. You can choose which 
+operation you wish to run, or simulate a full day (run pre-operation and online
+in a single execution).
 
-Run the code by executing
+The code syntax is as follows:
 
 ```commandline 
 python main.py [optional arguments] STAGE OPT_METHOD TARGET_FOLDER
@@ -48,9 +60,10 @@ where:
 
 ``STAGE`` sets the stage to execute. Select one of the following:
 
-- 1: pre-operation
-- 2: online simulations
-- 3: full day (pre-operation + online. Doesn't do pre-operation if it exists)
+- 1: pre-operation stage
+- 2: online stage. It is open-loop by default. You can pass the ``--optimize``
+  optional argument to activate the closed-loop strategy.
+- 3: full day (pre-operation + online).
 
 ``OPT_METHOD`` sets the E-VRP variant the optimizer solves during the
 pre-operation and online stages. Not considered when simulating the open loop

@@ -34,10 +34,14 @@ def one_day(instance_filepath: Path, soc_policy: Tuple[float, float] = None, add
             optimize_online: bool = False, onGA_hp: GATools.OnGA_HyperParameters = None,
             parallel=True):
     # Pre-operation
-    _, pre_operation_folder = PreOperation.pre_operation(instance_filepath, soc_policy, additional_vehicles,
-                                                         fill_up_to, external_individual, sat_prob_sample_time,
-                                                         cs_capacities, method_name, pre_operation_repetitions,
-                                                         fleet_type, ev_type, network_type, edge_type)
+    potential_preop_path = Path(instance_filepath.parent, instance_filepath.stem, method_name, 'pre_operation')
+    if potential_preop_path.is_dir():
+        pre_operation_folder = potential_preop_path
+    else:
+        _, pre_operation_folder = PreOperation.pre_operation(instance_filepath, soc_policy, additional_vehicles,
+                                                             fill_up_to, external_individual, sat_prob_sample_time,
+                                                             cs_capacities, method_name, pre_operation_repetitions,
+                                                             fleet_type, ev_type, network_type, edge_type)
 
     # Select folder with best result and save it to text file
     source_folder = get_best_from_pre_operation(pre_operation_folder)
