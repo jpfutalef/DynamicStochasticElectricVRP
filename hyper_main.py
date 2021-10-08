@@ -3,11 +3,15 @@ import os
 import multiprocessing as mp
 from time import sleep
 
-'''
-This list runs full days
-'''
-experiments1 = ["3 1 data/instances/set0/ --preop_repetitions 2 --online_repetitions 2 --parallel",
-                "3 2 data/instances/set0/ --preop_repetitions 2 --online_repetitions 2 --parallel"]
+# Types of pre-operation
+experiments1 = ["1 1 data/instances/ --preop_repetitions 2 --parallel",
+                "1 2 data/instances/ --preop_repetitions 2 --parallel",
+                "1 3 data/instances/ --preop_repetitions 2 --parallel"]
+
+# Full day
+experiments2 = ["3 1 data/instances/ --preop_repetitions 2 --online_repetitions 2 --parallel",
+                "3 2 data/instances/ --preop_repetitions 2 --online_repetitions 2 --parallel",
+                "3 3 data/instances/ --preop_repetitions 2 --online_repetitions 2 --parallel"]
 
 # Parameters
 experiments = experiments1
