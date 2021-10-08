@@ -1,0 +1,4 @@
+3 1 data/instances/ --preop_repetitions 2 --online_repetitions 2 --parallel
+3 2 data/instances/ --preop_repetitions 2 --online_repetitions 2 --parallel
+3 3 data/instances/ --preop_repetitions 2 --online_repetitions 2 --parallel
+

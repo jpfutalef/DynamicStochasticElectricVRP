@@ -6,7 +6,7 @@ from time import sleep
 ------ PARAMETERS ------
 '''
 # Types of pre-operation
-experiments1 = ["1 1 data/instances/ --preop_repetitions 2 --parallel",
+experiments1 = ["screen -S corrida1; python main.py 1 1 data/instances/ --preop_repetitions 2 --parallel",
                 "1 2 data/instances/ --preop_repetitions 2 --parallel",
                 "1 3 data/instances/ --preop_repetitions 2 --parallel"]
 
@@ -17,7 +17,7 @@ experiments2 = ["3 1 data/instances/ --preop_repetitions 2 --online_repetitions 
 
 # Parameters
 experiments = experiments1
-parallel = True # Doesn't work yet
+parallel = False # Doesn't work yet
 
 '''
 ------ CODE -------

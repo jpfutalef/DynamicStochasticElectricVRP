@@ -1,6 +1,7 @@
 from pathlib import Path
 import pandas as pd
 from typing import Type, Union, Tuple
+import multiprocessing
 
 from res.stages import PreOperation
 from res.stages import Online
@@ -47,36 +48,35 @@ def one_day(instance_filepath: Path, soc_policy: Tuple[float, float] = None, add
     source_folder = get_best_from_pre_operation(pre_operation_folder)
 
     # Online
-    if parallel:
-        args = [(pre_operation_folder.parent, source_folder, True, onGA_hp, online_repetitions,
-                 0, online_sample_time, std_factor, start_earlier_by, soc_policy, False, ev_type,
-                 fleet_type, edge_type, network_type),
-                (pre_operation_folder.parent, source_folder, False, onGA_hp, online_repetitions,
-                 0, online_sample_time, std_factor, start_earlier_by, soc_policy, False, ev_type,
-                 fleet_type, edge_type, network_type)]
-        pool = multiprocess.MyPool(processes=2)
-        pool.starmap_async(Online.online_operation, args)
-        pool.close()
-        pool.join()
-
-        # p1 = multiprocess.multiprocessing.Process(target=Online.online_operation, args=args[0])
-        # p2 = multiprocess.multiprocessing.Process(target=Online.online_operation, args=args[1])
-        #
-        # p1.start()
-        # p2.start()
-        #
-        # p1.close()
-        # p1.join()
-        #
-        # p2.close()
-        # p2.join()
-    else:
-        Online.online_operation(pre_operation_folder.parent, source_folder, False, onGA_hp, online_repetitions,
-                                0, online_sample_time, std_factor, start_earlier_by, soc_policy, False, ev_type,
-                                fleet_type, edge_type, network_type)
-        Online.online_operation(pre_operation_folder.parent, source_folder, True, onGA_hp, online_repetitions,
-                                0, online_sample_time, std_factor, start_earlier_by, soc_policy, False, ev_type,
-                                fleet_type, edge_type, network_type)
+    # if parallel:
+    #     args = [(pre_operation_folder.parent, source_folder, True, onGA_hp, online_repetitions,
+    #              0, online_sample_time, std_factor, start_earlier_by, soc_policy, False, ev_type,
+    #              fleet_type, edge_type, network_type),
+    #             (pre_operation_folder.parent, source_folder, False, onGA_hp, online_repetitions,
+    #              0, online_sample_time, std_factor, start_earlier_by, soc_policy, False, ev_type,
+    #              fleet_type, edge_type, network_type)]
+    #     pool = multiprocess.MyPool(processes=2)
+    #     pool.starmap_async(Online.online_operation, args)
+    #     pool.close()
+    #     pool.join()
+    #
+    #     # p1 = multiprocess.multiprocessing.Process(target=Online.online_operation, args=args[0])
+    #     # p2 = multiprocess.multiprocessing.Process(target=Online.online_operation, args=args[1])
+    #     #
+    #     # p1.start()
+    #     # p2.start()
+    #     #
+    #     # p1.close()
+    #     # p1.join()
+    #     #
+    #     # p2.close()
+    #     # p2.join()
+    Online.online_operation(pre_operation_folder.parent, source_folder, False, onGA_hp, online_repetitions,
+                            0, online_sample_time, std_factor, start_earlier_by, soc_policy, False, ev_type,
+                            fleet_type, edge_type, network_type)
+    Online.online_operation(pre_operation_folder.parent, source_folder, True, onGA_hp, online_repetitions,
+                            0, online_sample_time, std_factor, start_earlier_by, soc_policy, False, ev_type,
+                            fleet_type, edge_type, network_type)
     return
 
 
@@ -100,7 +100,7 @@ def one_day_folder(folder_path: Path, soc_policy: Tuple[float, float] = None, ad
     if parallel:
         pool_size = len(instances)
         args = [(i,) + other_args for i in instances]
-        pool = multiprocess.MyPool(processes=pool_size)
+        pool = multiprocessing.Pool(processes=pool_size)
         pool.starmap_async(one_day, args)
         pool.close()
         pool.join()
