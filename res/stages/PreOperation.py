@@ -1,9 +1,8 @@
-import datetime
+import datetime, multiprocessing
 from pathlib import Path
 from typing import Union, Type, Tuple
-from dataclasses import dataclass
+
 import pandas as pd
-import multiprocessing
 
 import res.optimizer.alphaGA as alphaGA
 from res.models import Fleet

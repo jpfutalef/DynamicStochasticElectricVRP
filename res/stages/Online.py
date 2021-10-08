@@ -61,12 +61,13 @@ def online_operation(main_folder: Path, source_folder: Path, optimize: bool = Fa
                      network_type: Type[Network.Network] = Network.Network):
     simulation_type = 'closed_loop' if optimize else 'open_loop'
     simulations_folder = Path(main_folder, simulation_type)
-    if not source_folder.is_dir():
-        print("Directory is not valid: ", source_folder)
-        return 0
-    print("Will simulate results from:\n  ", source_folder)
-    print("Simulation results will be saved to:\n  ", simulations_folder)
-    input("Press ENTER to continue... (ctrl+Z to end process)")
+    if display_gui:
+        if not source_folder.is_dir():
+            print("Directory is not valid: ", source_folder)
+            return 0
+        print("Will simulate results from:\n  ", source_folder)
+        print("Simulation results will be saved to:\n  ", simulations_folder)
+        input("Press ENTER to continue... (ctrl+Z to end process)")
 
     simulations_folder = Path()
     for i in range(repetitions):

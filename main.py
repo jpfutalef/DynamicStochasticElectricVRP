@@ -50,7 +50,7 @@ parser.add_argument('--std_factor', type=float, help='Noise gain. Default: 1.0',
 parser.add_argument('--start_earlier_by', type=float,
                     help='Start the simulation earlier by this amount of seconds. Default: 1200.0 [s] (20 min)',
                     default=1200.0)
-parser.add_argument('--online_simulations', type=int, help='Number of online stage simulations', default=20)
+parser.add_argument('--online_repetitions', type=int, help='Number of online stage simulations', default=20)
 
 # degradation options
 parser.add_argument('--soc_policy', type=int, nargs=2,
@@ -58,6 +58,7 @@ parser.add_argument('--soc_policy', type=int, nargs=2,
 
 # Miscelaneous options
 parser.add_argument('--display_gui', action='store_true', help='Display GUI from methods/stages/etc (if any)')
+parser.add_argument('--parallel', action='store_true', help='Enables parallelism')
 
 args = parser.parse_args()
 
@@ -102,16 +103,16 @@ if __name__ == '__main__':
     # Online stage
     elif args.stage == 2:
         source_folder = args.target_folder
-        Online.online_operation(source_folder.parent.parent, source_folder, args.optimize, hp, args.online_simulations,
+        Online.online_operation(source_folder.parent.parent, source_folder, args.optimize, hp, args.online_repetitions,
                                 args.keep_times, args.sample_time, args.std_factor, args.start_earlier_by,
                                 args.soc_policy, False, ev_type, fleet_type, edge_type, network_type)
 
     # Complete day
     elif args.stage == 3:
-        OneDay.one_day_folder(args.target_folder, args.soc_policy, args.additional_vehicles, args.fill_up_to,
-                              None, method, args.preop_repetitions, args.sat_prob_sample_time, args.cs_capacities,
-                              args.online_simulations, fleet_type, ev_type, network_type, edge_type, args.optimize,
-                              hp)
+        OneDay.one_day_folder(args.target_folder, args.soc_policy, args.additional_vehicles, args.fill_up_to, None,
+                              method, args.preop_repetitions, args.sample_time, args.std_factor, args.start_earlier_by,
+                              args.sat_prob_sample_time, args.cs_capacities, args.online_repetitions, fleet_type,
+                              ev_type, network_type, edge_type, args.optimize, hp, args.parallel)
 
     # Closed loop with degradation
     elif args.case == 500:
