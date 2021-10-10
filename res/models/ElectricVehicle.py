@@ -731,10 +731,22 @@ class GaussianElectricVehicle(ElectricVehicle):
         Y_reaching_std = np.array([np.sqrt(q) for i, q in enumerate(Q[0, :]) if i % 3 == 0])
         r_time = self.sos_state[0, :]
         l_time = self.eos_state[0, :]
-        plt.fill_between(X, r_time - 3 * Y_reaching_std, r_time + 3 * Y_reaching_std, color='red', alpha=0.2)
+        ax.fill_between(X, r_time - 3 * Y_reaching_std, r_time + 3 * Y_reaching_std, color='red', alpha=0.2)
 
         Y_leaving_std = np.array([np.sqrt(q) for i, q in enumerate(Q[0, :]) if i % 3 == 0])
-        plt.fill_between(X, l_time - 3 * Y_leaving_std, l_time + 3 * Y_leaving_std, color='green', alpha=0.2)
+        ax.fill_between(X, l_time - 3 * Y_leaving_std, l_time + 3 * Y_leaving_std, color='green', alpha=0.2)
+
+    def draw_travelling_soc(self, ax: plt.Axes):
+        super(GaussianElectricVehicle, self).draw_travelling_soc(ax)
+        Q = self.state_reaching_covariance
+        X = list(range(len(self.S)))
+        Y_reaching_std = np.array([np.sqrt(q) for i, q in enumerate(Q[1, 1:]) if i % 3 == 0])
+        r_soc = self.sos_state[1, :]
+        l_soc = self.eos_state[1, :]
+        ax.fill_between(X, r_soc - 3 * Y_reaching_std, r_soc + 3 * Y_reaching_std, color='red', alpha=0.2)
+
+        Y_leaving_std = np.array([np.sqrt(q) for i, q in enumerate(Q[1, 1:]) if i % 3 == 0])
+        ax.fill_between(X, l_soc - 3 * Y_leaving_std, l_soc + 3 * Y_leaving_std, color='green', alpha=0.2)
 
     def xml_element(self, assign_customers=False, with_route=False, this_id=None):
         element = super(GaussianElectricVehicle, self).xml_element(assign_customers, with_route, this_id)
