@@ -54,8 +54,8 @@ class ElectricVehicle:
     energy_consumption: Union[np.ndarray, None] = None
     charging_times: Union[np.ndarray, None] = None
     service_time: Union[np.ndarray, None] = None
-    state_reaching: Union[np.ndarray, None] = None
-    state_leaving: Union[np.ndarray, None] = None
+    sos_state: Union[np.ndarray, None] = None
+    eos_state: Union[np.ndarray, None] = None
     penalization: float = 0.0
     pre_service_waiting_time: Union[np.ndarray, None] = None
     post_service_waiting_time: Union[np.ndarray, None] = None
@@ -76,8 +76,8 @@ class ElectricVehicle:
         self.energy_consumption = None
         self.charging_times = None
         self.service_time = None
-        self.state_reaching = None
-        self.state_leaving = None
+        self.sos_state = None
+        self.eos_state = None
         self.pre_service_waiting_time = None
         self.post_service_waiting_time = None
 
@@ -99,11 +99,11 @@ class ElectricVehicle:
         self.x3_0 = x3_0
 
         # Matrices
-        self.state_reaching = np.zeros((3, len_route))
-        self.state_leaving = np.zeros((3, len_route))
+        self.sos_state = np.zeros((3, len_route))
+        self.eos_state = np.zeros((3, len_route))
 
         # Initial conditions
-        self.state_reaching[:, 0] = init_state
+        self.sos_state[:, 0] = init_state
 
         # Variables containers
         self.travel_times = np.zeros(len_route - 1)
@@ -112,41 +112,52 @@ class ElectricVehicle:
         self.service_time = np.zeros(len_route)
         self.pre_service_waiting_time = np.zeros(len_route)
         self.post_service_waiting_time = np.zeros(len_route)
-        self.post_service_waiting_time[0] = first_pwt
+
+    def tt(self, tod: float, edge: Network.Edge):
+        v = edge.get_velocity(tod)[0]
+        return travel_time(v, edge.length)
+
+    def Ec(self, tod: float, m: float, g: float, edge: Network.Edge):
+        v = edge.get_velocity(tod)[0]
+        e = energy_consumption(v, edge.length, m, self.Cr, self.c1, self.c2, g, self.Af, self.Cd,
+                               self.rho_air, edge.road_cos_length, edge.road_sin_length)
+        return e
 
     def step(self, network: Network.DeterministicCapacitatedNetwork, g=9.8):
         S, L = self.S, self.L
         Sk0, Sk1, Lk0, Lk1, k = S[0], S[1], L[0], L[1], 0
         for k, (Sk0, Sk1, Lk0, Lk1) in enumerate(zip(S[:-1], S[1:], L[:-1], L[1:])):
-            spent_time = network.spent_time(Sk0, self.state_reaching[1, k], Lk0)
+            spent_time = network.spent_time(Sk0, self.sos_state[1, k], Lk0)
             f0k = np.array([spent_time, Lk0, -network.demand(Sk0)])
-            self.state_leaving[:, k] = self.state_reaching[:, k] + f0k
+            self.eos_state[:, k] = self.sos_state[:, k] + f0k
 
-            v_ij, _ = network.v(Sk0, Sk1, self.state_leaving[0, k])  # m/s
-            # v_ij = v_ij[0] if len(v_ij) > 1 else v_ij
-
+            eos_time = self.eos_state[0, k]
             edge = network.edges[Sk0][Sk1]
-            m = self.weight + self.state_leaving[2, k]  # kg
-            F = edge.road_cos_length * g * self.Cr * 1e-3 * (self.c1 * v_ij + self.c2) + edge.road_sin_length * g
-            G = self.rho_air * self.Af * self.Cd * v_ij ** 2 * edge.length / 2.
+            m = self.weight + self.eos_state[2, k]  # kg
 
-            E_ij = m * F + G  # J
+            # v_ij, _ = network.v(Sk0, Sk1, eos_time)  # m/s
+            # F = edge.road_cos_length * g * self.Cr * 1e-3 * (self.c1 * v_ij + self.c2) + edge.road_sin_length * g
+            # G = self.rho_air * self.Af * self.Cd * v_ij ** 2 * edge.length / 2.
+            # E_ij = m * F + G  # J
+            # t_ij = edge.length / v_ij if v_ij else 0.0  # s
+
+            t_ij = self.tt(eos_time, edge)
+            E_ij = self.Ec(eos_time, m, g, edge)
             e_ij = 100 * E_ij / self.battery_capacity
-            t_ij = edge.length / v_ij if v_ij else 0.0  # s
+
+            f1k = np.array([t_ij, -e_ij, 0])
+            self.sos_state[:, k + 1] = self.eos_state[:, k] + f1k
 
             self.travel_times[k] = t_ij
             self.energy_consumption[k] = e_ij
             self.charging_times[k] = spent_time if network.is_charging_station(Sk0) else 0.
             self.service_time[k] = spent_time
 
-            f1k = np.array([t_ij, -e_ij, 0])
-            self.state_reaching[:, k + 1] = self.state_leaving[:, k] + f1k
-
         # Update what happens at the end
         k += 1
-        spent_time = network.spent_time(Sk0, self.state_reaching[1, k], Lk0)
-        f0k = np.array([spent_time, Lk0, -network.demand(Sk0)])
-        self.state_leaving[:, k] = self.state_reaching[:, k] + f0k
+        spent_time = network.spent_time(self.S[k], self.sos_state[1, k], self.L[k])
+        f0k = np.array([spent_time, self.L[k], -network.demand(self.S[k])])
+        self.eos_state[:, k] = self.sos_state[:, k] + f0k
 
     def check_feasibility(self, network: Network.Network, penalization_constant=500000.0):
         self.penalization = 0.0
@@ -158,102 +169,183 @@ class ElectricVehicle:
         return self.penalization
 
     def constraint_max_tour_time(self):
-        if self.state_reaching[0, -1] - self.state_reaching[0, 0] > self.current_max_tour_duration:
+        if self.sos_state[0, -1] - self.sos_state[0, 0] > self.current_max_tour_duration:
             self.penalization += penalization_deterministic(self.max_tour_duration,
-                                                            self.state_reaching[0, -1] - self.state_leaving[0, 0])
+                                                            self.sos_state[0, -1] - self.eos_state[0, 0])
 
     def constraint_max_payload(self):
-        if self.state_leaving[2, 0] > self.max_payload:
-            self.penalization += penalization_deterministic(self.state_leaving[2, 0], self.max_payload)
+        if self.eos_state[2, 0] > self.max_payload:
+            self.penalization += penalization_deterministic(self.eos_state[2, 0], self.max_payload)
 
     def constraint_time_window_and_soc_policy(self, network: Network.Network):
         for k, (Sk, Lk) in enumerate(zip(self.S, self.L)):
             node = network.nodes[Sk]
             if node.is_customer():
                 # TIME WINDOW LOW BOUND
-                if node.time_window_low > self.state_reaching[0, k]:
-                    self.penalization += penalization_deterministic(self.state_reaching[0, k], node.time_window_low)
+                if node.time_window_low > self.sos_state[0, k]:
+                    self.penalization += penalization_deterministic(self.sos_state[0, k], node.time_window_low)
 
                 # TIME WINDOW UPPER BOUND
-                if node.time_window_upp < self.state_leaving[0, k]:
-                    self.penalization += penalization_deterministic(node.time_window_upp, self.state_leaving[0, k])
+                if node.time_window_upp < self.eos_state[0, k]:
+                    self.penalization += penalization_deterministic(node.time_window_upp, self.eos_state[0, k])
 
             # SOC BOUND LOWER - REACHING
-            if self.state_reaching[1, k] < self.alpha_down:
-                self.penalization += penalization_deterministic(self.state_reaching[1, k], self.alpha_down)
+            if self.sos_state[1, k] < self.alpha_down:
+                self.penalization += penalization_deterministic(self.sos_state[1, k], self.alpha_down)
 
             # SOC BOUND UPPER - REACHING
-            if self.state_reaching[1, k] > self.alpha_up:
-                self.penalization += penalization_deterministic(self.state_reaching[1, k], self.alpha_up)
+            if self.sos_state[1, k] > self.alpha_up:
+                self.penalization += penalization_deterministic(self.sos_state[1, k], self.alpha_up)
 
             # SOC BOUND LOWER - LEAVING
-            if self.state_leaving[1, k] < self.alpha_down:
-                self.penalization += penalization_deterministic(self.state_leaving[1, k], self.alpha_down)
+            if self.eos_state[1, k] < self.alpha_down:
+                self.penalization += penalization_deterministic(self.eos_state[1, k], self.alpha_down)
 
             # SOC BOUND UPPER - LEAVING
-            if self.state_leaving[1, k] > self.alpha_up:
-                self.penalization += penalization_deterministic(self.state_leaving[1, k], self.alpha_up)
+            if self.eos_state[1, k] > self.alpha_up:
+                self.penalization += penalization_deterministic(self.eos_state[1, k], self.alpha_up)
 
             # SOC 0 - REACHING
-            if self.state_reaching[1, k] < 0:
-                self.penalization += penalization_deterministic(self.state_reaching[1, k], 0, c=1e5, w=1e3)
+            if self.sos_state[1, k] < 0:
+                self.penalization += penalization_deterministic(self.sos_state[1, k], 0, c=1e5, w=1e3)
 
             # SOC 100 - REACHING
-            if self.state_reaching[1, k] > 100:
-                self.penalization += penalization_deterministic(self.state_reaching[1, k], 100, c=1e5, w=1e3)
+            if self.sos_state[1, k] > 100:
+                self.penalization += penalization_deterministic(self.sos_state[1, k], 100, c=1e5, w=1e3)
 
             # SOC 0 - LEAVING
-            if self.state_leaving[1, k] < 0:
-                self.penalization += penalization_deterministic(self.state_leaving[1, k], 0, c=1e5, w=1e3)
+            if self.eos_state[1, k] < 0:
+                self.penalization += penalization_deterministic(self.eos_state[1, k], 0, c=1e5, w=1e3)
 
             # SOC 100 - LEAVING
-            if self.state_leaving[1, k] > 100:
-                self.penalization += penalization_deterministic(self.state_leaving[1, k], 100, c=1e5, w=1e3)
+            if self.eos_state[1, k] > 100:
+                self.penalization += penalization_deterministic(self.eos_state[1, k], 100, c=1e5, w=1e3)
 
     def plot_operation(self, network: Network.Network, **kwargs):
         # Figure
         fig, (ax1, ax2, ax3) = plt.subplots(1, 3, **kwargs)
 
-        # Containers
-        X, XX, times, soc, payload = [], [], [], [], []
-        for k, Sk in enumerate(self.S):
-            X += [k]
-            XX += [k] + [k]
-            times += [self.state_reaching[0, k], self.state_leaving[0, k]]
-            soc += [self.state_reaching[1, k], self.state_leaving[1, k]]
-            payload += [self.state_reaching[2, k], self.state_leaving[2, k]]
+        # Figure 1
+        self.draw_time_windows(network, ax1)
+        self.draw_service_times(network, ax1)
+        self.draw_travelling_times(ax1)
+        self.draw_max_tour_time(ax1)
+        self.draw_depots_times(network, ax1)
 
-        # Time windows
-        twu = network.time_window_upp
-        twl = network.time_window_low
-        tws = np.array([[(twu(i) + twl(i)) / 2, (twu(i) - twl(i)) / 2] if network.is_customer(i)
-                        else [-1, -1] for i in self.S])
-
-        # FIGURE 1 - Time
-        for k, (Sk, Xk) in enumerate(zip(self.S, X)):
-            if network.is_customer(Sk):
-                ax1.errorbar(Xk, tws[k, 0], tws[k, 1], ecolor='black', fmt='none', capsize=6, elinewidth=1, )
-        ax1.plot(XX, times)
         ax1.set_xlabel('Stop')
         ax1.set_ylabel('Time of day [s]')
         ax1.set_title(f'Time EV {self.id}')
+        ax1.grid()
+        ax1.legend()
 
-        # SOC figure
-        ax2.plot(XX, soc)
-        ax2.axhline(self.alpha_down, linestyle='--', color='black', label='SOH policy')
-        ax2.axhline(self.alpha_up, linestyle='--', color='black', label=None)
-        ax2.fill_between([-1, len(self.S)], self.alpha_down, self.alpha_up, color='lightgrey', alpha=.35)
+        # Figure 2
+        self.draw_service_soc(network, ax2)
+        self.draw_travelling_soc(ax2)
+        self.draw_soc_policy(ax2)
+
         ax2.set_xlabel('Stop')
         ax2.set_ylabel('SOC [%]')
         ax2.set_title(f'SOC EV {self.id}')
         ax2.set_ylim((0, 100))
+        ax2.set_xlim((-.5, len(self.S) - .5))
+        ax2.grid()
+        ax2.legend()
 
-        # Payload figure
-        ax3.plot(XX, payload)
-        ax2.set_xlabel('Stop')
-        ax2.set_ylabel('Payload [kg]')
-        ax2.set_title(f'Payload EV {self.id}')
+        # Figure 3
+        self.draw_service_payload(ax3)
+        self.draw_travelling_payload(ax3)
+        ax3.axhline(self.max_payload, linestyle='--', color='black', label='Max. payload')
+
+        ax3.set_xlabel('Stop')
+        ax3.set_ylabel('Payload [kg]')
+        ax3.set_title(f'Payload EV {self.id}')
+        ax3.grid()
+        ax3.legend()
+
+        # Adjust figure
+        fig.tight_layout()
         return fig, (ax1, ax2, ax3)
+
+    def draw_time_windows(self, network: Network.Network, ax: plt.Axes):
+        X = [k for k, _ in enumerate(self.S) if network.is_customer(self.S[k])]
+        twl = [network.time_window_low(self.S[k]) for k in X]
+        twu = [network.time_window_upp(self.S[k]) for k in X]
+        twdiff = np.asarray(twu) - np.asarray(twl)
+        twdescription = np.array([np.zeros_like(twl), twdiff])
+        ax.errorbar(X, twl, twdescription, ecolor='black', fmt='none', capsize=6, elinewidth=1, )
+        return
+
+    def draw_service_times(self, network: Network.Network, ax: plt.Axes):
+        X_customer = [k for k, _ in enumerate(self.S) if network.is_customer(self.S[k])]
+        X_cs = [k for k, _ in enumerate(self.S) if network.is_charging_station(self.S[k])]
+
+        # Arrows for customers
+        draw_service_time_arrows(self, X_customer, ax, 'SeaGreen', 'Serving customer')
+
+        # Arrows for CSs
+        draw_service_time_arrows(self, X_cs, ax, 'Crimson', 'Recharging battery')
+        return
+
+    def draw_travelling_times(self, ax: plt.Axes):
+        preX = list(range(len(self.S)))
+        X = preX[:-1]
+        Y = self.eos_state[0, :-1] + self.post_service_waiting_time[:-1]  # TODO Check
+        U = np.ones_like(preX[1:])
+        V = self.sos_state[0, 1:] - self.pre_service_waiting_time[1:] - Y
+        ax.quiver(X, Y, U, V, scale=1, angles='xy', scale_units='xy', color='SteelBlue', width=0.0004 * 16, zorder=15,
+                  label='Travelling')
+
+    def draw_max_tour_time(self, ax: plt.Axes):
+        ax.axhline(self.sos_state[0, 0] + self.current_max_tour_duration, linestyle='--', color='black',
+                   label='Maximum tour time')
+        return
+
+    def draw_depots_times(self, network: Network.Network, ax: plt.Axes):
+        X_depot = [k for k, _ in enumerate(self.S) if network.is_depot(self.S[k])]
+        Y_depot = self.sos_state[0, X_depot]
+        ax.plot(X_depot, Y_depot, 'ko', alpha=0.)
+        return
+
+    def draw_service_soc(self, network: Network.Network, ax: plt.axes):
+        X_cs = [k for k, _ in enumerate(self.S) if network.is_charging_station(self.S[k])]
+        draw_soc_arrows(self, X_cs, ax, 'Crimson', 'Recharging battery')
+        return
+
+    def draw_travelling_soc(self, ax: plt.Axes):
+        preX = list(range(len(self.S)))
+        X = preX[:-1]
+        Y = self.eos_state[1, :-1]
+        U = np.ones_like(preX[1:])
+        V = self.sos_state[1, 1:] - Y
+
+        ax.quiver(X, Y, U, V, scale=1, angles='xy', scale_units='xy', color='SteelBlue', width=0.0004 * 16, zorder=15,
+                  label='Travelling')
+        return
+
+    def draw_soc_policy(self, ax: plt.Axes):
+        ax.axhline(self.alpha_up, linestyle='--', color='black', label='SOH policy')
+        ax.axhline(self.alpha_down, linestyle='--', color='black', label='SOH policy')
+        ax.fill_between([-1, len(self.S)], self.alpha_down, self.alpha_up, color='lightgrey', alpha=.35)
+        return
+
+    def draw_travelling_payload(self, ax: plt.Axes):
+        preX = list(range(len(self.S)))
+        X = preX[:-1]
+        Y = self.eos_state[2, :-1]
+        U = np.ones_like(preX[1:])
+        V = self.sos_state[2, 1:] - Y
+
+        ax.quiver(X, Y, U, V, scale=1, angles='xy', scale_units='xy', color='SteelBlue', width=0.0004 * 16, zorder=15,
+                  label='Travelling')
+        return
+
+    def draw_service_payload(self, ax: plt.Axes):
+        X = list(range(len(self.S)))
+        Y = self.sos_state[2, :]
+        V = self.eos_state[2, :] - Y
+        U = np.zeros_like(V)
+        ax.quiver(X, Y, U, V, scale=1, angles='xy', scale_units='xy', color='SeaGreen', width=0.0004 * 16, headwidth=6,
+                  zorder=10, label='Serving customer')
 
     def xml_element(self, assign_customers=False, with_route=False, this_id=None):
         the_id = this_id if this_id is not None else self.id
@@ -297,9 +389,114 @@ class ElectricVehicle:
                    max_payload, assigned_customers=assigned_customers)
 
 
+"""
+DETERMINISTIC EV WITH WAITING TIMES CLASS
+"""
+
+
+def pre_service_waiting_time(eos_time, tt, lower_tw):
+    arrival_time = eos_time + tt
+    pre_wt = lower_tw - arrival_time if lower_tw > arrival_time else 0.0
+    return pre_wt
+
+
+def post_service_waiting_time(eos_time, pre_wt, tt_with_pre_wt, lower_tw):
+    """
+    Calculates post service time
+    @param eos_time: EOS time
+    @param pre_wt: pre service waiting time
+    @param tt_with_pre_wt: travel time considering that the EV departs at tod eos_time + pre_wt
+    @param lower_tw: lower time window of target node
+    @return: post-waiting time and residual pre-waiting time
+    """
+    post_wt = pre_wt
+    residual_pre_wt = pre_service_waiting_time(eos_time + pre_wt, tt_with_pre_wt, lower_tw)
+    return post_wt, residual_pre_wt
+
+
 class ElectricVehicleWithWaitingTimes(ElectricVehicle):
+    def set_route(self, S: Tuple[int, ...], L: Tuple[float, ...], x1_0: float, x2_0: float, x3_0: float,
+                  first_pwt: float = 0.):
+        super(ElectricVehicleWithWaitingTimes, self).set_route(S, L, x1_0, x2_0, x3_0)
+        self.post_service_waiting_time[0] = first_pwt
+
     def step(self, network: Network.DeterministicCapacitatedNetwork, g=9.8):
-        pass
+        S, L = self.S, self.L
+        Sk0, Sk1, Lk0, Lk1, k = S[0], S[1], L[0], L[1], 0
+        for k, (Sk0, Sk1, Lk0, Lk1) in enumerate(zip(S[:-1], S[1:], L[:-1], L[1:])):
+            # Calculate EOS time
+            spent_time = network.spent_time(Sk0, self.sos_state[1, k], Lk0)
+            post_wt = self.post_service_waiting_time[k]
+            eos_time = self.sos_state[0, k] + spent_time + post_wt
+
+            # Obtain pre and post waiting times
+            edge = network.edges[Sk0][Sk1]
+            m = self.weight + self.sos_state[2, k] - network.demand(Sk0)  # kg
+            lower_tw = network.time_window_low(Sk1)
+
+            t_ij = self.tt(eos_time, edge)
+            E_ij = self.Ec(eos_time, m, g, edge)
+
+            pre_wt = pre_service_waiting_time(eos_time, t_ij, lower_tw)
+
+            if pre_wt:  # EV has to wait. Check post wt
+                _t_ij = self.tt(eos_time + pre_wt, edge)
+                _E_ij = self.Ec(eos_time + pre_wt, m, g, edge)
+                to_add_post_wt, residual_pre_wt = post_service_waiting_time(eos_time, pre_wt, _t_ij, lower_tw)
+                post_wt += to_add_post_wt
+
+                if _E_ij < E_ij:  # Post wt provides lower energy consumption
+                    pre_wt = residual_pre_wt
+                    t_ij = _t_ij
+                    E_ij = _E_ij
+
+                else:
+                    post_wt = 0.
+
+            e_ij = 100 * E_ij / self.battery_capacity
+
+            # Update EOS state
+            f0k = np.array([spent_time, Lk0, -network.demand(Sk0)])
+            self.eos_state[:, k] = self.sos_state[:, k] + f0k
+
+            # Update SOS state at next stop
+            f1k = np.array([post_wt + t_ij + pre_wt, -e_ij, 0])
+            self.sos_state[:, k + 1] = self.eos_state[:, k] + f1k
+
+            # Update containers
+            self.travel_times[k] = t_ij
+            self.energy_consumption[k] = e_ij
+            self.charging_times[k] = spent_time if network.is_charging_station(Sk0) else 0.
+            self.service_time[k] = spent_time
+            self.post_service_waiting_time[k] = post_wt
+            self.pre_service_waiting_time[k + 1] = pre_wt
+
+        # Update what happens at the end
+        k += 1
+        spent_time = network.spent_time(Sk0, self.sos_state[1, k], Lk0)
+        f0k = np.array([spent_time, Lk0, -network.demand(Sk0)])
+        self.eos_state[:, k] = self.sos_state[:, k] + f0k
+
+    def plot_operation(self, network: Network.Network, **kwargs):
+        fig, (ax1, ax2, ax3) = super(ElectricVehicleWithWaitingTimes, self).plot_operation(network, **kwargs)
+        self.draw_waiting_times(ax1)
+        return fig, (ax1, ax2, ax3)
+
+    def draw_waiting_times(self, ax: plt.Axes):
+        X = list(range(len(self.S)))
+
+        Y_pre = self.sos_state[0, :] - self.pre_service_waiting_time
+        U = np.zeros_like(X)
+        V = self.pre_service_waiting_time
+        ax.quiver(X, Y_pre, U, V, scale=1, angles='xy', scale_units='xy', color='Orange', width=0.0004 * 16,
+                  headwidth=6, zorder=10)
+
+        Y_post = self.eos_state[0, :]
+        U = np.zeros_like(X)
+        V = self.post_service_waiting_time
+        ax.quiver(X, Y_post, U, V, scale=1, angles='xy', scale_units='xy', color='Orange', width=0.0004 * 16,
+                  headwidth=6, zorder=10)
+        return
 
 
 """
@@ -320,7 +517,7 @@ def probability_in_node(probability_container: np.ndarray, mu: float, sigma: flo
     @return: None. The probability container is modified in place to store the probability values
     """
     if dt is None:
-        dt = int(24*60*60/len(probability_container))
+        dt = int(24 * 60 * 60 / len(probability_container))
     t = 0
     for i, (_, evaluate) in enumerate(zip(probability_container, do_evaluation_container)):
         if evaluate:
@@ -384,13 +581,13 @@ class GaussianElectricVehicle(ElectricVehicle):
         S, L = self.S, self.L
         Sk0, Sk1, Lk0, Lk1, k = S[0], S[1], L[0], L[1], 0
         for k, (Sk0, Sk1, Lk0, Lk1) in enumerate(zip(S[:-1], S[1:], L[:-1], L[1:])):
-            spent_time = network.spent_time(Sk0, self.state_reaching[1, k], Lk0)
+            spent_time = network.spent_time(Sk0, self.sos_state[1, k], Lk0)
             f0k = np.array([spent_time, Lk0, -network.demand(Sk0)])
-            self.state_leaving[:, k] = self.state_reaching[:, k] + f0k
+            self.eos_state[:, k] = self.sos_state[:, k] + f0k
 
             edge = network.edges[Sk0][Sk1]
-            v_ij, sigma_ij = network.v(Sk0, Sk1, self.state_leaving[0, k])  # m/s
-            m = self.weight + self.state_leaving[2, k]  # kg
+            v_ij, sigma_ij = network.v(Sk0, Sk1, self.eos_state[0, k])  # m/s
+            m = self.weight + self.eos_state[2, k]  # kg
 
             a1 = self.rho_air * self.Af * self.Cd * edge.length * v_ij ** 2 / 2
             a2 = edge.road_cos_length * g * self.Cr * self.c1 * m * v_ij / 1000
@@ -408,7 +605,7 @@ class GaussianElectricVehicle(ElectricVehicle):
             sigma_t_ij = -edge.length * sigma_ij / v_ij ** 2 if v_ij else 0.0  # s
 
             f1k = np.array([mu_t_ij, -mu_e_ij, 0])
-            self.state_reaching[:, k + 1] = self.state_leaving[:, k] + f1k
+            self.sos_state[:, k + 1] = self.eos_state[:, k] + f1k
 
             self.Q[0, 0] = sigma_t_ij ** 2
             self.Q[0, 1] = sigma_t_ij * sigma_e_ij
@@ -432,10 +629,10 @@ class GaussianElectricVehicle(ElectricVehicle):
                 self.visits_a_cs = True
 
         # Update what happens at the end (leaving)
-        spent_time = network.spent_time(Sk1, self.state_reaching[1, k], Lk1)
+        spent_time = network.spent_time(Sk1, self.sos_state[1, k], Lk1)
         f0k = np.array([spent_time, Lk1, -network.demand(Sk1)])
         self.service_time[k + 1] = spent_time
-        self.state_leaving[:, k + 1] = self.state_reaching[:, k + 1] + f0k
+        self.eos_state[:, k + 1] = self.sos_state[:, k + 1] + f0k
         # self.visited_nodes[Sk1] += 1
 
     def probability_in_node(self, node_id: int, do_evaluation_container: np.ndarray):
@@ -450,7 +647,7 @@ class GaussianElectricVehicle(ElectricVehicle):
         position_in_S = [k for k, Sk in enumerate(self.S) if Sk == node_id]
         # sample_time = self.sample_time_probability_in_cs
         for k in position_in_S:
-            mu = self.state_reaching[0, k]
+            mu = self.sos_state[0, k]
             sigma = np.sqrt(self.state_reaching_covariance[0, 3 * k])  # TODO is this better than math.sqrt(.)?
             spent_time = self.service_time[k]
             probability_in_node(self.probability_in_node_container[node_id, :], mu, sigma, spent_time,
@@ -467,15 +664,15 @@ class GaussianElectricVehicle(ElectricVehicle):
         return self.penalization
 
     def constraint_max_tour_time(self, PRB=.9545):
-        MU = self.state_reaching[0, -1]
+        MU = self.sos_state[0, -1]
         SIG = np.sqrt(self.state_reaching_covariance[0, -3])
         VAL = self.max_tour_duration + self.x1_0
         CDF = normal_cdf(VAL, MU, SIG)
         self.penalization += penalization_stochastic(CDF, PRB, w=1e4)
 
     def constraint_max_payload(self):
-        if self.state_leaving[2, 0] > self.max_payload:
-            self.penalization += penalization_deterministic(self.state_leaving[2, 0], self.max_payload)
+        if self.eos_state[2, 0] > self.max_payload:
+            self.penalization += penalization_deterministic(self.eos_state[2, 0], self.max_payload)
 
     def constraint_time_window_and_soc_policy(self, network: Network.Network):
         for k, (Sk, Lk) in enumerate(zip(self.S, self.L)):
@@ -485,7 +682,7 @@ class GaussianElectricVehicle(ElectricVehicle):
                 TIME WINDOW - LOWER BOUND
                 """
                 PRB = .9545
-                MU = self.state_reaching[0, k]
+                MU = self.sos_state[0, k]
                 SIG = np.sqrt(self.state_reaching_covariance[0, 3 * k])
                 VAL = node.time_window_low
                 CDF = 1 - normal_cdf(VAL, MU, SIG)
@@ -495,7 +692,7 @@ class GaussianElectricVehicle(ElectricVehicle):
                 TIME WINDOW - UPPER BOUND
                 """
                 PRB = .9545
-                MU = self.state_leaving[0, k]
+                MU = self.eos_state[0, k]
                 SIG = np.sqrt(self.state_reaching_covariance[0, 3 * k])
                 VAL = node.time_window_upp
                 CDF = normal_cdf(VAL, MU, SIG)
@@ -505,7 +702,7 @@ class GaussianElectricVehicle(ElectricVehicle):
             SOC BOUND - REACHING
             """
             PRB = .9545
-            MU = self.state_reaching[1, k]
+            MU = self.sos_state[1, k]
             SIG = np.sqrt(self.state_reaching_covariance[1, 3 * k + 1])
             VAL1 = self.alpha_up
             VAL2 = self.alpha_down
@@ -518,7 +715,7 @@ class GaussianElectricVehicle(ElectricVehicle):
             SOC BOUND LOWER - LEAVING
             """
             PRB = .9545
-            MU = self.state_leaving[1, k]
+            MU = self.eos_state[1, k]
             SIG = SIG
             VAL1 = self.alpha_up
             VAL2 = self.alpha_down
@@ -526,6 +723,18 @@ class GaussianElectricVehicle(ElectricVehicle):
             CDF2 = normal_cdf(VAL2, MU, SIG)
             CDF = CDF1 - CDF2
             self.penalization += penalization_stochastic(CDF, PRB, w=1e4)
+
+    def draw_travelling_times(self, ax: plt.Axes):
+        super(GaussianElectricVehicle, self).draw_travelling_times(ax)
+        Q = self.state_reaching_covariance
+        X = list(range(len(self.S)))
+        Y_reaching_std = np.array([np.sqrt(q) for i, q in enumerate(Q[0, :]) if i % 3 == 0])
+        r_time = self.sos_state[0, :]
+        l_time = self.eos_state[0, :]
+        plt.fill_between(X, r_time - 3 * Y_reaching_std, r_time + 3 * Y_reaching_std, color='red', alpha=0.2)
+
+        Y_leaving_std = np.array([np.sqrt(q) for i, q in enumerate(Q[0, :]) if i % 3 == 0])
+        plt.fill_between(X, l_time - 3 * Y_leaving_std, l_time + 3 * Y_leaving_std, color='green', alpha=0.2)
 
     def xml_element(self, assign_customers=False, with_route=False, this_id=None):
         element = super(GaussianElectricVehicle, self).xml_element(assign_customers, with_route, this_id)
@@ -539,6 +748,23 @@ class GaussianElectricVehicle(ElectricVehicle):
         return instance
 
 
+"""
+USEFUL FUNCTIONS
+"""
+
+
+def travel_time(v: float, d: float):
+    tt = d / v if v else 0.0
+    return tt
+
+
+def energy_consumption(v, d, m, Cr, c1, c2, g, Af, Cd, rho_air, road_cos_length, road_sin_length):
+    F = road_cos_length * g * Cr * 1e-3 * (c1 * v + c2) + road_sin_length * g
+    G = rho_air * Af * Cd * v ** 2 * d / 2.
+    Ec = m * F + G  # J
+    return Ec
+
+
 def from_xml_element(element: ET.Element, ev_type: Union[object, str] = None):
     if ev_type is None:
         cls = globals()[element.get('type')]
@@ -547,3 +773,25 @@ def from_xml_element(element: ET.Element, ev_type: Union[object, str] = None):
     else:
         cls = ev_type
     return cls.from_xml_element(element)
+
+
+def draw_service_time_arrows(ev: ElectricVehicle, X: list, ax: plt.Axes, color: str, label: str):
+    Y = [ev.sos_state[0, k] for k in X]
+    V = [ev.service_time[k] for k in X]
+    U = np.zeros_like(V)
+    ax.quiver(X, Y, U, V, scale=1, angles='xy', scale_units='xy', color=color, width=0.0004 * 16, headwidth=6,
+              zorder=10, label=label)
+
+
+def draw_soc_arrows(ev: ElectricVehicle, X: list, ax: plt.Axes, color: str, label: str):
+    Y = [ev.sos_state[1, k] for k in X]
+    V = [ev.L[k] for k in X]
+    U = np.zeros_like(V)
+    ax.quiver(X, Y, U, V, scale=1, angles='xy', scale_units='xy', color=color, width=0.0004 * 16, headwidth=6,
+              zorder=10, label=label)
+
+
+def place_labels(ev: ElectricVehicle, X: list, ax: plt.Axes, x_off=0.0, y_off=0.0):
+    return
+
+

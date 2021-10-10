@@ -151,8 +151,8 @@ class OptimizationData:
         for id_ev, ev in self.fleet.vehicles.items():
             ev_filepath = Path(folder_path, f'EV{id_ev}_operation.csv')
             route_data = pd.DataFrame({'Sk': ev.S, 'Lk': ev.L})
-            reaching_data = pd.DataFrame(ev.state_reaching.T, columns=['x1_reaching', 'x2_reaching', 'x3_reaching'])
-            leaving_data = pd.DataFrame(ev.state_leaving.T, columns=['x1_leaving', 'x2_leaving', 'x3_leaving'])
+            reaching_data = pd.DataFrame(ev.sos_state.T, columns=['x1_reaching', 'x2_reaching', 'x3_reaching'])
+            leaving_data = pd.DataFrame(ev.eos_state.T, columns=['x1_leaving', 'x2_leaving', 'x3_leaving'])
             data = pd.concat([route_data, reaching_data, leaving_data], axis=1)
             data.to_csv(ev_filepath)
 

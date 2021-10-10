@@ -227,7 +227,7 @@ def betaGA(fleet: Fleet, hp: HyperParameters, save_to: str = None, best_ind: Ind
            savefig=False):
     fleet.assign_customers_in_route()
     customers_to_visit = {ev_id: ev.assigned_customers for ev_id, ev in fleet.vehicles.items()}
-    starting_points = {ev_id: (0, 0, fleet.vehicles[ev_id].state_leaving[0, 0],
+    starting_points = {ev_id: (0, 0, fleet.vehicles[ev_id].eos_state[0, 0],
                                                ev.alpha_up, sum([fleet.network.demand(x)
                                                                  for x in ev.assigned_customers]))
                        for ev_id, ev in fleet.vehicles.items()}

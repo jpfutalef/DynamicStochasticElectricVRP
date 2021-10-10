@@ -98,7 +98,7 @@ if __name__ == '__main__':
         PreOperation.folder_pre_operation(args.target_folder, args.soc_policy, args.additional_vehicles,
                                           args.fill_up_to, None, method, args.preop_repetitions, fleet_type,
                                           ev_type, network_type, edge_type, args.sat_prob_sample_time,
-                                          args.cs_capacities)
+                                          args.cs_capacities, args.parallel)
 
     # Online stage
     elif args.stage == 2:

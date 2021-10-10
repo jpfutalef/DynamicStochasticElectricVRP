@@ -126,7 +126,7 @@ class Fleet:
         time_vectors = []
         for id_ev in self.vehicles_to_route:
             ev = self.vehicles[id_ev]
-            time_vectors.append((ev.state_leaving[0, :-1], ev.state_reaching[0, 1:], ev.S))
+            time_vectors.append((ev.eos_state[0, :-1], ev.sos_state[0, 1:], ev.S))
         if init_theta is not None:
             self.network.iterate_cs_capacities(init_theta, time_vectors, len(self))
         else:
@@ -218,7 +218,12 @@ class Fleet:
 
     def plot_operation_pyplot(self, size_ev_op=(16, 5), size_cs_occupation=(16, 5), **kwargs):
         figs = []
-        figs += self.plot_ev_operation(fig_size=size_ev_op)
+        #figs += self.plot_ev_operation(fig_size=size_ev_op)
+        #figs.append(self.plot_cs_occupation(figsize=size_cs_occupation))
+
+        for ev_id, ev in self.vehicles.items():
+            fig, (ax1, ax2, ax3) = ev.plot_operation(self.network, figsize=size_ev_op, **kwargs)
+            figs.append(fig)
         figs.append(self.plot_cs_occupation(figsize=size_cs_occupation))
         return figs
 
@@ -227,7 +232,7 @@ class Fleet:
         figs = []
         for id_ev, vehicle in self.vehicles.items():
             Si, Li = vehicle.S, vehicle.L
-            st_reaching, st_leaving = vehicle.state_reaching, vehicle.state_leaving
+            st_reaching, st_leaving = vehicle.sos_state, vehicle.eos_state
             r_time, r_soc, r_payload = st_reaching[0, :], st_reaching[1, :], st_reaching[2, :]
             l_time, l_soc, l_payload = st_leaving[0, :], st_leaving[1, :], st_leaving[2, :]
 
@@ -291,7 +296,7 @@ class Fleet:
             if arrival_at_depot_times is not None:
                 plt.axhline(arrival_at_depot_times[id_ev], linestyle='--', color='black', label='Maximum tour time')
             else:
-                plt.axhline(vehicle.state_reaching[0, 0] + vehicle.current_max_tour_duration, linestyle='--',
+                plt.axhline(vehicle.sos_state[0, 0] + vehicle.current_max_tour_duration, linestyle='--',
                             color='black', label='Maximum tour time')
 
             # Annotate nodes
@@ -526,7 +531,7 @@ class GaussianFleet(Fleet):
             for ev_id, ev in self.vehicles.items():
                 var_array = np.array([np.sqrt(x) for x in ev.state_reaching_covariance[0, ::3]])
                 single_ev_box(self.network.low_res_occupation_container[cs_id, :], self.sat_prob_sample_time, cs_id,
-                              ev.state_reaching[0, :], ev.state_leaving[0, :], ev.S, var_array, std_factor=std_factor)
+                              ev.sos_state[0, :], ev.eos_state[0, :], ev.S, var_array, std_factor=std_factor)
             check_capacity_from_box(self.network.nodes[cs_id].capacity, self.network.do_evaluation_container[cs_id, :],
                                     self.network.low_res_occupation_container[cs_id, :])
 

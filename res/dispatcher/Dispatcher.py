@@ -289,14 +289,14 @@ class Dispatcher:
         ev.step(n)
 
         # Find critical nodes
-        for k, (sos_time, Sk, Lk) in enumerate(zip(ev.state_reaching[0, :], S_anchor, L_anchor)):
+        for k, (sos_time, Sk, Lk) in enumerate(zip(ev.sos_state[0, :], S_anchor, L_anchor)):
             if sos_time - meas.time >= self.ga_time + self.offset_time:
                 j_critical = j_curr + j_anchor + k
                 S_critical = Sk
                 L_critical = Lk
-                x1_critical = ev.state_reaching[0, k]
-                x2_critical = ev.state_reaching[1, k]
-                x3_critical = ev.state_reaching[2, k]
+                x1_critical = ev.sos_state[0, k]
+                x2_critical = ev.sos_state[1, k]
+                x3_critical = ev.sos_state[2, k]
 
                 critical_state = onGA.CriticalState(j_critical, S_critical, L_critical, x1_critical, x2_critical,
                                                     x3_critical)
@@ -428,16 +428,16 @@ class Dispatcher:
             """
             SECOND - Calculate critical points and states
             """
-            for k, (sos_time, S0, L0) in enumerate(zip(ev.state_reaching[0, :], nS, nL)):
+            for k, (sos_time, S0, L0) in enumerate(zip(ev.sos_state[0, :], nS, nL)):
                 if sos_time - meas.time >= self.ga_time + self.offset_time:
                     # Few customers ahead. Pass.
                     if sum([1 for i in nS[k:] if self.network.is_customer(i)]) <= 1:
                         break
 
                     j_critical = j0 + j1 + k
-                    x1_critical = float(ev.state_reaching[0, k])
-                    x2_critical = float(ev.state_reaching[1, k])
-                    x3_critical = float(ev.state_reaching[2, k])
+                    x1_critical = float(ev.sos_state[0, k])
+                    x2_critical = float(ev.sos_state[1, k])
+                    x3_critical = float(ev.sos_state[2, k])
                     ev.assigned_customers = tuple(i for i in nS if self.network.is_customer(i))
                     critical_nodes[id_ev] = onGA.CriticalNodeInfo(j_critical, S0, L0, x1_critical, x2_critical,
                                                                   x3_critical)
@@ -522,16 +522,16 @@ class Dispatcher:
             """
             SECOND - Calculate critical points and states
             """
-            for k, (sos_time, S0, L0) in enumerate(zip(ev.state_reaching[0, :], nS, nL)):
+            for k, (sos_time, S0, L0) in enumerate(zip(ev.sos_state[0, :], nS, nL)):
                 if sos_time - meas.time >= self.ga_time + self.offset_time:
                     # Few customers ahead. Pass.
                     if sum([1 for i in nS[k:] if self.network.is_customer(i)]) <= 1:
                         break
 
                     j_critical = j0 + j1 + k
-                    x1_critical = float(ev.state_reaching[0, k])
-                    x2_critical = float(ev.state_reaching[1, k])
-                    x3_critical = float(ev.state_reaching[2, k])
+                    x1_critical = float(ev.sos_state[0, k])
+                    x2_critical = float(ev.sos_state[1, k])
+                    x3_critical = float(ev.sos_state[2, k])
                     ev.assigned_customers = tuple(i for i in nS if self.network.is_customer(i))
                     critical_nodes[id_ev] = onGA.CriticalNodeInfo(j_critical, S0, L0, x1_critical, x2_critical,
                                                                   x3_critical)
