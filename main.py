@@ -44,19 +44,20 @@ stage_help = """Stage to study.
 (3) One day
 """
 
-method_help = """Decision-making method.
+variant_help = """E-VRP variant considered by the optimizer.
 (1) Deterministic
 (2) Deterministic with waiting times
 (3) Linear stochastic
+Default: 1
 """
 
 # create parser instance and mandatory arguments
 parser = argparse.ArgumentParser(description='Main file. You can execute all operational stages with it.')
 parser.add_argument('stage', type=int, help=stage_help)
-parser.add_argument('method', type=int, help=method_help)
 parser.add_argument('target_folder', type=Path, help='folder where target instances are located')
 
 # common options
+parser.add_argument('--variant', type=int, help=variant_help, default=1)
 parser.add_argument('--cs_capacities', type=int, help='Capacity of CSs. Default=2', default=2)
 parser.add_argument('--preop_repetitions', type=int, help='Num. of pre-operation runs. Default=5', default=5)
 parser.add_argument('--sat_prob_sample_time', type=int,
@@ -96,11 +97,11 @@ fleet_type = Fleet.Fleet
 network_type = Network.DeterministicCapacitatedNetwork
 edge_type = Network.Edge.DynamicEdge
 
-if args.method == 2:
+if args.variant == 2:
     method = 'deterministic_waiting_times'
     ev_type = Fleet.EV.ElectricVehicleWithWaitingTimes
 
-elif args.method == 3:
+elif args.variant == 3:
     method = 'stochastic_linear'
     ev_type = Fleet.EV.GaussianElectricVehicle
     fleet_type = Fleet.GaussianFleet

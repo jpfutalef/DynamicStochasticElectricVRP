@@ -54,7 +54,7 @@ in a single execution).
 The code syntax is as follows:
 
 ```commandline 
-python main.py [optional arguments] STAGE OPT_METHOD TARGET_FOLDER
+python main.py [optional arguments] STAGE TARGET_FOLDER
 ```
 
 where:
@@ -65,15 +65,6 @@ where:
 - 2: online stage. It is open-loop by default. You can pass the ``--optimize``
   optional argument to activate the closed-loop strategy.
 - 3: full day (pre-operation + online).
-
-``OPT_METHOD`` sets the E-VRP variant the optimizer solves during the
-pre-operation and online stages (Notice: this argument is not considered 
-when simulating the open loop online stage). Choose one of the following 
-integers:
-
-- 1: deterministic
-- 2: deterministic + waiting times
-- 3: linear stochastic
 
 ``TARGET_FOLDER`` specifies the target folder. For pre-operation stage and 
 full-day simulation, the target folder must contain a set of instances
@@ -121,6 +112,14 @@ folder_containing_several_instances  <-- target folder for pre-operation
 ```
 
 #### Relevant optional arguments
+``--variant`` sets the E-VRP variant the optimizer solves during the
+pre-operation and online stages. Choose one of the following 
+integers (Default: 1):
+
+- 1: deterministic
+- 2: deterministic + waiting times
+- 3: linear stochastic
+
 ``--optimize`` if passed, it enables OnGA during the online stage.
 
 ``--preop_repetitions [N]`` number of pre-operation runs. Yields N
