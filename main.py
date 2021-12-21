@@ -25,8 +25,7 @@ off_hp = AlphaGA_HyperParameters(weights=(1., 1., 1., 0.),
                                  b0=30,
                                  b1=8.0,
                                  b2=6.0,
-                                 r=2,
-                                 alpha_up=95.)
+                                 r=2)
 
 on_hp = OnGA_HyperParameters(num_individuals=60,
                              max_generations=120,

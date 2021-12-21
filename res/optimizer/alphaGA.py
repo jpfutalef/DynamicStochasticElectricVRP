@@ -16,7 +16,7 @@ MAIN FUNCTIONS
 '''
 
 
-def decode(individual: IndividualType, fleet: Fleet, hp: AlphaGA_HyperParameters) -> RouteDict:
+def decode(individual: IndividualType, fleet: Fleet.Fleet, hp: AlphaGA_HyperParameters) -> RouteDict:
     """
     Decodes individual to node sequence, charging sequence and initial conditions.
     :param individual: the individual
@@ -60,7 +60,8 @@ def decode(individual: IndividualType, fleet: Fleet, hp: AlphaGA_HyperParameters
     for i, (S, L, departure_time) in enumerate(zip(customer_sequences, charging_sequences, depart_times)):
         S = tuple([0] + S + [0])
         L = tuple([0.] + L + [0.])
-        departure_soc = hp.alpha_up
+        # departure_soc = hp.alpha_up
+        departure_soc = fleet.vehicles[i].alpha_up
         departure_payload = sum([fleet.network.demand(x) for x in S])
         routes[i] = (S, L, departure_time, departure_soc, departure_payload, 0)
     return routes

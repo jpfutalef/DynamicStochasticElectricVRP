@@ -140,9 +140,9 @@ In this example, we will run the pre-operation stage, considering
 instances at ``data/instances/``. To do this, run one of the following:
 
 ```
-python main.py 1 1 data/instances/ <-- deterministic
-python main.py 1 2 data/instances/ <-- deterministic + waiting times
-python main.py 1 3 data/instances/ <-- linear stochastic
+python main.py 1 data/instances/ <-- deterministic
+python main.py --variant 2 1 data/instances/ <-- deterministic + waiting times
+python main.py --variant 3 1 data/instances/ <-- linear stochastic
 ```
 
 All results will be stored in folders with the same names of the

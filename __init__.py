@@ -1,1 +1,1 @@
-__name__ = "EVFleetRouting"
+__name__ = "DynamicStochasticEVRP"
