@@ -1,0 +1,71 @@
+######### Network parameters #########
+
+n_customers = 100
+n_charg_sta = 11
+min_radius, max_radius = 0, 10e3  # m
+mintw_low, maxtw_low = 8 * 60 * 60, 16 * 60 * 60  # s
+mintw_width, maxtw_width = 2 * 60 * 60, 4 * 60 * 60  # s
+depot_loc = (-0.9*max_radius, 0.)
+
+min_theta, max_theta = 0, 2 * np.pi
+minreq, maxreq = 5, 50  # kg
+mintime, maxtime = 60 * 5, 60 * 15  # s
+std_factor = 1
+
+tech1 = {0.0: 0.0, 75.6 * 60: 85.0, 92.4 * 60: 95.0, 122.4 * 60: 100.0}  # slow
+tech2 = {0.0: 0.0, 37.2 * 60: 85.0, 46.2 * 60: 95.0, 60.6 * 60: 100.0}  # normal
+tech3 = {0.0: 0.0, 18.6 * 60: 85.0, 23.4 * 60: 95.0, 30.6 * 60: 100.0}  # fast
+tech_list = [tech1, tech2, tech3]
+tech_price = [1., 1.5, 2.5]
+tech_name = ["Slow", "Normal", "Fast"]
+style_list = [('Slow', '-ro'), ('Normal', '-g^'), ('Fast', '-bD')]
+which_technology = None # If None, choose random between tech_list
+cs_at_depot = True
+cs_capacity = 2
+
+####################################
+
+# Instance path
+instance_path = Path(main_folder, f'c{n_customers}_cs{n_charg_sta}_r{int(max_radius)}.xml')
+print('Instance path: ', instance_path)
+
+# Plot recharging functions
+fig_recharging_functions = plot_recharging_functions(tech_list, style_list, 16, 9)
+
+# Network
+network = create_network(mean_velocity, std_velocity, n_customers, n_charg_sta, min_radius, max_radius, min_theta, max_theta, minreq, maxreq, 
+                         mintime, maxtime, mintw_low, maxtw_low, mintw_width, maxtw_width, cs_capacity, std_factor, tech_list, tech_price, 
+                         tech_name, cs_at_depot, which_technology, depot_loc)
+fig_network = network.draw(save_to=None, width=0.003, edge_color='grey')
+
+######### Fleet parameters #########
+
+ev_id = 0
+alpha_down, alpha_upp = 20, 95
+battery_capacity = 24000*3600  # J
+battery_capacity_nominal = battery_capacity
+max_payload = 553 # kg
+weight = 1.52*1000  # kg
+max_tour_duration = 6*60.*60 # s
+
+PRB_time_window = 0.95
+PRB_soc_policy = 0.95
+PRB_max_tour_time = 0.95
+WGH_time_window = 1e4
+WGH_soc_policy = 1e4
+WGH_max_tour_time = 1e4
+
+####################################
+
+ev = EV.GaussianElectricVehicle(0, ev_weight, battery_capacity, battery_capacity_nominal, alpha_upp, alpha_down, max_tour_duration, 
+                                max_payload, 
+                                PRB_time_window=PRB_time_window, 
+                                PRB_soc_policy=PRB_soc_policy,
+                                PRB_max_tour_time=PRB_max_tour_time, 
+                                WGH_time_window=WGH_time_window, 
+                                WGH_soc_policy=WGH_soc_policy,
+                                WGH_max_tour_time=WGH_max_tour_time)
+fleet = Fleet.GaussianFleet({0: ev})
+
+fleet.set_network(network)
+fleet.write_xml(instance_path, True)
