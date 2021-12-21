@@ -2,7 +2,7 @@
 
 ## About
 
-This repository contains plenty of python code that implements a GA-based
+This repository contains plenty of Python code that implements a GA-based
 decision-making strategy to manage EV fleets. The system consists
 of: an offline and online optimizer to solve multiple E-VRP variants, and a 
 simple simulator to test the strategy.The goal is to analyze the behavior of 
@@ -39,7 +39,8 @@ Check the following:
 2. Update the repository in your computer by doing ``git fetch`` and then
 ``git pull``.
 
-3. Check your Python executable provides all pacagesin *requirements.txt*.
+3. Check your Python executable provides all packages in the
+   *requirements.txt* file.
     * If using Anaconda: you can install them by running 
       ``conda install  --file requirements.txt``
       
@@ -66,35 +67,39 @@ where:
 - 3: full day (pre-operation + online).
 
 ``OPT_METHOD`` sets the E-VRP variant the optimizer solves during the
-pre-operation and online stages. Not considered when simulating the open loop
-online stage.
+pre-operation and online stages (Notice: this argument is not considered 
+when simulating the open loop online stage). Choose one of the following 
+integers:
 
 - 1: deterministic
 - 2: deterministic + waiting times
 - 3: linear stochastic
 
-``TARGET_FOLDER`` specifies the target folder. For pre-operation stage and full 
-day, a folder containing a set of instances (XML files). For online stage, 
-a folder containing the results from the pre-operation.
+``TARGET_FOLDER`` specifies the target folder. For pre-operation stage and 
+full-day simulation, the target folder must contain a set of instances
+which will be solved (and simulated, for the full-day case). For the 
+online stage, the target folder is such that it contains the results from
+the pre-operation stage.
 
-#### The target folder
+#### Folder structures
 
-Contains the necessary data to execute any stage. Essentially, each instance
-is assigned a folder with its name. Inside each folder, you will find the
-results for each stage/method you choose.
+After running the pre-operation (that is, solving the offline E-VRP 
+instances), each result is saved in a folder with the same name of the
+instance. Inside each folder, you will find the results for the 
+stage/method you choose.
 
 The folder structure for a folder containing one instance is as follows:
 
 ```
-main_folder  <-- target folder for pre-operation
+folder_containing_several_instances  <-- target folder for pre-operation
 |   instance_name.xml
 └───instance_name
-    └───optimization_method_1
+    └───evrp_variant_1
         └───pre_operation
-            └───preop_results1  <-- could be source folder for online operation
+            └───preop_results1 <-- can be source folder for online operation
                 |   preop result files
            ...
-            └───preop_resultsN
+            └───preop_resultsN <-- can be source folder for online operation too
                 |   preop result files
         └───online_open_loop
             └───online_results1
@@ -108,10 +113,10 @@ main_folder  <-- target folder for pre-operation
            ...
             └───online_resultsN
                 |   online result files
-    └───optimization_method_2
+    └───evrp_variant_2
             ...
    ...
-    └───optimization_method_N
+    └───evrp_variant_N
             ...
 ```
 
@@ -123,87 +128,70 @@ pre-operation solutions. Default: 5
 
 ``--online_simulations [N]`` number of online stage simulations. Default: 20
 
-### The hyper_main.py file
-
-Under construction ....
-
 ## Examples
 
-Folder *data/* contains a few instances to test the proper working of 
-the code. We avoid storing all instances in this repo to lower the storing
-space needed. The rest of the instances can be found at *(VRP REPO)*.
+Folder *data/instances/* contains a few instances to test the
+decision-making system. We avoid storing all instances in this repo to 
+lower the storing space needed for this repository. The rest of the 
+instances can be found at *(VRP REPO, not ready yet...)*.
 
 ### Pre-operation stage
 
-Folders ``set1, set2, set3`` in ``data/instances/`` contain sets 
-of ready-to-solve instances. If you want to solve a set of instances, choose
-one of the following:
+In this example, we will run the pre-operation stage, considering
+instances at ``data/instances/``. To do this, run one of the following:
 
 ```
-python main.py 1 1 data/instances/set1/ <-- deterministic
-python main.py 1 2 data/instances/set1/ <-- deterministic + waiting times
-python main.py 1 3 data/instances/set1/ <-- linear stochastic
+python main.py 1 1 data/instances/ <-- deterministic
+python main.py 1 2 data/instances/ <-- deterministic + waiting times
+python main.py 1 3 data/instances/ <-- linear stochastic
 ```
 
 All results will be stored in folders with the same names of the
 instances. For example, for instance ``c10_cs1_15x15km``, 
-the folder ``data/instances/set1/c10_cs1_15x15km/`` will be created. See the
-*Target folder* structure explained above to know how results are stored.
+the folder ``data/instances/c10_cs1_15x15km/`` will be created. See 
+the *Folder structures* section above to understand how results are stored.
 
 ### Online stage
 
-In this example, we solve and simulate the deterministic E-VRP variant.
-Folder ``data/online/`` contains the ready-to-use instance 
-``c20_cs2_15x15km``.
+In this example, we will simulate the online stage for instance 
+```c20_cs2_15x15km```. This example considers you already ran the 
+pre-operation from the previous example. 
 
-First, execute the pre-operation stage to 
-generate the initial route candidates. To do this, run one of the
-following:
-
-```
-python main.py 1 1 data/online/ <-- deterministic
-python main.py 1 2 data/online/ <-- deterministic + waiting times
-python main.py 1 3 data/online/ <-- linear stochastic
-```
-
-The directory ``data/online/c20_cs2_15x15km/`` will be created. Inside
-it, you'll find the directory ``/pre-operation/[optimization method name]``.
+Navigate to 
+``data/instances/c20_cs2_15x15km/pre-operation/[EVRP variant name]``.
 Inside it, you will find several folders containing the
 offline optimization results (5 by default), and the file 
 ``source_folder.txt`` that contains the folder with the best 
-optimization result. Copy that directory and simulate the closed loop online
-stage by executing:
+optimization result. You can choose any folder or the one specified in
+the ``source_folder.txt`` file to run the online stage.
+
+Once you select a source folder, run the online stage as follows. Notice
+that you can pass the ``--optimize`` argument to activate the closed-loop
+strategy:
 
 ```
-python main.py --optimize 2 1 [best directory] <-- closed loop
+python main.py 2 [EVRP variant] [source folder] <-- open loop
+python main.py --optimize 2 [EVRP variant] [source folder] <-- closed loop
 ```
 
-To simulate the open loop online stage, remove the ``--optimize`` argument:
-
-```
-python main.py 2 1 [best directory] <-- open loop
-```
-
-In this case, the second argument (i.e., 1) doesn't do anything.
+Also, notice that, for the open loop case, the [EVRP variant] argument
+does not alter the simulation. However, it is mandatory.
 
 ### Full day
 
 If you want to avoid running both stages independently, you can use the third
-STAGE option to run both stages sequentially. The following script will do this
-automatically over instances at ``data/instances/set2/`` considering 
+STAGE option to run both stages sequentially. The following script will do
+that over instances at ``data/instances/`` considering 
 the deterministic E-VRP variant:
 
 ```
-python main.py 3 1 data/instances/set2/ <-- open loop
-python main.py --optimize 3 1 data/instances/set2/ <-- closed loop
+python main.py 3 1 data/instances/set2/
 ```
 
-The code detects if the pre-operation was run by checking if the directory 
-``data/instances/set2/[instance_name]/pre_operation/`` exists and is not empty
-for each instance in ``data/instances/set2/``.
+In this case, the script will run the pre-operation stage, followed by
+the open-loop online stage, finishing with the closed-loop online stage.
 
-
-## Repository structure
+## Repository organization
 
  ``./res`` contains all resource files. Here, you will find all methods and 
  classes necessary to run the system.
@@ -212,11 +200,13 @@ for each instance in ``data/instances/set2/``.
 and visualize results. Make sure to run ``jupyter notebook`` or ``jupyter lab``
 in the main project folder.
 
-``./data`` stores all data generated by running the system.
+``./data`` stores all data generated by the system.
 
 ``./test`` contains experimental code and may be empty.
 
-``./routines``, ``./simulations``, and ``./utility`` are deprecated
+``./docs`` contains documentation files.
+
+``./routines`` and ``./utility`` are deprecated
 and will soon be removed.
 
 

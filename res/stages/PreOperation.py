@@ -7,7 +7,7 @@ import pandas as pd
 import res.optimizer.alphaGA as alphaGA
 from res.models import Fleet
 from res.models import Network
-from res.optimizer.GATools import AlphaGA_HyperParameters as HyperParameters
+from res.optimizer.GATools import AlphaGA_HyperParameters
 
 
 def get_best_from_pre_operation(folder: Path) -> Path:
@@ -24,8 +24,8 @@ def get_best_from_pre_operation(folder: Path) -> Path:
     return df.iloc[0]['folder']
 
 
-def pre_operation(instance_filepath: Path, soc_policy: Tuple[float, float] = None, additional_vehicles=1,
-                  fill_up_to=0.9, external_individual=None, sat_prob_sample_time: float = 120,
+def pre_operation(instance_filepath: Path, hp: AlphaGA_HyperParameters, soc_policy: Tuple[float, float] = None,
+                  additional_vehicles=1, fill_up_to=0.9, external_individual=None, sat_prob_sample_time: float = 120,
                   cs_capacities: int = None, method_name: str = None, repetitions: int = 5,
                   fleet_type: Union[Type[Fleet.Fleet], str] = None,
                   ev_type: Union[Type[Fleet.EV.ElectricVehicle], str] = None,
@@ -61,18 +61,6 @@ def pre_operation(instance_filepath: Path, soc_policy: Tuple[float, float] = Non
         if soc_policy:
             fleet.new_soc_policy(soc_policy[0], soc_policy[1])
 
-        # Setup GA hyperparameters
-        hp = HyperParameters(weights=(1., 1., 1., 0.),
-                             num_individuals=2 * len(fleet) + 2 * len(fleet.network) + 20,
-                             max_generations=4 * (len(fleet) + len(fleet.network)) + 40,
-                             CXPB=0.5,
-                             MUTPB=0.8,
-                             hard_penalization=1000 * len(fleet.network),
-                             elite_individuals=1,
-                             tournament_size=5,
-                             r=2,
-                             alpha_up=fleet.vehicles[0].alpha_up)
-
         # If warm start solution, use it. Otherwise, create individual using heuristic
         if external_individual:
             init_population = [external_individual]
@@ -97,16 +85,16 @@ def pre_operation(instance_filepath: Path, soc_policy: Tuple[float, float] = Non
     return results, multiple_results_folder
 
 
-def folder_pre_operation(folder_path: Path, soc_policy: Tuple[float, float] = None, additional_vehicles=1,
-                         fill_up_to=0.9, external_individual=None, method_name: str = None,
+def folder_pre_operation(folder_path: Path, hp: AlphaGA_HyperParameters, soc_policy: Tuple[float, float] = None,
+                         additional_vehicles=1, fill_up_to=0.9, external_individual=None, method_name: str = None,
                          repetitions: int = 5, fleet_type: Union[Type[Fleet.Fleet], str] = None,
                          ev_type: Union[Type[Fleet.EV.ElectricVehicle], str] = None,
                          network_type: Union[Type[Fleet.Network.Network], str] = None,
                          edge_type: Union[Type[Fleet.Network.Edge.DynamicEdge], str] = None,
                          sat_prob_sample_time: float = 120, cs_capacities: int = None, parallel=True):
     instances = [i for i in folder_path.iterdir() if i.suffix == '.xml']
-    other_args = (soc_policy, additional_vehicles, fill_up_to, external_individual, sat_prob_sample_time, cs_capacities,
-                  method_name, repetitions, fleet_type, ev_type, network_type, edge_type)
+    other_args = (hp, soc_policy, additional_vehicles, fill_up_to, external_individual, sat_prob_sample_time,
+                  cs_capacities, method_name, repetitions, fleet_type, ev_type, network_type, edge_type)
     if parallel:
         num_cores = multiprocessing.cpu_count()
         pool_size = len(instances) if len(instances) < num_cores else num_cores
@@ -118,6 +106,6 @@ def folder_pre_operation(folder_path: Path, soc_policy: Tuple[float, float] = No
 
     else:
         for instance in instances:
-            pre_operation(instance, soc_policy, additional_vehicles, fill_up_to, external_individual,
+            pre_operation(instance, hp, soc_policy, additional_vehicles, fill_up_to, external_individual,
                           sat_prob_sample_time, cs_capacities, method_name, repetitions, fleet_type,
                           ev_type, network_type, edge_type)

@@ -1,14 +1,42 @@
-"""
-MAIN EXECUTION FILE
-"""
 import sys, os, argparse
 from pathlib import Path
 import numpy as np
 
 from res.stages import PreOperation, Online, OneDay
-from res.optimizer.GATools import OnGA_HyperParameters, AlphaGA_HyperParameters
+from res.optimizer.HyperParameters import AlphaGA_HyperParameters, OnGA_HyperParameters
 import res.models.Fleet as Fleet
 import res.models.Network as Network
+
+"""
+HYPER-PARAMETERS DEFINITIONS
+"""
+off_hp = AlphaGA_HyperParameters(weights=(1., 1., 1., 0.),
+                                 num_individuals=20,    # Not considered as a0, a1, b0, b1 are assigned
+                                 max_generations=40,
+                                 CXPB=0.6,
+                                 MUTPB=0.4,
+                                 hard_penalization=10000,
+                                 elite_individuals=1,
+                                 tournament_size=5,
+                                 algorithm_name='OffGA',
+                                 a0=20,
+                                 a1=4.0,
+                                 a2=3.0,
+                                 b0=30,
+                                 b1=8.0,
+                                 b2=6.0,
+                                 r=2,
+                                 alpha_up=95.)
+
+on_hp = OnGA_HyperParameters(num_individuals=60,
+                             max_generations=120,
+                             CXPB=0.65,
+                             MUTPB=0.8,
+                             weights=(1., 1., 1., 0.),
+                             r=2)
+"""
+END OF HYPER-PARAMETERS DEFINITION
+"""
 
 stage_help = """Stage to study.
 (1) Pre-operation
@@ -62,12 +90,6 @@ parser.add_argument('--parallel', action='store_true', help='Enables parallelism
 
 args = parser.parse_args()
 
-hp = OnGA_HyperParameters(num_individuals=60,
-                          max_generations=120,
-                          CXPB=0.65,
-                          MUTPB=0.8,
-                          weights=(1., 1., 1., 0.),
-                          r=2)
 method = 'deterministic'
 ev_type = Fleet.EV.ElectricVehicle
 fleet_type = Fleet.Fleet
@@ -85,7 +107,6 @@ elif args.method == 3:
     edge_type = Network.Edge.GaussianEdge
     network_type = Network.GaussianCapacitatedNetwork
 
-
 if __name__ == '__main__':
     # Pre-operation stage
     if args.stage == 1:
@@ -95,7 +116,7 @@ if __name__ == '__main__':
             sys.exit(0)
         print("Will solve instances at:\n  ", instances_folder)
         input("Press ENTER to continue... (or ctrl+Z to end process)")
-        PreOperation.folder_pre_operation(args.target_folder, args.soc_policy, args.additional_vehicles,
+        PreOperation.folder_pre_operation(args.target_folder, off_hp, args.soc_policy, args.additional_vehicles,
                                           args.fill_up_to, None, method, args.preop_repetitions, fleet_type,
                                           ev_type, network_type, edge_type, args.sat_prob_sample_time,
                                           args.cs_capacities, args.parallel)
@@ -103,7 +124,8 @@ if __name__ == '__main__':
     # Online stage
     elif args.stage == 2:
         source_folder = args.target_folder
-        Online.online_operation(source_folder.parent.parent, source_folder, args.optimize, hp, args.online_repetitions,
+        Online.online_operation(source_folder.parent.parent, source_folder, args.optimize, on_hp,
+                                args.online_repetitions,
                                 args.keep_times, args.sample_time, args.std_factor, args.start_earlier_by,
                                 args.soc_policy, False, ev_type, fleet_type, edge_type, network_type)
 
@@ -112,7 +134,7 @@ if __name__ == '__main__':
         OneDay.one_day_folder(args.target_folder, args.soc_policy, args.additional_vehicles, args.fill_up_to, None,
                               method, args.preop_repetitions, args.sample_time, args.std_factor, args.start_earlier_by,
                               args.sat_prob_sample_time, args.cs_capacities, args.online_repetitions, fleet_type,
-                              ev_type, network_type, edge_type, args.optimize, hp, args.parallel)
+                              ev_type, network_type, edge_type, args.optimize, on_hp, args.parallel)
 
     # Closed loop with degradation
     elif args.case == 500:
@@ -132,7 +154,7 @@ if __name__ == '__main__':
 
         main_folder = args.target_folder
         source_folder = Path(main_folder, 'source')
-        Online.online_operation_degradation(source_folder, main_folder, hp, eta_table, keep_times=args.keep_times,
+        Online.online_operation_degradation(source_folder, main_folder, on_hp, eta_table, keep_times=args.keep_times,
                                             sample_time=args.sample_time, std_factor=(1., 1.), policy=args.soc_policy,
                                             degrade_until=0.8)
     sys.exit(1)

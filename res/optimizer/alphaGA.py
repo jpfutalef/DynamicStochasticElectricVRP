@@ -1,5 +1,5 @@
-import os
-import time
+import os, time
+from pathlib import Path
 from random import randint, uniform, sample, random
 from typing import Tuple
 
@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from deap import tools, base, creator
 
-from res.optimizer.GATools import AlphaGA_HyperParameters, GenerationsData, OptimizationData, RouteDict, IndividualType
+from res.optimizer.GATools import GenerationsData, OptimizationData, RouteDict, IndividualType
+from res.optimizer.HyperParameters import AlphaGA_HyperParameters
 from res.models import Fleet
 
 '''
@@ -591,7 +592,7 @@ MAIN ALGORITHM
 '''
 
 
-def alphaGA(fleet: Fleet, hp: AlphaGA_HyperParameters, save_to: str = None, init_pop=None, instance_path=None):
+def alphaGA(fleet: Fleet, hp: AlphaGA_HyperParameters, save_to: Path = None, init_pop=None, instance_path=None):
     # OBJECTS
     creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
     creator.create("Individual", list, fitness=creator.FitnessMin, feasible=False, acceptable=False)
@@ -611,6 +612,10 @@ def alphaGA(fleet: Fleet, hp: AlphaGA_HyperParameters, save_to: str = None, init
     generations_data_container = None
     if save_to:
         generations_data_container = GenerationsData()
+
+    # POPULATION SIZE AND MAX NUM OF ITERATIONS
+    hp.update_population_size(len(fleet.network), len(fleet))
+    hp.update_num_max_generations(len(fleet.network), len(fleet))
 
     # BEGIN ALGORITHM
     t_init = time.time()

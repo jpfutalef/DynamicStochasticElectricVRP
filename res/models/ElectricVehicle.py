@@ -60,6 +60,10 @@ class ElectricVehicle:
     pre_service_waiting_time: Union[np.ndarray, None] = None
     post_service_waiting_time: Union[np.ndarray, None] = None
 
+    WGH_time_window: float = 1e4
+    WGH_soc_policy: float = 1e4
+    WGH_max_tour_time: float = 1e4
+
     def __post_init__(self):
         if self.current_max_tour_duration is None:
             self.current_max_tour_duration = self.max_tour_duration
@@ -357,7 +361,11 @@ class ElectricVehicle:
                    'alpha_down': str(self.alpha_down),
                    'max_tour_duration': str(self.max_tour_duration),
                    'max_payload': str(self.max_payload),
-                   'type': self.type}
+                   'type': self.type,
+                   'WGH_time_window': self.WGH_time_window,
+                   'WGH_soc_policy': self.WGH_soc_policy,
+                   'WGH_max_tour_time': self.WGH_max_tour_time}
+        attribs = {key: str(val) for key, val in attribs.items()}
         element = ET.Element('electric_vehicle', attrib=attribs)
 
         if assign_customers:
@@ -380,13 +388,17 @@ class ElectricVehicle:
         batter_capacity = float(element.get('battery_capacity'))
         alpha_up = float(element.get('alpha_up'))
         alpha_down = float(element.get('alpha_down'))
+        WGH_time_window = float(element.get('WGH_time_window'))
+        WGH_soc_policy = float(element.get('WGH_soc_policy'))
+        WGH_max_tour_time = float(element.get('WGH_max_tour_time'))
         _assigned_customers = element.find('assigned_customers')
         if _assigned_customers:
             assigned_customers = tuple([int(i.get('id')) for i in _assigned_customers])
         else:
             assigned_customers = None
         return cls(ev_id, weight, batter_capacity, battery_capacity_nominal, alpha_up, alpha_down, max_tour_duration,
-                   max_payload, assigned_customers=assigned_customers)
+                   max_payload, assigned_customers=assigned_customers, WGH_time_window=WGH_time_window,
+                   WGH_soc_policy=WGH_soc_policy, WGH_max_tour_time=WGH_max_tour_time)
 
 
 """
@@ -540,6 +552,10 @@ class GaussianElectricVehicle(ElectricVehicle):
     num_customers: int = 0
     evaluate_all_container: Union[np.ndarray, None] = None
 
+    PRB_time_window: float = 0.95
+    PRB_soc_policy: float = 0.95
+    PRB_max_tour_time: float = 0.95
+
     def __post_init__(self):
         super(GaussianElectricVehicle, self).__post_init__()
         self.Q = np.zeros((3, 3))
@@ -663,12 +679,12 @@ class GaussianElectricVehicle(ElectricVehicle):
             self.penalization += penalization_constant
         return self.penalization
 
-    def constraint_max_tour_time(self, PRB=.9545):
+    def constraint_max_tour_time(self):
         MU = self.sos_state[0, -1]
         SIG = np.sqrt(self.state_reaching_covariance[0, -3])
         VAL = self.max_tour_duration + self.x1_0
         CDF = normal_cdf(VAL, MU, SIG)
-        self.penalization += penalization_stochastic(CDF, PRB, w=1e4)
+        self.penalization += penalization_stochastic(CDF, self.PRB_max_tour_time, w=self.WGH_max_tour_time)
 
     def constraint_max_payload(self):
         if self.eos_state[2, 0] > self.max_payload:
@@ -681,27 +697,24 @@ class GaussianElectricVehicle(ElectricVehicle):
                 """
                 TIME WINDOW - LOWER BOUND
                 """
-                PRB = .9545
                 MU = self.sos_state[0, k]
                 SIG = np.sqrt(self.state_reaching_covariance[0, 3 * k])
                 VAL = node.time_window_low
                 CDF = 1 - normal_cdf(VAL, MU, SIG)
-                self.penalization += penalization_stochastic(CDF, PRB, w=1e4)
+                self.penalization += penalization_stochastic(CDF, self.PRB_time_window, w=self.WGH_time_window)
 
                 """
                 TIME WINDOW - UPPER BOUND
                 """
-                PRB = .9545
                 MU = self.eos_state[0, k]
                 SIG = np.sqrt(self.state_reaching_covariance[0, 3 * k])
                 VAL = node.time_window_upp
                 CDF = normal_cdf(VAL, MU, SIG)
-                self.penalization += penalization_stochastic(CDF, PRB, w=1e4)
+                self.penalization += penalization_stochastic(CDF, self.PRB_time_window, w=self.WGH_time_window)
 
             """
             SOC BOUND - REACHING
             """
-            PRB = .9545
             MU = self.sos_state[1, k]
             SIG = np.sqrt(self.state_reaching_covariance[1, 3 * k + 1])
             VAL1 = self.alpha_up
@@ -709,12 +722,11 @@ class GaussianElectricVehicle(ElectricVehicle):
             CDF1 = normal_cdf(VAL1, MU, SIG)
             CDF2 = normal_cdf(VAL2, MU, SIG)
             CDF = CDF1 - CDF2
-            self.penalization += penalization_stochastic(CDF, PRB, w=1e4)
+            self.penalization += penalization_stochastic(CDF, self.PRB_soc_policy, w=self.WGH_soc_policy)
 
             """
             SOC BOUND LOWER - LEAVING
             """
-            PRB = .9545
             MU = self.eos_state[1, k]
             SIG = SIG
             VAL1 = self.alpha_up
@@ -722,7 +734,7 @@ class GaussianElectricVehicle(ElectricVehicle):
             CDF1 = normal_cdf(VAL1, MU, SIG)
             CDF2 = normal_cdf(VAL2, MU, SIG)
             CDF = CDF1 - CDF2
-            self.penalization += penalization_stochastic(CDF, PRB, w=1e4)
+            self.penalization += penalization_stochastic(CDF, self.PRB_soc_policy, w=self.WGH_soc_policy)
 
     def draw_travelling_times(self, ax: plt.Axes):
         super(GaussianElectricVehicle, self).draw_travelling_times(ax)
@@ -751,12 +763,27 @@ class GaussianElectricVehicle(ElectricVehicle):
     def xml_element(self, assign_customers=False, with_route=False, this_id=None):
         element = super(GaussianElectricVehicle, self).xml_element(assign_customers, with_route, this_id)
         if with_route:
-            _route = element.find('route')  # TODO add covariance matrix
+            _route = element.find('route')
+
+        extra_attribs = {"PRB_time_window": self.PRB_time_window,
+                         "PRB_soc_policy": self.PRB_soc_policy,
+                         "PRB_max_tour_time": self.PRB_max_tour_time,
+                         "WGH_time_window": self.WGH_time_window,
+                         "WGH_soc_policy": self.WGH_soc_policy,
+                         "WGH_max_tour_time": self.WGH_max_tour_time}
+        extra_attribs = {key: str(val) for key, val in extra_attribs.items()}
+        [element.set(key, val) for key, val in extra_attribs.items()]
         return element
 
     @classmethod
     def from_xml_element(cls, element: ET.Element):
         instance = super(GaussianElectricVehicle, cls).from_xml_element(element)
+        PRB_time_window = float(element.get("PRB_time_window"))
+        PRB_soc_policy = float(element.get("PRB_soc_policy"))
+        PRB_max_tour_time = float(element.get("PRB_max_tour_time"))
+        instance.PRB_time_window = PRB_time_window
+        instance.PRB_soc_policy = PRB_soc_policy
+        instance.PRB_max_tour_time = PRB_max_tour_time
         return instance
 
 
@@ -805,5 +832,3 @@ def draw_soc_arrows(ev: ElectricVehicle, X: list, ax: plt.Axes, color: str, labe
 
 def place_labels(ev: ElectricVehicle, X: list, ax: plt.Axes, x_off=0.0, y_off=0.0):
     return
-
-
