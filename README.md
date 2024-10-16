@@ -25,7 +25,7 @@ Pages 715-737,
 DOI: 10.1016/j.ins.2022.12.108.
 [Link](https://www.sciencedirect.com/science/article/pii/S0020025522016036)
 
-### E-VRP variants
+## E-VRP variants
 
 This repo implements three solvers, each considering a different E-VRP variants:
 * Deterministic E-VRP
