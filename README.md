@@ -15,6 +15,16 @@ semi-real-world environments. In this case, you can choose either to maintain th
 initial routes throughout the stage (open-loop), or to update them using
 an *online solver* (closed-loop).
 
+## Paper Reference
+J.P. Futalef, D. Muñoz-Carpintero, H. Rozas, M. E. Orchard,
+_An online decision-making strategy for routing of electric vehicle fleets_,
+Information Sciences,
+Volume 625,
+2023,
+Pages 715-737,
+DOI: 10.1016/j.ins.2022.12.108.
+[Link](https://www.sciencedirect.com/science/article/pii/S0020025522016036)
+
 ### E-VRP variants
 
 This repo implements three solvers, each considering a different E-VRP variants:
