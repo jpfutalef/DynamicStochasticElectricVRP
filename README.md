@@ -2,7 +2,7 @@
 
 ## About
 
-This repository contains plenty of Python code that implements a GA-based
+This repository implements a GA-based
 decision-making strategy to manage EV fleets. The system consists
 of: an offline and online optimizer to solve multiple E-VRP variants, and a 
 simple simulator to test the strategy.The goal is to analyze the behavior of 
